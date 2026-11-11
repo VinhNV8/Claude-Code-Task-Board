@@ -1,0 +1,45 @@
+import type { Priority, TaskStatus } from '../types'
+
+export const STATUS_META: Record<TaskStatus, { label: string; dot: string; badge: string; col: string }> = {
+  backlog: { label: 'Backlog', dot: 'bg-slate-400', badge: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300', col: 'border-t-slate-400' },
+  queued: { label: 'Queued', dot: 'bg-sky-500', badge: 'bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300', col: 'border-t-sky-500' },
+  running: { label: 'Running', dot: 'bg-indigo-500', badge: 'bg-indigo-100 text-indigo-800 dark:bg-indigo-950 dark:text-indigo-300', col: 'border-t-indigo-500' },
+  needs_input: { label: 'Needs Input', dot: 'bg-amber-500', badge: 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300', col: 'border-t-amber-500' },
+  review: { label: 'Review', dot: 'bg-violet-500', badge: 'bg-violet-100 text-violet-800 dark:bg-violet-950 dark:text-violet-300', col: 'border-t-violet-500' },
+  done: { label: 'Done', dot: 'bg-emerald-500', badge: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300', col: 'border-t-emerald-500' },
+  failed: { label: 'Failed', dot: 'bg-rose-500', badge: 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300', col: 'border-t-rose-500' },
+}
+
+export const STATUS_ORDER: TaskStatus[] = ['backlog', 'queued', 'running', 'needs_input', 'review', 'done', 'failed']
+
+export const PRIORITY_META: Record<Priority, { label: string; cls: string }> = {
+  urgent: { label: 'Khẩn cấp', cls: 'text-rose-600 dark:text-rose-400' },
+  high: { label: 'Cao', cls: 'text-orange-600 dark:text-orange-400' },
+  normal: { label: 'Bình thường', cls: 'text-slate-500 dark:text-slate-400' },
+  low: { label: 'Thấp', cls: 'text-slate-400 dark:text-slate-500' },
+}
+
+export function timeAgo(ts: number, now = Date.now()) {
+  const s = Math.max(0, Math.round((now - ts) / 1000))
+  if (s < 60) return `${s} giây trước`
+  const m = Math.round(s / 60)
+  if (m < 60) return `${m} phút trước`
+  const h = Math.round(m / 60)
+  if (h < 24) return `${h} giờ trước`
+  return `${Math.round(h / 24)} ngày trước`
+}
+
+export function duration(ms: number) {
+  const s = Math.max(0, Math.round(ms / 1000))
+  const m = Math.floor(s / 60)
+  const r = s % 60
+  return m > 0 ? `${m}p ${r.toString().padStart(2, '0')}s` : `${r}s`
+}
+
+export function clock(ts: number) {
+  return new Date(ts).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+}
+
+export function usd(v?: number) {
+  return v === undefined ? '—' : `$${v.toFixed(2)}`
+}
