@@ -1,6 +1,6 @@
 // Kênh sự kiện nội bộ: mọi thay đổi trạng thái đều phát ra đây, WebSocket đẩy xuống giao diện.
 import { EventEmitter } from 'node:events'
-import type { LogEvent, PermissionRequest, Project, PromptTemplate, Run, Schedule, ScheduleRun, Settings, Task, TestRun } from './types.ts'
+import type { FileDiff, LogEvent, PermissionRequest, Project, ProjectBudget, PromptTemplate, ReviewAction, RuleSuggestion, Run, Schedule, ScheduleRun, Settings, Task, TestRun } from './types.ts'
 
 export type ServerMessage =
   | { type: 'task'; task: Task }
@@ -22,8 +22,24 @@ export type ServerMessage =
   | { type: 'schedule'; schedule: Schedule }
   | { type: 'schedule_deleted'; id: string }
   | { type: 'schedule_run'; run: ScheduleRun }
+  // Diff của task so với nhánh chính (PLAN 2.3), gửi khi task chuyển sang Review
+  | { type: 'diff'; taskId: number; files: FileDiff[] }
+  // Lịch sử review (PLAN 2.8): approve / request_changes / reject
+  | { type: 'review'; review: ReviewAction }
+  // Budget tháng theo project (PLAN P6): toàn bộ bảng budget, và cảnh báo khi lên mức warn/over (web hiện toast)
+  | { type: 'budgets'; budgets: Record<string, ProjectBudget> }
+  | { type: 'budget_alert'; projectId: string; level: 'warn' | 'over'; month: string; message: string }
+  // Gợi ý rule allowlist của project đã đổi (FR-44): web cập nhật khối gợi ý
+  | { type: 'rule_suggestions'; projectId: string; suggestions: RuleSuggestion[] }
 
 export const bus = new EventEmitter()
 bus.setMaxListeners(100)
 
-export const broadcast = (m: ServerMessage) => bus.emit('message', m)
+/** Gắn thông tin chỉ tính lúc chạy vào task trước khi gửi (P6: blockedReason). budgetService.ts đăng ký. */
+let decorateTask: (t: Task) => Task = (t) => t
+
+export function setTaskDecorator(fn: (t: Task) => Task) {
+  decorateTask = fn
+}
+
+export const broadcast = (m: ServerMessage) => bus.emit('message', m.type === 'task' ? { ...m, task: decorateTask(m.task) } : m)

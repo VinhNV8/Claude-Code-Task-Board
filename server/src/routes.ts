@@ -4,33 +4,36 @@ import { existsSync } from 'node:fs'
 import { isAbsolute } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { bus, broadcast, type ServerMessage } from './bus.ts'
-import { events, projects, runs, scheduleRuns, schedules, settings, tasks, telegramToken, templates, testRuns } from './db.ts'
+import { approveTask, rejectTask, requestChanges } from './review.ts'
+import { retryTask } from './retry.ts'
+import { resumeTask } from './resume.ts'
+import { events, projects, reviews, runs, scheduleRuns, schedules, settings, tasks, telegramToken, templates, testRuns } from './db.ts'
 import { ScheduleError, checkCron, validateSchedule, type ScheduleInput } from './schedules.ts'
 import { nextRuns } from './cron.ts'
 import { TelegramError, mergeTelegram, sendTelegram, validateAppUrl, validateChatId, validateToken } from './telegram.ts'
 import { TemplateError, validateTemplate, type TemplateInput } from './templates.ts'
 import { TagError, validateTags } from './tags.ts'
 import { StatsError, computeStats, parseStatsQuery, type StatsOptions, type StatsQuery } from './stats.ts'
-import { isRunning, notifyFromClaude, pump, stopTask, updateTask } from './runner.ts'
+import { hasSlot, isRunning, notifyFromClaude, pump, runNow, startRun, stopTask, updateTask } from './runner.ts'
 import { TestCommandError, parseCommand } from './testCommand.ts'
 import { isTesting, startTests, stopTests, testState } from './testRunner.ts'
 import { findClaudeBin } from './claude.ts'
+import { HttpError } from './httpError.ts'
+import { modelSuggestFor, normalizeModel } from './model.ts'
+import { adjustByHistory } from './modelHistoryService.ts'
+import { taskDiff } from './git.ts'
 import { INTERNAL_TOKEN } from './config.ts'
-import { decidePermission, initPermissions, listPermissions, requestPermission, type Decision } from './permissions.ts'
-import type { PermissionMode, Priority, Project, PromptTemplate, Schedule, Settings, TelegramSettingsInput } from './types.ts'
+import { decidePermission, decidePermissionsBatch, initPermissions, listPermissions, requestPermission, type Decision } from './permissions.ts'
+import { BudgetError, parseBudgetAction, parseUsd } from './budget.ts'
+import { PERMISSION_PRESETS } from './permissionPresets.ts'
+import { dismissRule, ruleSuggestionsFor, watchRuleSuggestions } from './ruleSuggestions.ts'
+import { getBudgets, isProjectBlocked, refreshBudgets, withBlockedReason } from './budgetService.ts'
+import type { FileDiff, PermissionMode, Priority, Project, PromptTemplate, Schedule, Settings, TelegramSettingsInput } from './types.ts'
 
 const PRIORITIES: Priority[] = ['urgent', 'high', 'normal', 'low']
 // Không cho phép bypassPermissions (SPEC Mục 9)
 const MODES: PermissionMode[] = ['acceptEdits', 'manual', 'plan']
 
-class HttpError extends Error {
-  constructor(
-    public status: number,
-    message: string,
-  ) {
-    super(message)
-  }
-}
 
 function gitToplevel(path: string) {
   return new Promise<string | null>((res) =>
@@ -38,6 +41,17 @@ function gitToplevel(path: string) {
       res(err ? null : out.trim()),
     ),
   )
+}
+
+/** Diff của task; lỗi git (repo bị xoá, nhánh chính đổi tên...) thì coi như không có diff. */
+async function safeDiff(projectId: string, taskId: number): Promise<FileDiff[]> {
+  const project = projects.get(projectId)
+  if (!project) return []
+  try {
+    return await taskDiff(project, taskId)
+  } catch {
+    return []
+  }
 }
 
 function getTask(id: string) {
@@ -64,18 +78,35 @@ export async function routes(app: FastifyInstance) {
     }
   })
 
-  app.get('/api/state', async () => ({
-    projects: projects.all(),
-    tasks: tasks.all(),
-    runs: runs.all(),
-    settings: settings.get(),
-    templates: templates.all(),
-    schedules: schedules.all(),
-    testRuns: testRuns.all(),
-    permissions: listPermissions(),
-    reviews: [],
-    diffs: {},
-  }))
+  app.get('/api/state', async () => {
+    const inReview = tasks.all().filter((t) => t.status === 'review')
+    const diffs: Record<number, FileDiff[]> = {}
+    await Promise.all(inReview.map(async (t) => (diffs[t.id] = await safeDiff(t.projectId, t.id))))
+    return {
+      projects: projects.all(),
+      tasks: tasks.all().map(withBlockedReason),
+      runs: runs.all(),
+      budgets: getBudgets(),
+      settings: settings.get(),
+      templates: templates.all(),
+      schedules: schedules.all(),
+      testRuns: testRuns.all(),
+      permissions: listPermissions(),
+      reviews: reviews.all(),
+      diffs,
+    }
+  })
+
+  app.get<{ Params: { id: string } }>('/api/tasks/:id/diff', async (req) => {
+    const t = getTask(req.params.id)
+    const project = projects.get(t.projectId)
+    if (!project) throw new HttpError(404, `Không tìm thấy project của task #${t.id}`)
+    try {
+      return await taskDiff(project, t.id)
+    } catch (e) {
+      throw new HttpError(500, `Không lấy được diff của task #${t.id}: ${(e as Error).message}`)
+    }
+  })
 
   app.get<{ Params: { id: string } }>('/api/runs/:id/events', async (req) => events.byRun(req.params.id))
 
@@ -92,7 +123,12 @@ export async function routes(app: FastifyInstance) {
     const now = Date.now()
     // Lấy dư một ngày để chắc chắn đủ dữ liệu khi lệch múi giờ; computeStats tự lọc đúng khoảng.
     const runList = runs.since(now - (opts.days + 1) * 86_400_000)
-    return computeStats({ tasks: tasks.all(), runs: runList, projects: projects.all() }, opts, now)
+    // P5-07: bảng tag × model cần mọi run của task (run đầu tiên có thể cũ hơn khoảng thời gian đang xem).
+    return computeStats(
+      { tasks: tasks.all(), runs: runList, projects: projects.all(), reviews: reviews.all(), historyRuns: runs.all() },
+      opts,
+      now,
+    )
   })
 
   // ------------------------------------------------------------ projects
@@ -115,6 +151,25 @@ export async function routes(app: FastifyInstance) {
       allowedTools: (body.allowedTools ?? []).map((t) => t.trim()).filter(Boolean),
       maxParallel: Math.min(5, Math.max(1, Number(body.maxParallel) || 1)),
       testCommand: validateTestCommand(body.testCommand),
+      defaultModel: normalizeModel(body.defaultModel) || undefined,
+      ...validateBudget(body),
+    }
+  }
+
+  /**
+   * P6 (B1): budget tháng và hành động khi vượt. Trường không gửi lên (form cũ) thì giữ giá trị đang có của project;
+   * gửi null/'' thì xoá budget (không giới hạn).
+   */
+  function validateBudget(body: Partial<Project>): Pick<Project, 'monthlyBudgetUsd' | 'budgetAction'> {
+    const cur = body.id ? projects.get(body.id) : undefined
+    try {
+      return {
+        monthlyBudgetUsd: 'monthlyBudgetUsd' in body ? parseUsd(body.monthlyBudgetUsd, 'Budget tháng') : cur?.monthlyBudgetUsd,
+        budgetAction: 'budgetAction' in body ? parseBudgetAction(body.budgetAction) : (cur?.budgetAction ?? 'warn'),
+      }
+    } catch (e) {
+      if (e instanceof BudgetError) throw new HttpError(400, e.message)
+      throw e
     }
   }
 
@@ -137,8 +192,28 @@ export async function routes(app: FastifyInstance) {
   app.post<{ Body: Partial<Project> }>('/api/projects', async (req) => {
     const p = projects.upsert(await validateProject(req.body))
     broadcast({ type: 'project', project: p })
+    refreshBudgets() // đổi budget/hành động: tính lại mức, cảnh báo và trạng thái chặn
     pump()
     return p
+  })
+
+  // FR-44: gợi ý thêm rule vào allowlist từ lịch sử duyệt. "Thêm" dùng POST /api/projects như form project.
+  app.get<{ Params: { id: string } }>('/api/projects/:id/rule-suggestions', async (req) => {
+    const p = projects.get(req.params.id)
+    if (!p) throw new HttpError(404, `Không tìm thấy project ${req.params.id}`)
+    return ruleSuggestionsFor(p)
+  })
+
+  app.post<{ Params: { id: string }; Body: { rule?: unknown } }>('/api/projects/:id/rule-suggestions/dismiss', async (req) => {
+    const p = projects.get(req.params.id)
+    if (!p) throw new HttpError(404, `Không tìm thấy project ${req.params.id}`)
+    const rule = typeof req.body?.rule === 'string' ? req.body.rule.trim() : ''
+    if (!rule) throw new HttpError(400, 'Thiếu rule cần bỏ qua')
+    if (rule.length > 4000) throw new HttpError(400, 'Rule quá dài')
+    dismissRule(p.id, rule)
+    const suggestions = ruleSuggestionsFor(p)
+    broadcast({ type: 'rule_suggestions', projectId: p.id, suggestions })
+    return suggestions
   })
 
   app.delete<{ Params: { id: string } }>('/api/projects/:id', async (req) => {
@@ -153,6 +228,7 @@ export async function routes(app: FastifyInstance) {
     for (const s of schedules.byProject(req.params.id)) broadcast({ type: 'schedule_deleted', id: s.id })
     projects.remove(req.params.id)
     broadcast({ type: 'project_deleted', id: req.params.id })
+    refreshBudgets()
     return { ok: true }
   })
 
@@ -165,6 +241,10 @@ export async function routes(app: FastifyInstance) {
     priority?: Priority
     permissionMode?: PermissionMode
     tags?: string[]
+    /** '' hoặc null: kế thừa project → Settings (P5, D2). */
+    model?: string | null
+    /** Giới hạn chi phí mỗi lần chạy (USD, `--max-budget-usd`). null/'': không giới hạn. */
+    maxCostUsd?: number | string | null
     run?: boolean
   }
 
@@ -198,6 +278,17 @@ export async function routes(app: FastifyInstance) {
         throw e
       }
     }
+    if (b.model !== undefined) out.model = normalizeModel(b.model)
+    if (b.maxCostUsd !== undefined) {
+      try {
+        const n = parseUsd(b.maxCostUsd, 'Giới hạn chi phí mỗi lần chạy')
+        if (n === 0) throw new BudgetError('Giới hạn chi phí mỗi lần chạy phải lớn hơn 0 (để trống nếu không giới hạn)')
+        out.maxCostUsd = n ?? null
+      } catch (e) {
+        if (e instanceof BudgetError) throw new HttpError(400, e.message)
+        throw e
+      }
+    }
     return out
   }
 
@@ -211,6 +302,8 @@ export async function routes(app: FastifyInstance) {
       priority: v.priority ?? 'normal',
       permissionMode: v.permissionMode ?? project.permissionMode,
       tags: v.tags ?? [],
+      model: v.model || undefined,
+      maxCostUsd: (v.maxCostUsd as number | null | undefined) ?? undefined,
       status: req.body.run ? 'queued' : 'backlog',
     })
     broadcast({ type: 'task', task: t })
@@ -221,22 +314,28 @@ export async function routes(app: FastifyInstance) {
   app.patch<{ Params: { id: string }; Body: TaskBody }>('/api/tasks/:id', async (req) => {
     const t = getTask(req.params.id)
     if (t.status !== 'backlog' && t.status !== 'queued') throw new HttpError(409, 'Chỉ sửa được task ở Backlog hoặc Queued')
-    return updateTask(t.id, { ...validateTask(req.body, true) })
+    const v = validateTask(req.body, true)
+    // Model rỗng lưu NULL (kế thừa)
+    return updateTask(t.id, { ...v, ...(v.model !== undefined ? { model: v.model || null } : {}) })
   })
 
   app.delete<{ Params: { id: string } }>('/api/tasks/:id', async (req) => {
     const t = getTask(req.params.id)
     if (isRunning(t.id)) throw new HttpError(409, 'Task đang chạy, hãy dừng trước khi xoá')
     await stopTests(t.id, 'Task đã bị xoá.')
+    const hadCost = runs.byTask(t.id).some((r) => r.costUsd)
     tasks.remove(t.id)
     broadcast({ type: 'task_deleted', id: t.id })
+    // Run của task bị xoá theo (ON DELETE CASCADE) nên chi tiêu tháng có thể giảm.
+    if (hadCost) refreshBudgets()
     return { ok: true }
   })
 
   app.post<{ Params: { id: string } }>('/api/tasks/:id/queue', async (req) => {
     const t = getTask(req.params.id)
     if (t.status !== 'backlog') throw new HttpError(409, 'Chỉ đưa vào hàng đợi task ở Backlog')
-    updateTask(t.id, { status: 'queued' })
+    // Người dùng chủ động đưa vào hàng đợi: chạy ngay khi có slot, bộ đếm tự thử lại do giới hạn sử dụng về 0.
+    updateTask(t.id, { status: 'queued', notBefore: null, rateLimitRetries: 0 })
     pump()
     return { ok: true }
   })
@@ -244,8 +343,21 @@ export async function routes(app: FastifyInstance) {
   app.post<{ Params: { id: string } }>('/api/tasks/:id/unqueue', async (req) => {
     const t = getTask(req.params.id)
     if (t.status !== 'queued') throw new HttpError(409, 'Task không ở trong hàng đợi')
-    updateTask(t.id, { status: 'backlog' })
+    updateTask(t.id, { status: 'backlog', notBefore: null, rateLimitRetries: 0 })
     return { ok: true }
+  })
+
+  // Kéo thả task sang cột Running: chạy ngay nếu còn slot, hết slot thì vào hàng đợi.
+  app.post<{ Params: { id: string } }>('/api/tasks/:id/run', async (req) => {
+    const t = getTask(req.params.id)
+    if (t.status !== 'backlog' && t.status !== 'queued') throw new HttpError(409, 'Chỉ chạy ngay được task ở Backlog hoặc Queued')
+    // P6 B3: project đặt "tạm dừng khi vượt budget" và đã vượt → không cho chạy tay.
+    if (isProjectBlocked(t.projectId))
+      throw new HttpError(
+        409,
+        'Project đã vượt budget tháng (ước tính) và đang đặt chế độ tạm dừng. Tăng budget, đổi sang chỉ cảnh báo, hoặc chờ sang tháng mới để chạy.',
+      )
+    return { ok: true, started: runNow(t.id) }
   })
 
   app.post<{ Params: { id: string } }>('/api/tasks/:id/stop', async (req) => {
@@ -258,9 +370,16 @@ export async function routes(app: FastifyInstance) {
   app.post<{ Params: { id: string } }>('/api/tasks/:id/retry', async (req) => {
     const t = getTask(req.params.id)
     if (t.status !== 'failed') throw new HttpError(409, 'Chỉ chạy lại task ở Failed')
-    updateTask(t.id, { status: 'queued', failReason: null })
-    pump()
+    // PLAN 2.7: reset worktree về mainBranch (hoặc xoá branch/worktreePath nếu đã bị Reject), xoá session cũ, rồi Queued.
+    await retryTask(t.id, { pump })
     return { ok: true }
+  })
+
+  // Tiếp tục task bị tạm dừng / lỗi / hết giới hạn sử dụng: giữ worktree, chạy tiếp phiên Claude cũ.
+  app.post<{ Params: { id: string } }>('/api/tasks/:id/resume', async (req) => {
+    const t = getTask(req.params.id)
+    const r = await resumeTask(t.id, { hasSlot, startRun, pump })
+    return { ok: true, started: r.started }
   })
 
   // ------------------------------------------------------------ chạy test trên trang Review (PLAN 4.3, FR-34)
@@ -275,20 +394,33 @@ export async function routes(app: FastifyInstance) {
     return { ok: true }
   })
 
-  // P2/P3: chưa hỗ trợ ở P1
-  app.post('/api/tasks/:id/review', async () => {
-    throw new HttpError(501, 'Review sẽ có ở giai đoạn P2')
+  // ------------------------------------------------------------ review (PLAN 2.4–2.8)
+
+  app.post<{ Params: { id: string }; Body: { action?: string; feedback?: string } }>('/api/tasks/:id/review', async (req) => {
+    const t = getTask(req.params.id)
+    const action = req.body?.action
+    if (action === 'approve') return approveTask(t.id)
+    if (action === 'request_changes') return requestChanges(t.id, req.body?.feedback, { hasSlot, startRun })
+    if (action === 'reject') return rejectTask(t.id, req.body?.feedback)
+    throw new HttpError(400, 'Thao tác review không hợp lệ (chỉ chấp nhận approve, request_changes, reject)')
   })
 
   // ------------------------------------------------------------ duyệt quyền (PLAN 3.3–3.5)
 
   initPermissions()
+  watchRuleSuggestions()
   const DECISIONS: Decision[] = ['allow', 'deny', 'always', 'timeout']
 
-  app.post<{ Params: { id: string }; Body: { decision?: Decision } }>('/api/permissions/:id', async (req) => {
+  // FR-46: duyệt hàng loạt các yêu cầu giống hệt nhau. Đăng ký trước `/:id` cho dễ đọc (Fastify ưu tiên route tĩnh).
+  app.post<{ Body: { ids?: unknown; decision?: unknown; reason?: unknown } }>('/api/permissions/batch', async (req) => {
+    const b = req.body ?? {}
+    return decidePermissionsBatch(b.ids, b.decision, b.reason)
+  })
+
+  app.post<{ Params: { id: string }; Body: { decision?: Decision; reason?: string } }>('/api/permissions/:id', async (req) => {
     const d = req.body?.decision
     if (!d || !DECISIONS.includes(d)) throw new HttpError(400, 'Quyết định không hợp lệ')
-    return decidePermission(req.params.id, d)
+    return decidePermission(req.params.id, d, d === 'deny' ? req.body?.reason : undefined)
   })
 
   interface PermissionBody {
@@ -324,6 +456,9 @@ export async function routes(app: FastifyInstance) {
   }
 
   app.get('/api/templates', async () => templates.all())
+
+  // Bộ rule allowlist có sẵn (P7-01); chỉ đọc, web tự gộp vào form project rồi lưu qua PUT /api/projects.
+  app.get('/api/permission-presets', async () => PERMISSION_PRESETS)
 
   app.post<{ Body: TemplateInput }>('/api/templates', async (req) => saveTemplate({ ...req.body, id: undefined }))
 
@@ -435,6 +570,8 @@ export async function routes(app: FastifyInstance) {
       browserNotifications: b.browserNotifications ?? cur.browserNotifications,
       notifyOn: { ...cur.notifyOn, ...b.notifyOn },
       permissionTimeoutMin: b.permissionTimeoutMin !== undefined ? Math.max(1, Number(b.permissionTimeoutMin) || 1) : cur.permissionTimeoutMin,
+      defaultModel: b.defaultModel !== undefined ? normalizeModel(b.defaultModel) : cur.defaultModel,
+      autoEscalate: b.autoEscalate !== undefined ? !!b.autoEscalate : cur.autoEscalate,
       telegram: { ...tg.telegram, hasToken: cur.telegram.hasToken },
     }
     if (tg.token !== undefined) telegramToken.set(tg.token)
@@ -443,6 +580,35 @@ export async function routes(app: FastifyInstance) {
     pump()
     return saved
   })
+
+  // P5-04: gợi ý model theo quy tắc (Lớp 1). Không gọi Claude, chỉ tính toán nên trả về ngay.
+  app.post<{ Body: { title?: unknown; prompt?: unknown; tags?: unknown; permissionMode?: unknown; projectId?: unknown } }>(
+    '/api/model-suggest',
+    async (req) => {
+      const b = req.body ?? {}
+      const str = (v: unknown, name: string) => {
+        if (v === undefined || v === null) return ''
+        if (typeof v !== 'string') throw new HttpError(400, `${name} phải là chuỗi`)
+        return v.slice(0, 100_000) // giới hạn để luôn tính nhanh
+      }
+      const title = str(b.title, 'Tiêu đề')
+      const prompt = str(b.prompt, 'Prompt')
+      if (b.tags !== undefined && b.tags !== null && (!Array.isArray(b.tags) || b.tags.some((t) => typeof t !== 'string')))
+        throw new HttpError(400, 'Tag phải là danh sách chuỗi')
+      const tags = ((b.tags as string[] | null | undefined) ?? []).slice(0, 100)
+      let project: Project | undefined
+      if (b.projectId !== undefined && b.projectId !== null && b.projectId !== '') {
+        project = projects.get(String(b.projectId))
+        if (!project) throw new HttpError(404, `Không tìm thấy project ${String(b.projectId)}`)
+      }
+      const mode = (b.permissionMode ?? project?.permissionMode ?? 'acceptEdits') as PermissionMode
+      if (!MODES.includes(mode)) throw new HttpError(400, `Mức quyền không hợp lệ: ${String(mode)}`)
+      // P5-07: có project thì Lớp 2 hiệu chỉnh theo lịch sử của project đó.
+      return modelSuggestFor({ title, prompt, tags, permissionMode: mode }, project ?? {}, settings.get(), (s) =>
+        project ? adjustByHistory(s, { projectId: project.id, tags }) : s,
+      )
+    },
+  )
 
   // Gửi thử Telegram: dùng giá trị đang nhập (nếu có) hoặc cấu hình đã lưu.
   app.post<{ Body: { botToken?: string; chatId?: string; appUrl?: string } }>('/api/settings/telegram/test', async (req) => {

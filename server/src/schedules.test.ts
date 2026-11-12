@@ -67,7 +67,7 @@ test('validateSchedule: sửa giữ next nếu cron không đổi, tắt thì xo
 
 // ---------------------------------------------------------------- fireDue với DB thật (bộ nhớ)
 
-projects.upsert({ id: 'p1', name: 'P1', repoPath: 'C:\\repo', mainBranch: 'main', permissionMode: 'plan', allowedTools: [], maxParallel: 1 })
+projects.upsert({ id: 'p1', name: 'P1', repoPath: 'C:\\repo', mainBranch: 'main', permissionMode: 'plan', allowedTools: [], maxParallel: 1, budgetAction: 'warn' })
 
 const deps: FireDeps = {
   due: schedules.due,
@@ -151,7 +151,7 @@ test('fireDue: lỗi ở một lịch không chặn lịch khác', () => {
 })
 
 test('xoá project thì lịch bị xoá theo', () => {
-  projects.upsert({ id: 'p2', name: 'P2', repoPath: 'C:\\repo2', mainBranch: 'main', permissionMode: 'plan', allowedTools: [], maxParallel: 1 })
+  projects.upsert({ id: 'p2', name: 'P2', repoPath: 'C:\\repo2', mainBranch: 'main', permissionMode: 'plan', allowedTools: [], maxParallel: 1, budgetAction: 'warn' })
   const s = schedules.upsert({ ...validateSchedule({ ...input, projectId: 'p2' }, opts({ projectExists: () => true })) })
   projects.remove('p2')
   assert.equal(schedules.get(s.id), undefined)

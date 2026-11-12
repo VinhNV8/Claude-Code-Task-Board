@@ -4,6 +4,7 @@
 // còn giao diện giữ nguyên.
 import { useSyncExternalStore } from 'react'
 import { buildSeed, defaultSettings, diffPool, feedbackDiff, promptTemplates, seedProjects } from '../mocks/data'
+import { resumeBlocker } from '../lib/resume'
 import type {
   DemoFlags,
   FileDiff,
@@ -12,9 +13,11 @@ import type {
   PermissionMode,
   PermissionRequest,
   Priority,
+  PermissionPreset,
   Project,
   PromptTemplate,
   ReviewAction,
+  RuleSuggestion,
   Run,
   RunKind,
   Schedule,
@@ -29,6 +32,7 @@ import type {
   TestRun,
   Toast,
 } from '../types'
+import { showBrowserNotification, transitionNotice, type Notice } from '../lib/notify'
 
 export interface State {
   projects: Project[]
@@ -91,6 +95,10 @@ function set(fn: (s: State) => Partial<State>) {
 export const getState = () => state
 export const IS_MOCK = true
 export function ensureEvents(_runId: string) {}
+/** Bản giả lập: diff đã nằm sẵn trong state, không có gì để tải. */
+export async function ensureDiff(_taskId: number, _force = false): Promise<string | null> {
+  return null
+}
 
 // ------------------------------------------------------------ giả lập chạy test (FR-34)
 
@@ -180,37 +188,24 @@ export function toast(t: Omit<Toast, 'id'>) {
   const id = uid()
   set((s) => ({ toasts: [...s.toasts, { ...t, id }] }))
   setTimeout(() => dismissToast(id), 6000)
-  browserNotify(t)
 }
 
 export function dismissToast(id: string) {
   set((s) => ({ toasts: s.toasts.filter((x) => x.id !== id) }))
 }
 
-function browserNotify(t: Omit<Toast, 'id'>) {
-  if (!state.settings.browserNotifications) return
-  if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return
-  try {
-    new Notification(t.title, { body: t.body })
-  } catch {
-    /* bỏ qua */
-  }
-}
-
-function notifyStatus(task: Task, status: TaskStatus) {
-  const on = state.settings.notifyOn
-  if (status === 'review' && on.review)
-    toast({ kind: 'info', title: `Cần review: #${task.id}`, body: task.title, taskId: task.id })
-  if (status === 'needs_input' && on.needsInput)
-    toast({ kind: 'warning', title: `Claude cần bạn: #${task.id}`, body: task.title, taskId: task.id })
-  if (status === 'failed' && on.failed)
-    toast({ kind: 'error', title: `Task lỗi: #${task.id}`, body: task.title, taskId: task.id })
+/** Toast kèm thông báo trình duyệt nếu đã bật (giống store thật). */
+export function notify(t: Notice, opts: { force?: boolean } = {}) {
+  toast(t)
+  if (state.settings.browserNotifications) showBrowserNotification(t, opts)
 }
 
 function setStatus(id: number, status: TaskStatus, extra: Partial<Task> = {}) {
+  const prev = state.tasks.find((t) => t.id === id)?.status
   patchTask(id, { status, ...extra })
   const task = state.tasks.find((t) => t.id === id)
-  if (task) notifyStatus(task, status)
+  const n = task && transitionNotice(prev, task, state.settings.notifyOn)
+  if (n) notify(n)
 }
 
 // ------------------------------------------------------------ kịch bản chạy giả lập
@@ -243,6 +238,17 @@ function buildScript(task: Task, kind: RunKind, feedback: string | undefined, as
       ev({ type: 'tool_result', tool: 'Read', output: '66 dòng' }),
       ev({ type: 'tool_use', tool: 'Edit', input: 'src/components/LoginForm.tsx' }),
       ev({ type: 'tool_result', tool: 'Edit', output: 'Đã sửa (+1 −1)' }),
+      { kind: 'finish' },
+    ]
+  }
+  if (kind === 'continue') {
+    return [
+      ev({ type: 'system', text: 'Tiếp tục phiên cũ (resume) trên worktree đang làm dở' }),
+      ev({ type: 'assistant', text: 'Phiên trước bị gián đoạn. Tôi kiểm tra lại các thay đổi đã làm rồi làm tiếp phần còn lại.' }),
+      ev({ type: 'tool_use', tool: 'Bash', input: 'git status --short' }),
+      ev({ type: 'tool_result', tool: 'Bash', output: ' M src/lib/price.ts' }),
+      ev({ type: 'tool_use', tool: 'Bash', input: 'npm test' }),
+      ev({ type: 'tool_result', tool: 'Bash', output: 'Test Files  6 passed (6)\n     Tests  31 passed (31)' }),
       { kind: 'finish' },
     ]
   }
@@ -285,19 +291,22 @@ function startRun(taskId: number, kind: RunKind, feedback?: string) {
   if (!task) return
   const run: Run = { id: uid(), taskId, kind, feedback, startedAt: Date.now() }
   const fails = state.demo.nextRunFails
-  const ask = state.demo.nextRunAsksPermission && kind !== 'resume'
+  const ask = state.demo.nextRunAsksPermission && kind !== 'resume' && kind !== 'continue'
   set((s) => ({
     runs: [...s.runs, run],
     demo: { ...s.demo, nextRunFails: false },
   }))
-  const sessionId = kind === 'resume' ? task.sessionId : uuid()
+  const sessionId = kind === 'resume' || kind === 'continue' ? (task.sessionId ?? uuid()) : uuid()
   patchTask(taskId, {
     status: 'running',
     startedAt: Date.now(),
     sessionId,
     branch: task.branch ?? `claude/task-${task.id}`,
+    worktreePath: task.worktreePath ?? `…/worktrees/${task.id}`,
     failReason: undefined,
     reviewWarning: undefined,
+    resumeNext: undefined,
+    notBefore: undefined,
   })
   const a: Active = { taskId, runId: run.id, steps: buildScript(task, kind, feedback, ask), idx: 0, paused: false, fails }
   if (fails) {
@@ -429,8 +438,9 @@ function pumpQueue() {
     if (runningCount() >= state.settings.maxParallel) return
     const project = state.projects.find((p) => p.id === t.projectId)
     if (project && runningCount(project.id) >= project.maxParallel) continue
+    if (t.notBefore && t.notBefore > Date.now()) continue // đang chờ giới hạn sử dụng
     const isRetry = state.runs.some((r) => r.taskId === t.id)
-    startRun(t.id, isRetry ? 'retry' : 'initial')
+    startRun(t.id, t.resumeNext ? 'continue' : isRetry ? 'retry' : 'initial')
   }
 }
 
@@ -451,6 +461,8 @@ export interface NewTask {
   priority: Priority
   permissionMode: PermissionMode
   tags: string[]
+  /** '' = kế thừa project → Settings (P5) */
+  model?: string
   run: boolean
 }
 
@@ -464,6 +476,7 @@ export async function createTask(input: NewTask): Promise<number> {
     priority: input.priority,
     permissionMode: input.permissionMode,
     tags: input.tags,
+    model: input.model || undefined,
     status: input.run ? 'queued' : 'backlog',
     createdAt: Date.now(),
     updatedAt: Date.now(),
@@ -473,7 +486,7 @@ export async function createTask(input: NewTask): Promise<number> {
   return id
 }
 
-export function updateTask(id: number, patch: Partial<Pick<Task, 'title' | 'prompt' | 'priority' | 'projectId' | 'tags' | 'permissionMode'>>) {
+export function updateTask(id: number, patch: Partial<Pick<Task, 'title' | 'prompt' | 'priority' | 'projectId' | 'tags' | 'permissionMode' | 'model'>>) {
   patchTask(id, patch)
 }
 
@@ -488,6 +501,19 @@ export function queueTask(id: number) {
 
 export function unqueueTask(id: number) {
   patchTask(id, { status: 'backlog' })
+}
+
+/** Chạy ngay (kéo task sang cột Running). Hết slot thì đưa vào hàng đợi. */
+export function runTaskNow(id: number) {
+  const t = state.tasks.find((x) => x.id === id)
+  if (!t || (t.status !== 'backlog' && t.status !== 'queued')) return
+  const project = state.projects.find((p) => p.id === t.projectId)
+  if (project && runningCount() < state.settings.maxParallel && runningCount(project.id) < project.maxParallel) {
+    startRun(id, state.runs.some((r) => r.taskId === id) ? 'retry' : 'initial')
+    return
+  }
+  patchTask(id, { status: 'queued' })
+  toast({ kind: 'info', title: `Đã đưa #${id} vào hàng đợi`, body: 'Đang hết slot chạy, task sẽ chạy khi tới lượt.' })
 }
 
 export function stopTask(id: number) {
@@ -517,8 +543,27 @@ export function retryTask(id: number) {
     delete diffs[id]
     return { diffs }
   })
-  patchTask(id, { status: 'queued', failReason: undefined })
+  patchTask(id, { status: 'queued', failReason: undefined, resumeNext: undefined, notBefore: undefined, sessionId: undefined })
   toast({ kind: 'info', title: `Đã đưa #${id} vào hàng đợi chạy lại` })
+}
+
+/** Tiếp tục task bị tạm dừng / lỗi / chờ giới hạn sử dụng: giữ thay đổi dở dang, chạy tiếp phiên cũ. */
+export function resumeTask(id: number) {
+  const t = state.tasks.find((x) => x.id === id)
+  if (!t) return
+  const blocker = resumeBlocker(t)
+  if (blocker) {
+    toast({ kind: 'error', title: 'Không tiếp tục được task', body: blocker })
+    return
+  }
+  const project = state.projects.find((p) => p.id === t.projectId)
+  if (project && runningCount() < state.settings.maxParallel && runningCount(project.id) < project.maxParallel) {
+    startRun(id, t.pendingFeedback ? 'resume' : 'continue', t.pendingFeedback)
+    toast({ kind: 'info', title: `Đang tiếp tục #${id}` })
+    return
+  }
+  patchTask(id, { status: 'queued', failReason: undefined, resumeNext: true, notBefore: undefined })
+  toast({ kind: 'info', title: `Đã đưa #${id} vào hàng đợi tiếp tục`, body: 'Đang hết slot chạy, task sẽ chạy tiếp khi tới lượt.' })
 }
 
 function addReview(taskId: number, action: ReviewAction['action'], feedback?: string) {
@@ -549,13 +594,14 @@ export function approveTask(id: number): boolean {
   return true
 }
 
-export function requestChanges(id: number, feedback: string) {
+export function requestChanges(id: number, feedback: string): boolean {
   addReview(id, 'request_changes', feedback)
   patchTask(id, { reviewWarning: undefined })
   startRun(id, 'resume', feedback)
+  return true
 }
 
-export function rejectTask(id: number) {
+export function rejectTask(id: number): boolean {
   addReview(id, 'reject')
   setStatus(id, 'failed', { failReason: 'Bị từ chối khi review. Worktree và nhánh đã bị xoá.', reviewWarning: undefined })
   set((s) => {
@@ -563,14 +609,29 @@ export function rejectTask(id: number) {
     delete diffs[id]
     return { diffs }
   })
+  return true
 }
 
-export function decidePermission(reqId: string, decision: 'allow' | 'deny' | 'always' | 'timeout') {
+/** FR-46 (giả lập): duyệt hàng loạt, bỏ qua yêu cầu không còn chờ. */
+export function decidePermissionsBatch(ids: string[], decision: 'allow' | 'deny', reason?: string) {
+  let decided = 0
+  for (const id of new Set(ids)) {
+    if (state.permissions.find((p) => p.id === id)?.status !== 'pending') continue
+    decidePermission(id, decision, reason)
+    decided++
+  }
+  const r = { decided, skipped: new Set(ids).size - decided }
+  toast({ kind: 'success', title: `${decision === 'allow' ? 'Đã cho phép' : 'Đã từ chối'} ${r.decided} yêu cầu` })
+  return r
+}
+
+export function decidePermission(reqId: string, decision: 'allow' | 'deny' | 'always' | 'timeout', reason?: string) {
   const req = state.permissions.find((p) => p.id === reqId)
   if (!req || req.status !== 'pending') return
   const status: PermissionRequest['status'] =
     decision === 'timeout' ? 'timeout' : decision === 'deny' ? 'denied' : 'allowed'
-  set((s) => ({ permissions: s.permissions.map((p) => (p.id === reqId ? { ...p, status } : p)) }))
+  const denyReason = decision === 'deny' && reason?.trim() ? reason.trim() : undefined
+  set((s) => ({ permissions: s.permissions.map((p) => (p.id === reqId ? { ...p, status, ...(denyReason ? { denyReason } : {}) } : p)) }))
 
   const task = state.tasks.find((t) => t.id === req.taskId)
   if (!task) return
@@ -678,6 +739,24 @@ export async function fetchStats(_days: StatsRange, _projectId?: string): Promis
   throw new Error('Trang thống kê chỉ có dữ liệu khi chạy với backend thật (npm run dev)')
 }
 
+// Preset allowlist (PLAN P7-01) do backend định nghĩa.
+export async function fetchPermissionPresets(): Promise<PermissionPreset[]> {
+  throw new Error('Preset quyền chỉ có khi chạy với backend thật (npm run dev)')
+}
+
+// Gợi ý rule allowlist (FR-44) tính từ lịch sử duyệt ở backend; prototype không có lịch sử nên không gợi ý.
+export async function fetchRuleSuggestions(_projectId: string): Promise<RuleSuggestion[]> {
+  return []
+}
+
+export async function dismissRuleSuggestion(_projectId: string, _rule: string): Promise<RuleSuggestion[] | undefined> {
+  return []
+}
+
+export function onRuleSuggestions(_fn: (projectId: string, list: RuleSuggestion[]) => void) {
+  return () => {}
+}
+
 // Lên lịch (PLAN 4.6): prototype chỉ lưu danh sách, không tự tạo task theo giờ.
 export type ScheduleInput = Pick<Schedule, 'cron' | 'projectId' | 'title' | 'prompt' | 'priority' | 'enabled'> & { id?: string }
 
@@ -751,3 +830,8 @@ export function resetDemo(mode: 'seed' | 'empty' | 'many') {
 
 // Bắt đầu chạy hàng đợi khi khởi động
 afterChange()
+
+// `dev:mock` thay store.ts bằng file này qua alias của Vite: tsc không thấy chỗ lệch, nên kiểm tra
+// ở đây để mọi hàm giao diện import từ store thật đều có bản giả lập (thiếu thì typecheck báo lỗi).
+type MissingInMock = Exclude<keyof typeof import('./store'), keyof typeof import('./mock')>
+export const MOCK_EXPORTS_COMPLETE: [MissingInMock] extends [never] ? true : MissingInMock = true

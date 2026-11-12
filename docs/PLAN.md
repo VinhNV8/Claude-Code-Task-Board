@@ -14,8 +14,11 @@
 | PT | ✅ Hoàn thành, đã duyệt | `npm run dev:mock` để xem lại |
 | P0 | ✅ Hoàn thành | Spike S1–S8 đều đạt, xem [P0-SPIKE.md](P0-SPIKE.md). SQLite dùng `node:sqlite` thay `better-sqlite3` (không cần build native) |
 | P1 | ✅ Hoàn thành, **chờ điểm duyệt #1** | Xem “Kết quả kiểm thử P1” bên dưới |
-| P2 | ⏳ Chưa bắt đầu | |
-| P3 | ⏳ Chưa bắt đầu | Rủi ro chính đã được gỡ ở spike S8 |
+| P2 | ✅ Đã hiện thực, **chờ điểm duyệt #2** | Worktree, diff, Approve/Request changes/Reject, Retry có unit test (`git`, `capture`, `diff`, `review`, `retry`) |
+| P3 | ✅ Hoàn thành, **chờ điểm duyệt #3** | Xem “Kết quả kiểm thử P3” bên dưới. Phần cần Claude thật: chạy tay theo hướng dẫn |
+| P5 | 🟡 Đang làm, **P5-08 bị chặn** | P5-01, 03, 04, 07 đạt. P5-02, 05 chưa làm; P5-06 mới có hàm thuần, runner chưa gọi. Xem “Kết quả kiểm thử P5” |
+| P6 | ⏳ Đã lập kế hoạch, task ở Backlog | Budget theo project (P6-01..02) |
+| P7 | ⏳ Đã lập kế hoạch, task ở Backlog | Cải tiến duyệt quyền (P7-01..05) |
 
 ### Kết quả kiểm thử P1 (qua API, Claude chạy thật)
 | Kịch bản | Kết quả |
@@ -27,6 +30,100 @@
 | Giới hạn song song theo project (=1), ưu tiên | ✅ Task thứ 2 chờ, chỉ chạy khi task 1 xong |
 | Khởi động lại server khi task đang chạy (NFR-05) | ✅ Task → Failed kèm lý do, run được đóng, không có tiến trình mồ côi |
 | Giao diện (bấm tay trên trình duyệt) | ⏳ Bạn kiểm tra ở điểm duyệt #1 |
+
+### Kết quả kiểm thử P3 (2026-11-12)
+
+**Tự động** (`server/src/p3.acceptance.test.ts`, chạy trong `npm test -w server`). Một “Claude giả” spawn **đúng tiến trình MCP server** theo cấu hình `--mcp-config` mà runner sinh ra (cwd = repo, thư mục có dấu cách), gọi tool `approve` qua stdio; backend là Fastify + routes thật.
+
+| Kịch bản PLAN P3 | Kết quả |
+|---|---|
+| MCP server có tool `approve`, khớp `--permission-prompt-tool mcp__taskboard__approve` | ✅ |
+| (1a) `npm install` ngoài whitelist → **Needs Input**, broadcast WS; Allow trên web → Claude nhận `allow`, task về Running; bấm lần 2 → 409 | ✅ |
+| (1b) Deny → Claude nhận `deny` kèm lý do tiếng Việt, task về Running, Claude xin quyền tiếp vẫn được phục vụ | ✅ |
+| (2) Lệnh trong whitelist (`npm test`, `git status`, `Read`) → allow ngay, không tạo yêu cầu, không qua Needs Input; lệnh ghép có phần ngoài whitelist vẫn phải hỏi | ✅ |
+| (3) Đóng/mở lại tab: tải lại `/api/state` vẫn thấy yêu cầu `pending` + mốc `timeoutAt`, task ở Needs Input; duyệt từ tab mới vẫn đến được Claude | ✅ |
+| (4) Quá `permissionTimeoutMin` → tự Deny, Claude nhận “Hết thời gian…”, task về Running | ✅ |
+| Bổ trợ (đã có): server khởi động lại khi đang chờ, task Stop/tiến trình kết thúc khi đang chờ, “Luôn cho phép”, sai token, mất kết nối backend | ✅ (`permissions.test.ts`, `mcp/permission.test.ts`) |
+| Tổng `npm test -w server` / `npm run typecheck` | ✅ 195/195 · ✅ không lỗi |
+
+**Chạy tay với Claude thật** (điểm duyệt #3):
+1. `npm run dev`, mở `http://localhost:3000`. Project nháp ở Settings/Projects: mức quyền `manual`, allowedTools chỉ gồm `Read`, `Bash(git status:*)`. Settings → bật thông báo trình duyệt, bấm cho phép.
+2. **Ngoài whitelist:** task “Chạy `npm init -y` rồi `npm install left-pad`”, Lưu & Chạy. Kỳ vọng: thẻ sang **Needs Input**, badge “Cần xử lý” tăng, tiêu đề tab có số, có thông báo trình duyệt (khi tab đang ẩn). Bấm **Allow** → log có “Đã cho phép: Bash(npm install…)”, task chạy tiếp, lên Review.
+3. **Deny:** lặp lại bước 2 với task mới, bấm **Deny** → Claude nhận từ chối, log có “Đã từ chối…”, Claude tự giải thích/đổi cách và kết thúc (Review hoặc Done).
+4. **Trong whitelist:** task “Chạy `git status` và tóm tắt” → chạy thẳng, log có “Tự động cho phép Bash(git status)”, không qua Needs Input.
+5. **Đóng/mở lại tab:** khi task đang Needs Input, đóng tab rồi mở lại `http://localhost:3000` → thẻ yêu cầu vẫn còn, đếm ngược đúng; bấm Allow vẫn có hiệu lực.
+6. **Timeout:** Settings → thời gian chờ duyệt = 1 phút; giao task ngoài whitelist và không bấm gì. Sau 1 phút yêu cầu tự đóng “Hết thời gian”, task chạy tiếp/kết thúc.
+7. **Luôn cho phép:** bấm “Luôn cho phép” → quy tắc (ví dụ `Bash(npm install:*)`) xuất hiện trong allowedTools của project; lần sau không hỏi lại.
+
+### Đối chiếu FR Must/Should (DoD P3)
+
+| FR | Ưu tiên | Trạng thái | Căn cứ |
+|---|---|---|---|
+| FR-01 Tạo task (tiêu đề, prompt, project, ưu tiên, mức quyền) | Must | ✅ | `POST /api/tasks`, modal tạo task |
+| FR-02 Sửa/xóa khi Backlog/Queued | Must | ✅ (lệch nhẹ) | `PATCH` chặn ngoài Backlog/Queued (409). `DELETE` rộng hơn PLAN 1.3: xóa được mọi task không đang chạy (để dọn Done/Failed). Cần bạn xác nhận giữ hay siết lại |
+| FR-03 Đưa vào hàng đợi | Must | ✅ | `/queue`, runner theo ưu tiên + `max_parallel` |
+| FR-04 Stop | Must | ✅ | `/stop`, `taskkill /T /F` (kiểm thử P1) |
+| FR-05 Retry | Should | ✅ | `/retry`, `retry.test.ts` |
+| FR-10 Kanban 7 cột | Must | ✅ | `Board.tsx` |
+| FR-11 Realtime | Must | ✅ | WS `/ws`, mọi thay đổi broadcast qua bus |
+| FR-12 Badge Needs Input + Review | Must | ✅ | `attentionCounts` (Layout), title tab |
+| FR-20 Log realtime | Must | ✅ | `stream.ts` + WS `event` |
+| FR-21 Tóm tắt kết quả | Must | ✅ | `runs.result_summary`, tab Kết quả |
+| FR-22 Thời gian, turns, chi phí | Should | ✅ | từ `result` của stream-json |
+| FR-23 Lịch sử runs | Should | ✅ | tab Lịch sử, `/api/runs/:id/events` |
+| FR-30 Danh sách file + diff | Must | ✅ | `/api/tasks/:id/diff`, `diff.test.ts` |
+| FR-31 Approve & Merge | Must | ✅ | `review.ts` (chặn repo bẩn/sai nhánh, conflict giữ Review) |
+| FR-32 Request changes (`--resume`) | Must | ✅ | `review.ts`, run `kind=resume` |
+| FR-33 Reject | Must | ✅ | xóa worktree + nhánh |
+| FR-40 Needs Input khi xin quyền / hỏi lại | Must | ✅ (một phần “hỏi lại”) | Xin quyền: MCP prompt tool (kiểm thử trên). “Hỏi lại”: ở chế độ `-p` Claude không chờ trả lời được; câu hỏi nằm trong kết quả, bạn trả lời bằng Request changes. Hook `Notification` chỉ gửi thông báo |
+| FR-41 Allow/Deny trên web | Should | ✅ | `POST /api/permissions/:id`, kiểm thử (1)(3) |
+| FR-50 Web Notification (Review, Needs Input, Failed) | Should | ✅ (cần xác nhận tay) | `lib/notify.ts`, `notifyOn` trong Settings; chỉ kiểm được trên trình duyệt |
+| FR-60 Nhiều project | Must | ✅ | `/api/projects`, validate git repo |
+| FR-61 Cấu hình theo project | Should | ✅ | mức quyền, allowedTools, max parallel trên trang Projects |
+
+**Chưa đạt:** không có FR Must/Should nào chưa đạt. Ba điểm cần bạn xác nhận khi duyệt: FR-02 (phạm vi xóa), FR-40 phần “hỏi lại” (giới hạn của chế độ headless, xử lý qua Request changes) và FR-50 (thông báo trình duyệt chỉ kiểm được bằng tay). Các FR Could (06, 07, 34, 42, 51) đã làm ở P4.
+
+### Kết quả kiểm thử P5 (2026-11-12, P5-08)
+
+**Kết luận: P5 chưa đủ điều kiện nghiệm thu.** P5-08 phụ thuộc P5-01..07, nhưng khi kiểm tra code thì P5-02, P5-05, P5-07 chưa làm và P5-06 mới có phần hàm thuần. Task P5-08 không sửa logic, nên chỉ kiểm thử phần đã có và ghi lại phần còn thiếu (xem “Vấn đề còn lại”).
+
+**Tự động** (`server/src/p5.acceptance.test.ts`, chạy trong `npm test -w server`). Dùng routes + runner thật, DB trong bộ nhớ, repo git tạm có dấu cách. “Claude giả” là `node.exe` đặt qua `CLAUDE_BIN`: nhận đúng mảng tham số runner sinh ra rồi thoát mã 9, nên mỗi run là một run lỗi thật đi qua `finish()`.
+
+| Kịch bản | Kết quả |
+|---|---|
+| Settings mặc định `auto` (D2) | ✅ |
+| Task “Sửa typo trong README” → `--model haiku`; “Thêm nút Export CSV…” (tag feature) → `sonnet`; “Refactor runner.ts… race condition” (tag refactor) → `opus` + `--fallback-model sonnet`. Cả 3 run có `model_source = auto`, có lý do, log có “Tự chọn model: … — …”; `/api/model-suggest` trả cùng model | ✅ |
+| Request changes lần 1 → run `resume` giữ `--resume <phiên cũ>` và `--model sonnet`, kể cả khi đã đổi mặc định project sang Opus (D3) | ✅ |
+| Run lỗi → Retry nâng haiku → sonnet (D6 A) | ❌ (test để `todo`): run retry vẫn `haiku` |
+| Request changes lần 2 → nâng sonnet → opus (D6 B) | ❌ (test để `todo`): run resume vẫn `sonnet` |
+| Fixture thật `server/fixtures/model-haiku.jsonl` (`claude -p … --model haiku`, CLI 2.1.322) trong `stream.test.ts`: model `claude-haiku-5-5`, `modelUsage` chỉ có Haiku, `costUsd` khớp `total_cost_usd`, `contextTokens` = 41.747 | ✅ |
+| Tổng `npm test -w server` / `npm run typecheck` | ✅ 300 đạt, 0 lỗi, 2 todo · ✅ không lỗi |
+
+Khi P5-06 được nối vào runner, bỏ `todo` ở test (3)(4) để chúng thành bắt buộc.
+
+**Đo chi phí khi đổi model lúc resume** (Claude thật, CLI 2.1.322, repo nháp trong thư mục tạm, prompt một từ). Số liệu lấy từ `usage` của request assistant. Chi phí là giá niêm yết (`costBasis: "list"`).
+
+| Lần chạy | Model | `cache_creation_input_tokens` | `cache_read_input_tokens` | Chi phí của lần chạy |
+|---|---|---|---|---|
+| Phiên đầu | Haiku | 14.470 | 27.275 | $0,00330 |
+| `--resume`, **cùng model** (Haiku) | Haiku | **331** | 41.772 | $0,00049 |
+| `--resume --fork-session`, cùng model | Haiku | 11.488 | 30.575 | $0,00261 |
+| `--resume --fork-session`, **đổi sang Sonnet** | Sonnet | **15.029** | 27.275 | $0,06292 |
+
+- Đổi model khi resume: request đầu phải ghi lại cache cho phần hội thoại (15.029 so với 331 token khi resume cùng model, khoảng 45 lần). Kết quả này khớp với phân tích ở mục “Chi phí khi đổi model”.
+- Khác với ước tính: khoảng 27k token đầu (system prompt chung của Claude Code) vẫn được **đọc từ cache** sau khi đổi model, vì cache của model mới đã có sẵn từ các phiên khác. Vậy phần phải ghi lại chỉ là phần riêng của phiên, không phải toàn bộ ngữ cảnh. Với ngữ cảnh lớn (≥ 80k, D6), phần riêng chiếm gần hết nên ước tính trong PLAN vẫn đúng hướng.
+- Cache ghi ở đây là loại 1 giờ (`ephemeral_1h_input_tokens`).
+- Phần chênh $0,0026 → $0,063 chủ yếu do giá Sonnet cao hơn Haiku. Phần do mất cache là chênh lệch về token ghi cache ở trên.
+
+**Chưa kiểm tay trên giao diện:** badge model, lý do và bảng `modelUsage` trên web chưa có (P5-02, P5-05), nên chưa kiểm được. Cũng chưa chạy 3 task mẫu bằng Claude thật qua app. Phần chọn model đã được test tự động ở trên, và CLI nhận `--model haiku` đúng như fixture cho thấy.
+
+**Vấn đề còn lại**
+1. **P5-06 chưa nối vào runner.** `escalation.ts` (`decideEscalation`, `escalationPrompt`, `manualEscalationHint`) có test, nhưng `runner.startRun` không gọi. Ngoài ra chưa có cột `runs.fail_kind`, chưa có setting `autoEscalate` và công tắc trong Settings.tsx. Hậu quả: Retry/Request changes không bao giờ nâng model.
+2. ~~**P5-07 chưa làm**~~ → đã làm (2026-11-12): `modelHistory.ts` (`computeModelStats`, `adjustSuggestion`, test ở `modelHistory.test.ts`), runner và `/api/model-suggest` áp Lớp 2 khi `auto` (cache 5 phút ở `modelHistoryService.ts`, xoá khi có review mới), `/api/stats` có `byTagModel`, Stats.tsx có bảng "Hiệu quả theo loại task × model".
+3. **P5-02 chưa làm phần web:** TaskCard không có badge model; TaskDetail không có dòng Model và bảng `modelUsage`; `computeStats` không có `byModel`. Mới có `modelLabel`/`modelTier` trong `web/src/lib/format.ts`.
+4. **P5-05 chưa làm:** TaskFormModal vẫn là select của P5-03 và không gọi `/api/model-suggest`. Template chưa có `model`. TaskCard chưa có biểu tượng nguồn. `mock.ts` chưa mock gợi ý.
+5. **Lỗi mới (không nhỏ, chưa sửa): chi phí của run resume/continue bị cộng dồn.** Với `--resume`, CLI trả `total_cost_usd` và `modelUsage` **cộng dồn cả phiên**, không phải của riêng lần chạy. Đo được: phiên đầu $0,00330, sau đó resume Haiku báo `total_cost_usd` = $0,00639, trong khi chi phí thật của lần resume là $0,00049. Resume đổi sang Sonnet thì `modelUsage` vẫn chứa dòng Haiku của lần trước. Runner lưu thẳng các giá trị này vào `runs.cost_usd` / `runs.model_usage`, nên Stats (và `byModel` của P5-02, budget của P6) sẽ **tính trùng** chi phí của mọi task có Request changes / Tiếp tục. Cách sửa gợi ý: với run resume/continue trên cùng session, trừ giá trị cộng dồn của run trước cùng `session_id`, theo từng model. Cần quyết định trước khi làm P5-02 Stats và P6.
+6. D1–D8 không cần đổi.
 
 ---
 
@@ -257,6 +354,76 @@ Bạn bấm Allow trên web ──► Backend trả {behavior:"allow"} ──►
 
 ---
 
+## P5: Tự chọn model và hiển thị model đang dùng (khoảng 4 ngày)
+
+Nguồn: [Ideas Improvement.md](Ideas%20Improvement.md), ý 1 và 4. Task chi tiết: P5-01..P5-08 trong [backlog.json](backlog.json).
+
+### Bối cảnh
+- Hiện tại runner **không truyền `--model`**, nên mọi task chạy bằng model mặc định của CLI (thường là Opus). Event `system/init` có trường `model`, nhưng code chỉ in ra log dạng text, không lưu lại.
+- Event `result` có `modelUsage`: token và `costUSD` tách theo từng model (kể cả Haiku mà Claude Code tự gọi nền). Code chưa lưu trường này.
+- Người dùng thường **không tự chọn model**, nên mặc định phải là **Tự động**: hệ thống chọn, ghi lý do, và người dùng chỉ đổi khi muốn.
+
+### Quyết định đã chốt (task không được tự đổi)
+| # | Quyết định |
+|---|---|
+| D1 | Dùng alias `haiku` / `sonnet` / `opus` truyền vào `--model`. Không lưu ID đầy đủ làm cấu hình. ID thực tế lấy từ event `init` và lưu vào `runs.model`. Ngoài alias, chỉ chấp nhận ID khớp `^claude-[a-z0-9-]+$` (ID tự nhập thì không tự nâng model). |
+| D2 | Cấu hình 3 tầng, chọn giá trị **không rỗng đầu tiên**: Task (`tasks.model`) → Project (`projects.default_model`) → Settings (`defaultModel`). Giá trị `'auto'` nghĩa là gọi bộ chọn model. Cả 3 tầng đều rỗng thì không truyền `--model`. Mặc định Settings là `'auto'`. |
+| D3 | Model được chọn **lúc run bắt đầu**, không phải lúc tạo task. Run `resume` / `continue` **dùng lại model của run trước** để giữ prompt cache, trừ khi đang nâng model (D6). |
+| D4 | Lớp 1 là chấm điểm theo quy tắc: hàm thuần, không gọi model, giải thích được. Bảng điểm cụ thể ở task P5-04. Ngưỡng: ≤ −2 → haiku, ≥ 3 → opus, còn lại → sonnet. |
+| D5 | Lớp 2 là tự học từ lịch sử: chỉ điều chỉnh khi có ≥ 10 mẫu, và mỗi lần chỉ dịch **một bậc**. |
+| D6 | Lớp 3 là tự nâng model khi thất bại: Retry sau run lỗi, hoặc Request changes lần thứ 2 trở đi, thì lên một bậc (haiku → sonnet → opus). Không nâng nếu model do người dùng chọn tay. Resume có ngữ cảnh ≥ 80k token thì mở **phiên mới kèm tóm tắt** thay vì `--resume`, vì cache gắn với từng model. |
+| D7 | **Không** dùng LLM để phân loại prompt (Lớp 4) ở giai đoạn này. |
+| D8 | Mỗi run lưu `model`, `model_source` (`auto` / `manual` / `default` / `escalated`), `model_reason`, và `model_usage` (JSON). |
+
+### Chi phí khi đổi model (để kiểm chứng ở P5-08)
+- Lớp 1, Lớp 2, gợi ý trực tiếp khi gõ, và hiển thị model đều không tốn thêm token.
+- Prompt cache gắn với từng model. Đổi model khi resume thì request đầu tiên phải ghi lại cache (giá ×2 input) thay vì đọc cache (giá ×0,1). Ví dụ 100k token chuyển từ Sonnet lên Opus tốn khoảng $0,80 thay vì khoảng $0,02. D6 giảm khoản này bằng cách mở phiên mới khi ngữ cảnh lớn.
+- Chi phí chính là khi **đoán sai**: lần chạy rẻ bị hỏng thì tiền của lần đó mất. Lớp 2 giảm khoản này theo thời gian.
+- Với gói subscription, `total_cost_usd` là chi phí quy đổi theo giá niêm yết (`costBasis: "list"`), không phải tiền thật bị trừ.
+
+### Task
+| Mã | Nội dung | Phụ thuộc |
+|---|---|---|
+| P5-01 | Lưu model thực tế và `model_usage` của từng run | — |
+| P5-02 | Web: hiển thị model (TaskCard, TaskDetail, Stats theo model) | P5-01 |
+| P5-03 | Cấu hình model 3 tầng và truyền `--model` | P5-01 |
+| P5-04 | `modelPicker.ts`: Lớp 1, `'auto'`, API `/api/model-suggest` | P5-03 |
+| P5-05 | Web: chế độ "🤖 Tự động", gợi ý trực tiếp khi gõ, model trong template | P5-02, P5-04 |
+| P5-06 | Lớp 3: tự nâng model khi thất bại | P5-04 |
+| P5-07 | Lớp 2: tự học từ lịch sử, bảng tag × model ở trang Stats | P5-06 |
+| P5-08 | Kiểm thử P5 (Claude thật), cập nhật PLAN | P5-01..07 |
+
+## P6: Budget theo project (khoảng 1,5 ngày)
+
+Nguồn: Ideas Improvement, ý 3. Hiện có `runs.cost_usd`, và [stats.ts](../server/src/stats.ts) đã cộng chi phí theo project, nhưng chưa có hạn mức.
+
+| # | Quyết định |
+|---|---|
+| B1 | Mỗi project có `monthly_budget_usd` (để trống là không giới hạn) và `budget_action` (`warn` hoặc `pause`, mặc định `warn`). Tháng tính theo giờ địa phương của server. |
+| B2 | Đạt 80% thì cảnh báo; đạt 100% thì cảnh báo lần nữa. Mỗi mức chỉ báo **một lần mỗi tháng**, qua toast web và Telegram (nếu đang bật). |
+| B3 | `pause` và đã ≥ 100%: `pump()` không chạy task **mới** của project đó (task vẫn ở Queued, ghi rõ lý do). Task đang chạy thì để chạy xong. Sang tháng mới thì tự chạy lại. |
+| B4 | Khi project đã ≥ 80% budget, Lớp 3 (P5-06) không nâng model quá `sonnet`. |
+| B5 | Mọi số tiền hiển thị kèm chữ "ước tính", vì đây là giá niêm yết. |
+
+| Mã | Nội dung | Phụ thuộc |
+|---|---|---|
+| P6-01 | Backend: budget, cảnh báo, tạm dừng hàng đợi | — (nối với P5-06 nếu đã có) |
+| P6-02 | Web: thanh budget, form project, dự báo cuối tháng | P6-01 |
+
+## P7: Cải tiến duyệt quyền (khoảng 2,5 ngày)
+
+Nguồn: Ideas Improvement, ý 2. Cơ chế duyệt **đã chạy** từ P3 (MCP `--permission-prompt-tool`, Needs Input, allowlist, "Luôn cho phép", timeout). P7 nhằm giảm số lần phải duyệt và giúp duyệt nhanh hơn.
+
+| Mã | Nội dung | Phụ thuộc |
+|---|---|---|
+| P7-01 | Preset allowlist (Node, Python, git chỉ đọc, chỉ đọc file) | — |
+| P7-02 | Gợi ý rule từ lịch sử duyệt | — |
+| P7-03 | Duyệt quyền qua Telegram (nút inline, long polling) | — |
+| P7-04 | Phân loại rủi ro: lệnh nguy hiểm tô đỏ, không cho "Luôn cho phép" | — |
+| P7-05 | Từ chối kèm lý do, duyệt hàng loạt ở Inbox | P7-04 |
+
+---
+
 ## Quy trình làm việc
 
 - **Nhánh git**: mỗi giai đoạn một nhánh `phase/p1-mvp`, ...; merge sau khi bạn duyệt.
@@ -271,7 +438,7 @@ Bạn bấm Allow trên web ──► Backend trả {behavior:"allow"} ──►
 | P1 | Spawn `claude` trên Windows lỗi path/quote | Truyền prompt qua stdin thay vì argument nếu cần |
 | P2 | Merge khi repo chính đang bẩn hoặc sai nhánh | Kiểm tra trước khi merge, chặn và báo rõ |
 | P3 | Permission prompt tool không ổn định | Phương án dự phòng whitelist (xem trên) |
-| Chung | Vượt giới hạn sử dụng của gói | `max_parallel=2`, nhận diện lỗi rate limit, tự đưa task lại vào Queued sau một khoảng chờ |
+| Chung | Vượt giới hạn sử dụng của gói | `max_parallel=2`, nhận diện lỗi rate limit (429, `rate_limit_event` rejected, thông điệp usage limit), tự đưa task lại vào Queued với `not_before` (giờ reset + 1 phút, mặc định chờ 15 phút), tối đa 3 lần rồi mới Failed (C-01, `server/src/rateLimit.ts`) |
 
 ---
 

@@ -49,6 +49,24 @@ npm run seed:backlog                # tạo task ở cột Backlog
 | P4-05 | Thông báo Telegram | low | P3-08 | 4.5 |
 | P4-06 | Lên lịch task (cron) | low | P3-08 | 4.6 |
 | P4-07 | Truy cập từ xa (Tailscale + token) | low | P3-08 | 4.7 |
+| **P5: Chọn model tự động** | | | | |
+| P5-01 | Lưu model thực tế + `model_usage` của run | high | — | P5 D8 |
+| P5-02 | Web: hiển thị model (TaskCard, TaskDetail, Stats) | normal | P5-01 | P5 |
+| P5-03 | Cấu hình model 3 tầng + `--model` | high | P5-01 | P5 D1–D3 |
+| P5-04 | `modelPicker.ts` Lớp 1 + `auto` + `/api/model-suggest` | high | P5-03 | P5 D3–D4 |
+| P5-05 | Web: chế độ Tự động, gợi ý khi gõ, model trong template | normal | P5-02, P5-04 | P5 |
+| P5-06 | Lớp 3: tự nâng model khi thất bại | normal | P5-04 | P5 D6 |
+| P5-07 | Lớp 2: học từ lịch sử + bảng tag × model | low | P5-06 | P5 D5 |
+| P5-08 | Kiểm thử P5, cập nhật PLAN | normal | P5-01..07 | P5 |
+| **P6: Budget theo project** | | | | |
+| P6-01 | Backend budget, cảnh báo, tạm dừng hàng đợi | normal | — | P6 B1–B5 |
+| P6-02 | Web: budget trên Projects/Stats | normal | P6-01 | P6 |
+| **P7: Cải tiến duyệt quyền** | | | | |
+| P7-01 | Preset allowlist | normal | — | P7 |
+| P7-02 | Gợi ý rule từ lịch sử duyệt | normal | — | P7 |
+| P7-03 | Duyệt quyền qua Telegram | low | — | P7 |
+| P7-04 | Phân loại rủi ro lệnh | normal | — | P7 |
+| P7-05 | Từ chối kèm lý do + duyệt hàng loạt | low | P7-04 | P7 |
 
 ## Việc của bạn (không giao cho Claude)
 - [ ] **Điểm duyệt #1**: bấm thử giao diện P1 trên trình duyệt (PLAN, mục "Kết quả kiểm thử P1").

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Bell, CalendarClock, Cpu, FileText, Info, Timer } from 'lucide-react'
-import { IS_MOCK, saveTelegram, testTelegram, toast, updateSettings, useStore } from '../store/store'
+import { IS_MOCK, notify, saveTelegram, testTelegram, toast, updateSettings, useStore } from '../store/store'
+import { MODEL_OPTIONS } from '../lib/model'
 import { Button, Field, inputCls } from '../components/ui'
 import { TemplateManager } from '../components/TemplateManager'
 import { ScheduleManager } from '../components/ScheduleManager'
@@ -133,6 +134,28 @@ export function Settings() {
             onChange={(e) => updateSettings({ maxParallel: Math.max(1, Number(e.target.value) || 1) })}
           />
         </Field>
+        <Field label="Model mặc định" hint="Dùng khi task và project đều không chọn model. Run sửa theo review / tiếp tục giữ model của lần chạy trước.">
+          <select className={`${inputCls} w-64`} value={settings.defaultModel} onChange={(e) => updateSettings({ defaultModel: e.target.value })}>
+            <option value="">Mặc định của Claude CLI</option>
+            {MODEL_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+            {settings.defaultModel && !MODEL_OPTIONS.some((o) => o.value === settings.defaultModel) && (
+              <option value={settings.defaultModel}>{settings.defaultModel}</option>
+            )}
+          </select>
+        </Field>
+        <label className="flex items-center gap-3">
+          <input type="checkbox" checked={settings.autoEscalate ?? true} onChange={(e) => updateSettings({ autoEscalate: e.target.checked })} />
+          <span className="text-sm">
+            Tự nâng model khi task thất bại
+            <span className="block text-xs text-slate-500">
+              Retry sau lần chạy lỗi, hoặc Yêu cầu sửa từ lần thứ 2, sẽ lên một bậc (Haiku → Sonnet → Opus). Không áp dụng cho model chọn tay.
+            </span>
+          </span>
+        </label>
       </Section>
 
       <Section icon={<Timer size={18} />} title="Xin quyền (Needs Input)">
@@ -175,7 +198,7 @@ export function Settings() {
             ))}
           </div>
         </div>
-        <Button size="sm" onClick={() => toast({ kind: 'info', title: 'Thông báo thử', body: 'Bạn sẽ nhận thông báo như thế này' })}>
+        <Button size="sm" onClick={() => notify({ kind: 'info', title: 'Thông báo thử', body: 'Bạn sẽ nhận thông báo như thế này' }, { force: true })}>
           Gửi thông báo thử
         </Button>
         <TelegramSettings />

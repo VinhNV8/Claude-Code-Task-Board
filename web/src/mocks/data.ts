@@ -26,6 +26,7 @@ export const seedProjects: Project[] = [
     allowedTools: ['Read', 'Edit', 'Write', 'Glob', 'Grep', 'Bash(npm test:*)', 'Bash(git status)'],
     maxParallel: 2,
     testCommand: 'npm test',
+    budgetAction: 'warn',
   },
   {
     id: 'p-api',
@@ -36,6 +37,7 @@ export const seedProjects: Project[] = [
     allowedTools: ['Read', 'Edit', 'Glob', 'Grep', 'Bash(dotnet test:*)'],
     maxParallel: 1,
     testCommand: 'dotnet test',
+    budgetAction: 'warn',
   },
   {
     id: 'p-docs',
@@ -45,6 +47,7 @@ export const seedProjects: Project[] = [
     permissionMode: 'manual',
     allowedTools: ['Read', 'Glob', 'Grep'],
     maxParallel: 1,
+    budgetAction: 'warn',
   },
 ]
 
@@ -53,6 +56,8 @@ export const defaultSettings: Settings = {
   browserNotifications: false,
   notifyOn: { review: true, needsInput: true, failed: true },
   permissionTimeoutMin: 30,
+  defaultModel: 'auto',
+  autoEscalate: true,
   telegram: { enabled: false, chatId: '', appUrl: '', hasToken: false },
 }
 

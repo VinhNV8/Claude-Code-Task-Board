@@ -1,4 +1,4 @@
-import type { Priority, TaskStatus } from '../types'
+import type { Priority, TaskStatus } from '../types.ts'
 
 export const STATUS_META: Record<TaskStatus, { label: string; dot: string; badge: string; col: string }> = {
   backlog: { label: 'Backlog', dot: 'bg-slate-400', badge: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300', col: 'border-t-slate-400' },
@@ -40,6 +40,38 @@ export function clock(ts: number) {
   return new Date(ts).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
 }
 
+/** Giờ:phút theo giờ máy, ví dụ "15:30". */
+export function hhmm(ts: number) {
+  return new Date(ts).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })
+}
+
 export function usd(v?: number) {
   return v === undefined ? '—' : `$${v.toFixed(2)}`
+}
+
+export type ModelTier = 'haiku' | 'sonnet' | 'opus' | 'other'
+
+const FAMILIES = ['haiku', 'sonnet', 'opus'] as const
+const cap = (s: string) => s[0].toUpperCase() + s.slice(1)
+
+/**
+ * Tên model dễ đọc: "claude-opus-5-5" → "Opus 5.5", "claude-sonnet-5" → "Sonnet 5", alias "opus" → "Opus".
+ * Bỏ hậu tố ngày ("-20250929") và "[1m]". Không khớp mẫu thì trả nguyên chuỗi, rỗng/undefined thì "—".
+ */
+export function modelLabel(id?: string): string {
+  if (!id) return '—'
+  const s = id.trim().toLowerCase()
+  if ((FAMILIES as readonly string[]).includes(s)) return cap(s)
+  const m = /^claude-(haiku|sonnet|opus)-(\d+)(?:-(\d{1,2}))?(?:-\d{8})?(?:\[1m\])?$/.exec(s)
+  if (!m) return id
+  return `${cap(m[1])} ${m[2]}${m[3] ? `.${m[3]}` : ''}`
+}
+
+/** Bậc model theo họ (haiku/sonnet/opus), dùng cho màu hiển thị và nâng bậc. */
+export function modelTier(id?: string): ModelTier {
+  if (!id) return 'other'
+  const s = id.trim().toLowerCase()
+  if ((FAMILIES as readonly string[]).includes(s)) return s as ModelTier
+  const m = /^claude-(haiku|sonnet|opus)(?:-|$)/.exec(s)
+  return m ? (m[1] as ModelTier) : 'other'
 }

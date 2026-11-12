@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
+import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom'
 import {
   Bell,
@@ -20,10 +20,12 @@ import {
   X,
   XCircle,
 } from 'lucide-react'
-import { IS_MOCK, dismissToast, resetDemo, setDemo, useStore } from '../store/store'
+import { IS_MOCK, dismissToast, getState, resetDemo, setDemo, updateSettings, useStore } from '../store/store'
+import { askPermissionOnce } from '../lib/notify'
 import { TaskFormModal } from './TaskFormModal'
 import { fetchAuthStatus, logout } from '../lib/auth'
 import { compactBadge, isSidebarShortcut, loadCollapsed, saveCollapsed } from '../lib/sidebar'
+import { attentionCounts } from '../lib/review'
 
 // Nhãn môi trường để không nhầm tab DEV với UAT. Bản prod/mock không hiện nhãn.
 const ENV_BADGE: Record<string, { label: string; cls: string } | undefined> = {
@@ -107,12 +109,29 @@ export function Layout() {
       .then((a) => setAuthRequired(a.required))
       .catch(() => undefined)
   }, [])
-  const attention = s.tasks.filter((t) => t.status === 'needs_input' || t.status === 'review').length
-  const needsInput = s.tasks.filter((t) => t.status === 'needs_input').length
+  const { total: attention, needsInput } = useMemo(() => attentionCounts(s.tasks, s.permissions), [s.tasks, s.permissions])
 
   useEffect(() => {
     document.title = attention > 0 ? `(${attention}) ${TITLE}` : TITLE
   }, [attention])
+
+  // Thông báo trình duyệt (PLAN 3.9): xin quyền một lần ở thao tác đầu tiên (trình duyệt chỉ cho hỏi
+  // khi có thao tác người dùng). Đồng ý thì bật luôn; từ chối thì không hỏi lại, bật lại trong Cài đặt.
+  useEffect(() => {
+    const onFirst = () => {
+      window.removeEventListener('pointerdown', onFirst)
+      window.removeEventListener('keydown', onFirst)
+      void askPermissionOnce().then((r) => {
+        if (r === 'granted' && !getState().settings.browserNotifications) void updateSettings({ browserNotifications: true })
+      })
+    }
+    window.addEventListener('pointerdown', onFirst)
+    window.addEventListener('keydown', onFirst)
+    return () => {
+      window.removeEventListener('pointerdown', onFirst)
+      window.removeEventListener('keydown', onFirst)
+    }
+  }, [])
 
   // phím tắt N: tạo task mới
   useEffect(() => {

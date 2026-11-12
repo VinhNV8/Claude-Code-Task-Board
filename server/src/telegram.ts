@@ -143,6 +143,8 @@ export interface NotifierDeps {
   projectName: (projectId: string) => string | undefined
   send: (cfg: TelegramConfig, text: string) => Promise<void>
   log: (msg: string) => void
+  /** Bỏ qua tin chung cho task này (vd. Needs Input do xin quyền: đã có tin kèm nút duyệt, P7-03). */
+  skip?: (task: Task) => boolean
 }
 
 /**
@@ -165,6 +167,7 @@ export function createTelegramNotifier(deps: NotifierDeps) {
       const tg = s.telegram
       if (!tg?.enabled || !tg.chatId) return
       if (!shouldNotify(prev, task.status, s.notifyOn)) return
+      if (deps.skip?.(task)) return
       const token = deps.getToken()
       if (!token) return
       const text = formatTaskMessage(task, { projectName: deps.projectName(task.projectId), appUrl: tg.appUrl })

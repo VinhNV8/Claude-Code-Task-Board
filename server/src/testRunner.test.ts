@@ -25,6 +25,7 @@ function setup(testCommand: string | undefined, status: 'review' | 'running' = '
     permissionMode: 'acceptEdits',
     allowedTools: [],
     maxParallel: 1,
+    budgetAction: 'warn' as const,
     testCommand,
   })
   const t = tasks.create({ projectId: p.id, title: 't', prompt: 'p'.repeat(10), status, priority: 'normal', permissionMode: 'acceptEdits', tags: [] })

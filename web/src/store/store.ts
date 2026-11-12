@@ -6,11 +6,14 @@ import type {
   FileDiff,
   LogEvent,
   PermissionMode,
+  PermissionPreset,
   PermissionRequest,
   Priority,
   Project,
+  ProjectBudget,
   PromptTemplate,
   ReviewAction,
+  RuleSuggestion,
   Run,
   Schedule,
   ScheduleRun,
@@ -26,6 +29,7 @@ import type {
 } from '../types'
 import { EMPTY_TEST_OUTPUT, appendTestOutput } from '../lib/testOutput'
 import { checkStillAuthenticated, onUnauthorized } from '../lib/auth'
+import { showBrowserNotification, transitionNotice, type Notice } from '../lib/notify'
 
 export interface State {
   projects: Project[]
@@ -42,6 +46,8 @@ export interface State {
   testRuns: TestRun[]
   /** Output test theo task, chỉ có với task đã mở panel test */
   testOutputs: Record<number, TestOutput>
+  /** Chi tiêu tháng hiện tại theo project (PLAN P6, ước tính) */
+  budgets: Record<string, ProjectBudget>
   toasts: Toast[]
   settings: Settings
   demo: DemoFlags
@@ -65,12 +71,15 @@ let state: State = {
   reviews: [],
   testRuns: [],
   testOutputs: {},
+  budgets: {},
   toasts: [],
   settings: {
     maxParallel: 2,
     browserNotifications: false,
     notifyOn: { review: true, needsInput: true, failed: true },
     permissionTimeoutMin: 30,
+    defaultModel: 'auto',
+    autoEscalate: true,
     telegram: { enabled: false, chatId: '', appUrl: '', hasToken: false },
   },
   demo: { speed: 1, mergeConflict: false, dirtyMainRepo: false, nextRunFails: false, nextRunAsksPermission: false },
@@ -103,26 +112,22 @@ export function toast(t: Omit<Toast, 'id'>) {
   const id = uid()
   set((s) => ({ toasts: [...s.toasts, { ...t, id }] }))
   setTimeout(() => dismissToast(id), 6000)
-  if (state.settings.browserNotifications && typeof Notification !== 'undefined' && Notification.permission === 'granted' && document.hidden) {
-    try {
-      new Notification(t.title, { body: t.body })
-    } catch {
-      /* bỏ qua */
-    }
-  }
 }
 
 export function dismissToast(id: string) {
   set((s) => ({ toasts: s.toasts.filter((x) => x.id !== id) }))
 }
 
+/** Toast trong trang, kèm thông báo của trình duyệt nếu đã bật (PLAN 3.9). `force`: hiện cả khi đang xem tab. */
+export function notify(t: Notice, opts: { force?: boolean } = {}) {
+  toast(t)
+  if (state.settings.browserNotifications) showBrowserNotification(t, opts)
+}
+
 function notifyTransition(prev: TaskStatus | undefined, task: Task) {
-  if (!prev || prev === task.status) return
-  const on = state.settings.notifyOn
-  if (task.status === 'review' && on.review) toast({ kind: 'info', title: `Cần review: #${task.id}`, body: task.title, taskId: task.id })
-  if (task.status === 'needs_input' && on.needsInput) toast({ kind: 'warning', title: `Claude cần bạn: #${task.id}`, body: task.title, taskId: task.id })
-  if (task.status === 'failed' && on.failed) toast({ kind: 'error', title: `Task lỗi: #${task.id}`, body: task.failReason ?? task.title, taskId: task.id })
-  if (task.status === 'done' && prev === 'running') toast({ kind: 'success', title: `Hoàn thành: #${task.id}`, body: task.title, taskId: task.id })
+  const n = transitionNotice(prev, task, state.settings.notifyOn)
+  if (n) notify(n)
+  else if (task.status === 'done' && prev === 'running') toast({ kind: 'success', title: `Hoàn thành: #${task.id}`, body: task.title, taskId: task.id })
 }
 
 // ------------------------------------------------------------ REST
@@ -157,10 +162,12 @@ async function act<T>(fn: () => Promise<T>, errorTitle = 'Thao tác thất bại
 }
 
 async function loadState() {
-  const s = await api<Pick<State, 'projects' | 'templates' | 'schedules' | 'tasks' | 'runs' | 'settings' | 'permissions' | 'reviews' | 'diffs' | 'testRuns'>>('GET', '/state')
+  const s = await api<
+    Pick<State, 'projects' | 'templates' | 'schedules' | 'tasks' | 'runs' | 'settings' | 'permissions' | 'reviews' | 'diffs' | 'testRuns' | 'budgets'>
+  >('GET', '/state')
   loadedRuns.clear()
   loadedTests.clear()
-  set(() => ({ ...s, schedules: s.schedules ?? [], testRuns: s.testRuns ?? [], testOutputs: {}, events: [], loaded: true }))
+  set(() => ({ ...s, schedules: s.schedules ?? [], testRuns: s.testRuns ?? [], budgets: s.budgets ?? {}, testOutputs: {}, events: [], loaded: true }))
 }
 
 // ------------------------------------------------------------ output chạy test (FR-34, tải khi mở panel)
@@ -205,6 +212,39 @@ export function ensureEvents(runId: string) {
     .catch(() => loadedRuns.delete(runId))
 }
 
+// ------------------------------------------------------------ diff của task (PLAN 2.9, tải khi mở task)
+
+const diffRequests = new Map<number, Promise<string | null>>()
+
+/**
+ * Lấy diff qua `GET /api/tasks/:id/diff` nếu state chưa có (hoặc `force`).
+ * Trả về thông báo lỗi để hiện trong tab, hoặc null khi thành công. Gọi trùng thì dùng chung một request.
+ */
+export function ensureDiff(taskId: number, force = false): Promise<string | null> {
+  if (!force && state.diffs[taskId] !== undefined) return Promise.resolve(null)
+  const inflight = diffRequests.get(taskId)
+  if (inflight) return inflight
+  const req = api<FileDiff[]>('GET', `/tasks/${taskId}/diff`)
+    .then((files) => {
+      // Task đã bị xoá trong lúc tải thì bỏ qua
+      if (state.tasks.some((t) => t.id === taskId)) set((s) => ({ diffs: { ...s.diffs, [taskId]: files } }))
+      return null
+    })
+    .catch((e: Error) => e.message)
+    .finally(() => diffRequests.delete(taskId))
+  diffRequests.set(taskId, req)
+  return req
+}
+
+function dropDiff(taskId: number) {
+  if (state.diffs[taskId] === undefined) return
+  set((s) => {
+    const diffs = { ...s.diffs }
+    delete diffs[taskId]
+    return { diffs }
+  })
+}
+
 // ------------------------------------------------------------ WebSocket
 
 type ServerMessage =
@@ -224,6 +264,11 @@ type ServerMessage =
   | { type: 'schedule'; schedule: Schedule }
   | { type: 'schedule_deleted'; id: string }
   | { type: 'schedule_run'; run: ScheduleRun }
+  | { type: 'diff'; taskId: number; files: FileDiff[] }
+  | { type: 'review'; review: ReviewAction }
+  | { type: 'budgets'; budgets: Record<string, ProjectBudget> }
+  | { type: 'budget_alert'; projectId: string; level: 'warn' | 'over'; month: string; message: string }
+  | { type: 'rule_suggestions'; projectId: string; suggestions: RuleSuggestion[] }
 
 const upsert = <T extends { id: unknown }>(list: T[], item: T) =>
   list.some((x) => x.id === item.id) ? list.map((x) => (x.id === item.id ? item : x)) : [...list, item]
@@ -237,7 +282,19 @@ function onMessage(m: ServerMessage) {
       break
     }
     case 'task_deleted':
-      set((s) => ({ tasks: s.tasks.filter((t) => t.id !== m.id), testRuns: s.testRuns.filter((r) => r.taskId !== m.id) }))
+      set((s) => {
+        const diffs = { ...s.diffs }
+        delete diffs[m.id]
+        return {
+          tasks: s.tasks.filter((t) => t.id !== m.id),
+          testRuns: s.testRuns.filter((r) => r.taskId !== m.id),
+          reviews: s.reviews.filter((r) => r.taskId !== m.id),
+          diffs,
+        }
+      })
+      break
+    case 'diff':
+      set((s) => ({ diffs: { ...s.diffs, [m.taskId]: m.files } }))
       break
     case 'test_run': {
       const r = m.testRun
@@ -259,6 +316,8 @@ function onMessage(m: ServerMessage) {
       break
     }
     case 'run':
+      // Retry chạy lại từ nhánh chính: diff cũ không còn đúng (diff mới sẽ được broadcast khi lên Review)
+      if (m.run.kind === 'retry' && !state.runs.some((r) => r.id === m.run.id)) dropDiff(m.run.taskId)
       set((s) => ({ runs: upsert(s.runs, m.run) }))
       break
     case 'event':
@@ -302,10 +361,25 @@ function onMessage(m: ServerMessage) {
     case 'permission':
       set((s) => ({ permissions: upsert(s.permissions, m.permission) }))
       break
+    case 'rule_suggestions':
+      ruleSuggestionListeners.forEach((l) => l(m.projectId, m.suggestions))
+      break
+    case 'review':
+      set((s) => ({ reviews: upsert(s.reviews, m.review) }))
+      // Reject xoá nhánh task: không còn diff. Approve giữ diff để xem lại những gì đã merge.
+      if (m.review.action === 'reject') dropDiff(m.review.taskId)
+      break
     case 'notification':
       // Hook Notification của Claude (PLAN 3.6); nội dung cũng đã nằm trong log dưới dạng event system.
       if (state.settings.notifyOn.needsInput)
-        toast({ kind: 'warning', title: `#${m.taskId}: ${m.title ?? 'Claude gửi thông báo'}`, body: m.message, taskId: m.taskId })
+        notify({ kind: 'warning', title: `#${m.taskId}: ${m.title ?? 'Claude gửi thông báo'}`, body: m.message, taskId: m.taskId })
+      break
+    case 'budgets':
+      set(() => ({ budgets: m.budgets }))
+      break
+    case 'budget_alert':
+      // P6 B2: mỗi mức chỉ báo một lần mỗi tháng (server đã lọc).
+      notify({ kind: m.level === 'over' ? 'error' : 'warning', title: m.level === 'over' ? 'Vượt budget tháng' : 'Sắp hết budget tháng', body: m.message })
       break
   }
 }
@@ -348,6 +422,8 @@ export interface NewTask {
   priority: Priority
   permissionMode: PermissionMode
   tags: string[]
+  /** '' = kế thừa project → Settings (P5) */
+  model?: string
   run: boolean
 }
 
@@ -359,7 +435,7 @@ export async function createTask(input: NewTask): Promise<number> {
   return t.id
 }
 
-export function updateTask(id: number, patch: Partial<Pick<Task, 'title' | 'prompt' | 'priority' | 'projectId' | 'tags' | 'permissionMode'>>) {
+export function updateTask(id: number, patch: Partial<Pick<Task, 'title' | 'prompt' | 'priority' | 'projectId' | 'tags' | 'permissionMode' | 'model'>>) {
   return act(() => api('PATCH', `/tasks/${id}`, patch), 'Không lưu được task')
 }
 
@@ -371,24 +447,80 @@ export const queueTask = (id: number) => act(() => api('POST', `/tasks/${id}/que
 export const unqueueTask = (id: number) => act(() => api('POST', `/tasks/${id}/unqueue`))
 export const stopTask = (id: number) => act(() => api('POST', `/tasks/${id}/stop`), 'Không dừng được task')
 
+/** Chạy ngay (kéo task sang cột Running). Hết slot thì server đưa vào hàng đợi. */
+export async function runTaskNow(id: number) {
+  const r = await act(() => api<{ started: boolean }>('POST', `/tasks/${id}/run`), 'Không chạy được task')
+  if (r && !r.started) toast({ kind: 'info', title: `Đã đưa #${id} vào hàng đợi`, body: 'Đang hết slot chạy, task sẽ chạy khi tới lượt.' })
+}
+
 export async function retryTask(id: number) {
   if (await act(() => api('POST', `/tasks/${id}/retry`))) toast({ kind: 'info', title: `Đã đưa #${id} vào hàng đợi chạy lại` })
 }
 
+/** Tiếp tục task bị tạm dừng / lỗi / hết giới hạn sử dụng: chạy tiếp phiên Claude cũ trên worktree đang dở. */
+export async function resumeTask(id: number) {
+  const r = await act(() => api<{ started: boolean }>('POST', `/tasks/${id}/resume`), 'Không tiếp tục được task')
+  if (r)
+    toast(
+      r.started
+        ? { kind: 'info', title: `Đang tiếp tục #${id}` }
+        : { kind: 'info', title: `Đã đưa #${id} vào hàng đợi tiếp tục`, body: 'Đang hết slot chạy, task sẽ chạy tiếp khi tới lượt.' },
+    )
+}
+
+// Review (PLAN 2.10). Lỗi (conflict, repo chính chưa sạch...) hiện toast; server đồng thời ghi
+// `reviewWarning` lên task và broadcast nên banner cảnh báo trong tab Review cũng cập nhật.
+
+type ReviewResult = { task: Task; review: ReviewAction; queued?: boolean }
+
+function applyReview(r: ReviewResult) {
+  onMessage({ type: 'review', review: r.review })
+  onMessage({ type: 'task', task: r.task })
+}
+
 export async function approveTask(id: number): Promise<boolean> {
-  return !!(await act(() => api('POST', `/tasks/${id}/review`, { action: 'approve' }), 'Không merge được'))
+  const r = await act(() => api<ReviewResult>('POST', `/tasks/${id}/review`, { action: 'approve' }), 'Không merge được')
+  if (!r) return false
+  applyReview(r)
+  const main = state.projects.find((p) => p.id === r.task.projectId)?.mainBranch
+  toast({ kind: 'success', title: `Đã merge #${id}${main ? ` vào ${main}` : ''}`, body: r.task.title })
+  return true
 }
 
-export function requestChanges(id: number, feedback: string) {
-  return act(() => api('POST', `/tasks/${id}/review`, { action: 'request_changes', feedback }))
+export async function requestChanges(id: number, feedback: string): Promise<boolean> {
+  const r = await act(() => api<ReviewResult>('POST', `/tasks/${id}/review`, { action: 'request_changes', feedback }), 'Không gửi được feedback')
+  if (!r) return false
+  applyReview(r)
+  if (r.queued) toast({ kind: 'info', title: `Đã gửi feedback cho #${id}`, body: 'Đang hết slot chạy, Claude sẽ sửa khi tới lượt.' })
+  return true
 }
 
-export function rejectTask(id: number) {
-  return act(() => api('POST', `/tasks/${id}/review`, { action: 'reject' }))
+export async function rejectTask(id: number): Promise<boolean> {
+  const r = await act(() => api<ReviewResult>('POST', `/tasks/${id}/review`, { action: 'reject' }), 'Không reject được')
+  if (!r) return false
+  applyReview(r) // task chuyển Failed ("Bị từ chối khi review") → đã có toast từ notifyTransition
+  return true
 }
 
-export function decidePermission(reqId: string, decision: 'allow' | 'deny' | 'always' | 'timeout') {
-  return act(() => api('POST', `/permissions/${reqId}`, { decision }))
+export async function decidePermission(reqId: string, decision: 'allow' | 'deny' | 'always' | 'timeout', reason?: string) {
+  const body = decision === 'deny' && reason?.trim() ? { decision, reason: reason.trim() } : { decision }
+  const saved = await act(() => api<PermissionRequest>('POST', `/permissions/${reqId}`, body), 'Không gửi được quyết định')
+  // Cập nhật ngay, không chờ WS (các tab khác nhận qua broadcast 'permission')
+  if (saved) onMessage({ type: 'permission', permission: saved })
+  return saved
+}
+
+/** FR-46: duyệt một lần nhiều yêu cầu giống hệt nhau. Từng yêu cầu đã chốt được server broadcast qua WS. */
+export async function decidePermissionsBatch(ids: string[], decision: 'allow' | 'deny', reason?: string) {
+  const body = decision === 'deny' && reason?.trim() ? { ids, decision, reason: reason.trim() } : { ids, decision }
+  const r = await act(() => api<{ decided: number; skipped: number }>('POST', '/permissions/batch', body), 'Không gửi được quyết định')
+  if (r)
+    toast({
+      kind: 'success',
+      title: `${decision === 'allow' ? 'Đã cho phép' : 'Đã từ chối'} ${r.decided} yêu cầu`,
+      body: r.skipped ? `${r.skipped} yêu cầu đã được xử lý trước đó nên bỏ qua.` : undefined,
+    })
+  return r
 }
 
 /** Trả về thông báo lỗi (để hiện trong form) hoặc null nếu thành công. */
@@ -469,6 +601,27 @@ export function onScheduleRun(fn: (r: ScheduleRun) => void) {
   }
 }
 
+// ------------------------------------------------------------ gợi ý rule allowlist (FR-44, PLAN P7-02)
+
+export const fetchRuleSuggestions = (projectId: string) =>
+  api<RuleSuggestion[]>('GET', `/projects/${encodeURIComponent(projectId)}/rule-suggestions`)
+
+/** Bỏ qua một gợi ý; trả danh sách gợi ý mới (undefined nếu lỗi, đã có toast). */
+export const dismissRuleSuggestion = (projectId: string, rule: string) =>
+  act(() => api<RuleSuggestion[]>('POST', `/projects/${encodeURIComponent(projectId)}/rule-suggestions/dismiss`, { rule }), 'Không bỏ qua được gợi ý')
+
+const ruleSuggestionListeners = new Set<(projectId: string, list: RuleSuggestion[]) => void>()
+/** Nghe gợi ý mới (realtime) của các project. */
+export function onRuleSuggestions(fn: (projectId: string, list: RuleSuggestion[]) => void) {
+  ruleSuggestionListeners.add(fn)
+  return () => {
+    ruleSuggestionListeners.delete(fn)
+  }
+}
+
+/** Bộ rule allowlist có sẵn (PLAN P7-01). */
+export const fetchPermissionPresets = () => api<PermissionPreset[]>('GET', '/permission-presets')
+
 /** Thống kê theo ngày/project (PLAN 4.4). Ngày được chia theo múi giờ của trình duyệt. */
 export function fetchStats(days: StatsRange, projectId?: string): Promise<Stats> {
   const q = new URLSearchParams({ days: String(days), tz: String(new Date().getTimezoneOffset()) })
@@ -478,7 +631,8 @@ export function fetchStats(days: StatsRange, projectId?: string): Promise<Stats>
 
 export function updateSettings(patch: Partial<Omit<Settings, 'telegram'>>) {
   set((s) => ({ settings: { ...s.settings, ...patch } })) // cập nhật ngay cho mượt
-  return act(() => api('PUT', '/settings', patch), 'Không lưu được cài đặt')
+  // Giá trị đã chuẩn hoá (giới hạn min/max) quay về qua WS 'settings' cho mọi tab
+  return act(() => api<Settings>('PUT', '/settings', patch), 'Không lưu được cài đặt')
 }
 
 /** Lưu cấu hình Telegram (FR-51). Trả về thông báo lỗi hoặc null khi thành công. */

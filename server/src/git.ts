@@ -4,7 +4,8 @@ import { execFile } from 'node:child_process'
 import { existsSync, mkdirSync, rmSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { DATA_DIR } from './db.ts'
-import type { Project } from './types.ts'
+import { parseGitDiff } from '../../web/src/lib/diff.ts'
+import type { FileDiff, Project } from './types.ts'
 
 export interface GitResult {
   stdout: string
@@ -142,7 +143,10 @@ export type MergeResult = { ok: true } | { ok: false; conflicts: string[]; error
  * Thất bại (conflict hoặc lỗi khác) thì `git merge --abort` để repo chính trở lại như trước.
  */
 export async function mergeBranch(repoPath: string, branch: string, message: string): Promise<MergeResult> {
-  const m = await git(repoPath, ['merge', '--no-ff', '--no-edit', branch, '-m', message])
+  // Repo chưa cấu hình danh tính thì git không tạo được merge commit: dùng danh tính của Task Board.
+  const hasIdentity = (await git(repoPath, ['config', 'user.email'])).stdout.trim() !== ''
+  const identity = hasIdentity ? [] : ['-c', 'user.name=Claude Task Board', '-c', 'user.email=taskboard@localhost']
+  const m = await git(repoPath, [...identity, 'merge', '--no-ff', '--no-edit', branch, '-m', message])
   if (m.code === 0) return { ok: true }
   const u = await git(repoPath, ['diff', '--name-only', '--diff-filter=U'])
   const conflicts = u.stdout.split(/\r?\n/).map((l) => l.trim()).filter(Boolean)
@@ -150,4 +154,23 @@ export async function mergeBranch(repoPath: string, branch: string, message: str
   if ((await git(repoPath, ['rev-parse', '--verify', '--quiet', 'MERGE_HEAD'])).code === 0)
     await git(repoPath, ['merge', '--abort'])
   return { ok: false, conflicts, error: errText(m) }
+}
+
+/**
+ * Diff của nhánh task so với mainBranch (PLAN 2.3): `git diff <main>...claude/task-<id>`.
+ * Nhánh không tồn tại (task chưa chạy hoặc đã dọn) → [].
+ */
+export async function taskDiff(project: Pick<Project, 'repoPath' | 'mainBranch'>, taskId: number): Promise<FileDiff[]> {
+  const branch = taskBranch(taskId)
+  const repo = project.repoPath
+  if (!existsSync(repo)) return []
+  const has = await git(repo, ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}`])
+  if (has.code !== 0) return []
+  const r = await git(repo, [
+    '-c', 'core.quotePath=false',
+    'diff', '--no-color', '--no-ext-diff', '-M',
+    `${project.mainBranch}...${branch}`, '--',
+  ])
+  if (r.code !== 0) throw new Error(`git diff thất bại: ${errText(r)}`)
+  return parseGitDiff(r.stdout)
 }

@@ -105,24 +105,50 @@ export interface ClaudeArgsOptions {
   mcpConfigPath?: string
   /** File settings tạm chứa hooks (PLAN 3.6). */
   settingsPath?: string
+  /** Giá trị `--model` (alias hoặc ID, PLAN P5 D1). Không có: dùng mặc định của CLI. */
+  model?: string
+  /** Model dự phòng khi model chính quá tải (`--fallback-model`). */
+  fallbackModel?: string
+  /** Giới hạn chi phí của lần chạy (`--max-budget-usd`, P6). */
+  maxBudgetUsd?: number
+}
+
+/**
+ * Mode quyền thực tế truyền cho CLI. Dự phòng (không có prompt tool): `manual` sẽ bị từ chối cả việc sửa file,
+ * nên quay về `acceptEdits` + whitelist như PLAN (rủi ro P3). `plan` giữ nguyên vì không sửa gì.
+ */
+export function effectivePermissionMode(mode: string, promptTool: boolean) {
+  return !promptTool && mode === 'manual' ? 'acceptEdits' : mode
 }
 
 export function buildClaudeArgs(o: ClaudeArgsOptions) {
+  const promptTool = !!o.mcpConfigPath
   const args = [
     '-p',
     '--output-format', 'stream-json',
     '--verbose',
     ...(o.resume ? ['--resume', o.sessionId] : ['--session-id', o.sessionId]),
-    '--permission-mode', o.permissionMode,
+    '--permission-mode', effectivePermissionMode(o.permissionMode, promptTool),
   ]
   if (o.mcpConfigPath) {
     // P3: lệnh ngoài whitelist được hỏi qua MCP tool, task chuyển Needs Input chờ duyệt trên web.
-    args.push('--mcp-config', o.mcpConfigPath, '--permission-prompt-tool', PERMISSION_PROMPT_TOOL)
+    // `--mcp-config` nhận nhiều giá trị: flag ngay sau nó kết thúc danh sách.
+    args.push(
+      '--mcp-config', o.mcpConfigPath,
+      '--permission-prompt-tool', PERMISSION_PROMPT_TOOL,
+      '--permission-prompts', 'host',
+    )
   } else {
     // Dự phòng: không ai trả lời prompt quyền → bị từ chối và ghi vào permission_denials.
     args.push('--permission-prompts', 'none')
   }
   if (o.settingsPath) args.push('--settings', o.settingsPath)
+  if (o.model) {
+    args.push('--model', o.model)
+    // CLI từ chối fallback trùng model chính
+    if (o.fallbackModel && o.fallbackModel !== o.model) args.push('--fallback-model', o.fallbackModel)
+  }
+  if (o.maxBudgetUsd !== undefined && o.maxBudgetUsd > 0) args.push('--max-budget-usd', String(o.maxBudgetUsd))
   // --allowedTools nhận nhiều giá trị nên để cuối, tránh nuốt các flag phía sau.
   if (o.allowedTools.length) args.push('--allowedTools', ...o.allowedTools)
   return args

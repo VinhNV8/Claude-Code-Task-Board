@@ -98,7 +98,9 @@ const task = (id: number, status: Task['status']): Task => ({
   updatedAt: 0,
 })
 
-function setup(over: Partial<Settings['telegram']> = {}, token: string | undefined = TOKEN, send?: (c: TelegramConfig, t: string) => Promise<void>) {
+function setup(over: Partial<Settings['telegram']> = {}, tokenArg: string | null = TOKEN, send?: (c: TelegramConfig, t: string) => Promise<void>) {
+  // null = chưa có token (truyền undefined sẽ bị tham số mặc định thay bằng TOKEN)
+  const token = tokenArg ?? undefined
   const sent: { cfg: TelegramConfig; text: string }[] = []
   const logs: string[] = []
   const s: Settings = {
@@ -106,6 +108,8 @@ function setup(over: Partial<Settings['telegram']> = {}, token: string | undefin
     browserNotifications: false,
     notifyOn: { ...ALL_ON },
     permissionTimeoutMin: 30,
+    defaultModel: '',
+    autoEscalate: true,
     telegram: { enabled: true, chatId: '42', appUrl: 'http://h', hasToken: !!token, ...over },
   }
   const handle = createTelegramNotifier({
@@ -141,7 +145,7 @@ test('notifier: gửi khi chuyển trạng thái, không gửi lại khi trạng
 })
 
 test('notifier: không gửi khi tắt, thiếu chat ID hoặc thiếu token', async () => {
-  for (const [over, token] of [[{ enabled: false }, TOKEN], [{ chatId: '' }, TOKEN], [{}, undefined]] as const) {
+  for (const [over, token] of [[{ enabled: false }, TOKEN], [{ chatId: '' }, TOKEN], [{}, null]] as const) {
     const { handle, sent } = setup(over, token)
     await handle({ type: 'task', task: task(2, 'failed') })
     assert.equal(sent.length, 0)

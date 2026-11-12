@@ -1,6 +1,7 @@
 // Thống kê (PLAN 4.4): tổng hợp task và lần chạy theo ngày và theo project.
 // Hàm thuần, không đụng DB, để dễ kiểm thử.
-import type { Project, Run, RunTotals, Stats, StatsDay, StatsRange, Task, TaskStatus } from './types.ts'
+import { computeModelStats, tagModelRows } from './modelHistory.ts'
+import type { Project, ReviewAction, Run, RunTotals, Stats, StatsDay, StatsRange, Task, TaskStatus } from './types.ts'
 
 export const STATS_RANGES: StatsRange[] = [7, 30, 90]
 const DAY = 86_400_000
@@ -62,7 +63,15 @@ function addRun(t: RunTotals, r: Run) {
  * - Done/Failed theo ngày: dựa vào updated_at của task đang ở trạng thái đó.
  */
 export function computeStats(
-  data: { tasks: Task[]; runs: Run[]; projects: Project[] },
+  data: {
+    tasks: Task[]
+    runs: Run[]
+    projects: Project[]
+    /** P5-07: lịch sử review, cho bảng tag × model. */
+    reviews?: ReviewAction[]
+    /** Mọi run của các task (không giới hạn thời gian); không có thì dùng `runs`. */
+    historyRuns?: Run[]
+  },
   opts: StatsOptions,
   now = Date.now(),
 ): Stats {
@@ -120,5 +129,7 @@ export function computeStats(
   }
 
   const projects = [...perProject.values()].sort((a, b) => b.costUsd - a.costUsd || b.tasks - a.tasks || a.name.localeCompare(b.name))
-  return { days, from, to: now, projectId, totals, daily, projects }
+  // P5-07: hiệu quả theo tag × model — mẫu có kết quả trong khoảng thời gian, của project đang lọc.
+  const byTagModel = tagModelRows(computeModelStats(allTasks, data.historyRuns ?? data.runs, data.reviews ?? [], now, from))
+  return { days, from, to: now, projectId, totals, daily, projects, byTagModel }
 }

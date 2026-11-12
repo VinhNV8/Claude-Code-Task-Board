@@ -1,9 +1,20 @@
-import { useState } from 'react'
-import { FlaskConical, FolderGit2, GitBranch, Pencil, Plus, ShieldCheck, Trash2, X } from 'lucide-react'
-import { deleteProject, saveProject, useStore } from '../store/store'
+import { useEffect, useRef, useState } from 'react'
+import { FlaskConical, FolderGit2, GitBranch, Lightbulb, Pencil, Plus, ShieldCheck, Trash2, X } from 'lucide-react'
+import {
+  deleteProject,
+  dismissRuleSuggestion,
+  fetchPermissionPresets,
+  fetchRuleSuggestions,
+  onRuleSuggestions,
+  saveProject,
+  toast,
+  useStore,
+} from '../store/store'
 import { Button, ConfirmDialog, EmptyState, Field, Modal, inputCls } from '../components/ui'
 import { STATUS_META } from '../lib/format'
-import type { PermissionMode, Project } from '../types'
+import { MODEL_OPTIONS, modelLabel } from '../lib/model'
+import { mergeRules } from '../lib/rules'
+import type { PermissionMode, PermissionPreset, Project, RuleSuggestion } from '../types'
 
 const blank: Project = {
   id: '',
@@ -13,6 +24,7 @@ const blank: Project = {
   permissionMode: 'acceptEdits',
   allowedTools: ['Read', 'Edit', 'Write', 'Glob', 'Grep'],
   maxParallel: 1,
+  budgetAction: 'warn',
 }
 
 export function Projects() {
@@ -81,6 +93,7 @@ export function Projects() {
                     </span>
                   ))}
                 </div>
+                <RuleSuggestions project={p} />
               </div>
             )
           })}
@@ -108,6 +121,8 @@ export function ProjectModal({ project, onClose }: { project: Project | null; on
   const [lastId, setLastId] = useState<string | null>(null)
   const [serverError, setServerError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+  const [presetNote, setPresetNote] = useState<string | null>(null)
+  const systemModel = useStore().settings.defaultModel
 
   // nạp lại form khi mở project khác
   const key = project ? project.id || 'new' : null
@@ -115,6 +130,7 @@ export function ProjectModal({ project, onClose }: { project: Project | null; on
     setLastId(key)
     if (project) setP(project)
     setTouched(false)
+    setPresetNote(null)
     setServerError(null)
   }
   // Kiểm tra cơ bản ở client; việc có phải git repo hay không do server kiểm tra
@@ -180,6 +196,24 @@ export function ProjectModal({ project, onClose }: { project: Project | null; on
           <Field label="Số task song song tối đa">
             <input type="number" min={1} max={5} className={inputCls} value={p.maxParallel} onChange={(e) => setP({ ...p, maxParallel: Number(e.target.value) || 1 })} />
           </Field>
+          <Field
+            label="Model mặc định"
+            hint={
+              p.defaultModel
+                ? 'Áp dụng cho task của project không chọn model riêng.'
+                : `Kế thừa hệ thống: ${modelLabel(systemModel) || 'mặc định của Claude CLI'}`
+            }
+          >
+            <select className={inputCls} value={p.defaultModel ?? ''} onChange={(e) => setP({ ...p, defaultModel: e.target.value || undefined })}>
+              <option value="">Kế thừa hệ thống</option>
+              {MODEL_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+              {p.defaultModel && !MODEL_OPTIONS.some((o) => o.value === p.defaultModel) && <option value={p.defaultModel}>{p.defaultModel}</option>}
+            </select>
+          </Field>
         </div>
         <Field
           label="Lệnh test (tuỳ chọn)"
@@ -232,9 +266,161 @@ export function ProjectModal({ project, onClose }: { project: Project | null; on
             >
               Thêm
             </Button>
+            <PresetMenu
+              onPick={(preset) => {
+                const merged = mergeRules(p.allowedTools, preset.rules)
+                const added = merged.length - mergeRules(p.allowedTools, []).length
+                setP({ ...p, allowedTools: merged })
+                setPresetNote(
+                  added > 0
+                    ? `Đã thêm ${added} rule mới từ “${preset.name}”. Bấm Lưu để áp dụng.`
+                    : `Mọi rule của “${preset.name}” đã có trong danh sách.`,
+                )
+              }}
+            />
           </div>
+          {presetNote && <p className="mt-1.5 text-xs text-emerald-600 dark:text-emerald-400">{presetNote}</p>}
         </div>
       </div>
     </Modal>
+  )
+}
+
+/**
+ * Khối "Gợi ý thêm vào allowlist" (FR-44): rule đã được cho phép ≥ 3 lần trong 30 ngày.
+ * Ẩn khi không có gợi ý. Danh sách cập nhật realtime khi duyệt quyền hoặc sửa allowlist.
+ */
+function RuleSuggestions({ project }: { project: Project }) {
+  const [list, setList] = useState<RuleSuggestion[]>([])
+  const [busy, setBusy] = useState<string | null>(null)
+  const latest = useStore().projects.find((x) => x.id === project.id) ?? project
+
+  useEffect(() => {
+    let alive = true
+    fetchRuleSuggestions(project.id)
+      .then((l) => alive && setList(l))
+      .catch(() => alive && setList([])) // không chặn trang Projects khi lỗi tải gợi ý
+    const off = onRuleSuggestions((id, l) => id === project.id && setList(l))
+    return () => {
+      alive = false
+      off()
+    }
+  }, [project.id])
+
+  if (!list.length) return null
+
+  const add = async (rule: string) => {
+    setBusy(rule)
+    const err = await saveProject({ ...latest, allowedTools: [...new Set([...latest.allowedTools, rule])] })
+    setBusy(null)
+    if (err) toast({ kind: 'error', title: 'Không thêm được rule', body: err })
+    else setList((l) => l.filter((s) => s.rule !== rule))
+  }
+  const dismiss = async (rule: string) => {
+    setBusy(rule)
+    const next = await dismissRuleSuggestion(project.id, rule)
+    setBusy(null)
+    if (next) setList(next)
+  }
+
+  return (
+    <div className="mt-3 rounded-md border border-amber-200 bg-amber-50/60 p-2.5 dark:border-amber-900/60 dark:bg-amber-950/30">
+      <p className="mb-1.5 flex items-center gap-1 text-xs font-medium text-amber-800 dark:text-amber-300">
+        <Lightbulb size={13} /> Gợi ý thêm vào allowlist
+      </p>
+      <ul className="space-y-1.5">
+        {list.map((s) => (
+          <li key={s.rule} className="flex items-center gap-2 text-xs">
+            <div className="min-w-0 flex-1">
+              <p className="flex flex-wrap items-baseline gap-x-2">
+                <span className="font-mono font-medium">{s.rule}</span>
+                <span className="text-slate-500">đã cho phép {s.count} lần</span>
+              </p>
+              <p className="truncate font-mono text-[11px] text-slate-500" title={s.example}>
+                {s.example}
+              </p>
+            </div>
+            <Button size="sm" disabled={busy === s.rule} onClick={() => add(s.rule)}>
+              Thêm
+            </Button>
+            <Button size="sm" variant="ghost" disabled={busy === s.rule} onClick={() => dismiss(s.rule)}>
+              Bỏ qua
+            </Button>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
+/** Nút "Thêm từ preset ▾" (PLAN P7-01): tải danh sách preset từ backend khi mở lần đầu. */
+function PresetMenu({ onPick }: { onPick: (preset: PermissionPreset) => void }) {
+  const [open, setOpen] = useState(false)
+  const [presets, setPresets] = useState<PermissionPreset[] | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    if (!presets) {
+      setError(null)
+      fetchPermissionPresets()
+        .then(setPresets)
+        .catch((e: Error) => setError(e.message))
+    }
+    const onDown = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.stopPropagation()
+        setOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('keydown', onKey, true)
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('keydown', onKey, true)
+    }
+  }, [open, presets])
+
+  return (
+    <div className="relative" ref={ref}>
+      <Button onClick={() => setOpen((o) => !o)} aria-haspopup="menu" aria-expanded={open} className="whitespace-nowrap">
+        Thêm từ preset ▾
+      </Button>
+      {open && (
+        <div
+          role="menu"
+          className="absolute right-0 z-20 mt-1 w-72 rounded-lg border border-slate-200 bg-white p-1 shadow-lg dark:border-slate-700 dark:bg-slate-900"
+        >
+          {error ? (
+            <p className="px-3 py-2 text-xs text-rose-600">{error}</p>
+          ) : !presets ? (
+            <p className="px-3 py-2 text-xs text-slate-500">Đang tải…</p>
+          ) : (
+            presets.map((preset) => (
+              <button
+                key={preset.id}
+                role="menuitem"
+                onClick={() => {
+                  onPick(preset)
+                  setOpen(false)
+                }}
+                className="block w-full rounded px-3 py-2 text-left hover:bg-slate-100 dark:hover:bg-slate-800"
+                title={preset.rules.join('\n')}
+              >
+                <span className="flex items-center text-sm font-medium">
+                  {preset.name}
+                  <span className="ml-auto text-[11px] font-normal text-slate-500">{preset.rules.length} rule</span>
+                </span>
+                <span className="block text-xs text-slate-500">{preset.description}</span>
+              </button>
+            ))
+          )}
+        </div>
+      )}
+    </div>
   )
 }

@@ -2,10 +2,11 @@
 
 | Mục | Giá trị |
 |---|---|
-| Phiên bản | 0.2 |
-| Ngày | 2026-11-11 |
-| Trạng thái | ✅ Đã duyệt (áp dụng đề xuất mặc định Mục 10); prototype giao diện đã duyệt |
+| Phiên bản | 0.3 |
+| Ngày | 2026-11-12 |
+| Trạng thái | v0.2 ✅ đã duyệt. Phần mới của v0.3 (FR-43..46, FR-70..76, FR-80..83): ⏳ **chờ duyệt** |
 | Thay đổi 0.2 | Cập nhật theo [P0-SPIKE.md](P0-SPIKE.md): dò file `claude.exe` của extension VSCode; mode `default` đổi thành `manual`; prompt truyền qua stdin; P3 dùng `--permission-prompt-tool` (đã kiểm chứng); SQLite dùng `node:sqlite` có sẵn trong Node 24 |
+| Thay đổi 0.3 | Bổ sung yêu cầu từ [Ideas Improvement.md](Ideas%20Improvement.md): **3.8 Chọn model** (tự chọn theo độ khó, hiển thị model đang dùng), **3.9 Chi phí và budget theo project**, cải tiến **3.5 Needs Input** (preset, gợi ý rule, Telegram, rủi ro, lý do từ chối). Cập nhật 5.2, 5.3, 7, 8, 9, 10. Thiết kế chi tiết ở PLAN mục P5–P7 |
 | Thư mục dự án | `d:\Projects\AI Project\AI-Interface` |
 
 ---
@@ -115,6 +116,10 @@ Backlog ─► Queued ─► Running ─┬─► Review ─┬─► Done (Appr
 | FR-40 | Khi Claude cần xin quyền dùng tool hoặc hỏi lại, task chuyển sang **Needs Input** | Must |
 | FR-41 | Trả lời hoặc cấp quyền (Allow / Deny) ngay trên web | Should |
 | FR-42 | Lưu quy tắc "luôn cho phép" theo từng project | Could |
+| FR-43 | Bộ quy tắc mẫu (preset) cho allowlist: Node/npm, Python, git chỉ đọc, chỉ đọc file. Preset không chứa lệnh có tác dụng phụ (`npm install`, `git push`, `git commit`) | Should |
+| FR-44 | Gợi ý thêm rule vào allowlist từ lịch sử: rule được cho phép ≥ 3 lần trong 30 ngày, chưa bị từ chối lần nào, không phải lệnh rủi ro; người dùng có thể Thêm hoặc Bỏ qua | Should |
+| FR-45 | Phân loại rủi ro yêu cầu quyền (xoá đệ quy, `git push`, `reset --hard`, tải script về chạy, ghi file ngoài thư mục task…): hiển thị cảnh báo đỏ kèm lý do, **không** cho "Luôn cho phép", và allowlist không được tự duyệt các lệnh này | Should |
+| FR-46 | Từ chối kèm lý do (lý do được gửi cho Claude để đổi cách làm); duyệt hàng loạt các yêu cầu giống hệt nhau ở Inbox; duyệt bằng nút trên Telegram (chỉ nhận từ đúng chat đã cấu hình) | Could |
 
 ### 3.6 Thông báo
 | ID | Yêu cầu | Ưu tiên |
@@ -127,6 +132,27 @@ Backlog ─► Queued ─► Running ─┬─► Review ─┬─► Done (Appr
 |---|---|---|
 | FR-60 | Khai báo một hoặc nhiều project (đường dẫn repo git, nhánh chính) | Must |
 | FR-61 | Cấu hình mặc định theo từng project: mức quyền, allowedTools, số task chạy song song | Should |
+
+### 3.8 Chọn model
+Bối cảnh: người dùng thường không tự chọn model, nên mặc định là **Tự động**. Hệ thống chọn model, giải thích lý do, và người dùng chỉ đổi khi muốn.
+
+| ID | Yêu cầu | Ưu tiên |
+|---|---|---|
+| FR-70 | Hiển thị model **thực tế** của mỗi lần chạy (lấy từ event `init` của CLI) trên thẻ task (realtime, ngay khi task bắt đầu chạy) và trong lịch sử run; kèm token và chi phí ước tính **theo từng model** (từ `modelUsage` của `result`) | Must |
+| FR-71 | Cấu hình model ở 3 tầng: Task → Project → Hệ thống, lấy giá trị không rỗng đầu tiên. Giá trị: Tự động / Haiku / Sonnet / Opus. Mặc định của hệ thống: **Tự động** | Must |
+| FR-72 | Chế độ Tự động chọn model bằng **quy tắc chấm điểm** (tag, mức quyền, từ khoá trong prompt, độ dài, số file nhắc tới), **không gọi thêm model** để phân loại. Lý do chọn được lưu và hiển thị | Must |
+| FR-73 | Form tạo task hiển thị trước model sẽ dùng và lý do, cập nhật trong lúc gõ; đổi bằng một thao tác; template có thể chỉ định model | Should |
+| FR-74 | Lần chạy tiếp nối (Request changes, Tiếp tục) **giữ nguyên model** của lần trước để tận dụng prompt cache, trừ trường hợp ở FR-75 | Must |
+| FR-75 | Tự nâng một bậc (Haiku → Sonnet → Opus) khi Retry sau lần chạy lỗi hoặc khi Request changes lần thứ 2 trở đi. Không áp dụng với model chọn tay. Ngữ cảnh ≥ 80k token thì mở phiên mới kèm tóm tắt thay vì resume. Có công tắc tắt | Should |
+| FR-76 | Tự hiệu chỉnh gợi ý theo lịch sử từng project (tỉ lệ được duyệt ngay theo tag × model, cần ≥ 10 mẫu, mỗi lần chỉ dịch 1 bậc); trang Thống kê có bảng tag × model | Could |
+
+### 3.9 Chi phí và budget
+| ID | Yêu cầu | Ưu tiên |
+|---|---|---|
+| FR-80 | Budget tháng (USD, tuỳ chọn) cho từng project; tính chi tiêu tháng hiện tại (giờ địa phương) từ chi phí các run | Should |
+| FR-81 | Cảnh báo khi đạt 80% và 100% budget, mỗi mức một lần mỗi tháng, qua thông báo web và Telegram (nếu bật) | Should |
+| FR-82 | Chế độ "Tạm dừng khi vượt budget": không khởi chạy task mới của project (task đang chạy được chạy xong), tự chạy lại khi sang tháng; khi project đã ≥ 80% budget thì không tự nâng model quá Sonnet | Should |
+| FR-83 | Trang Projects hiện thanh chi tiêu / budget; trang Thống kê hiện chi phí theo model và dự báo cuối tháng. Mọi số tiền ghi rõ là **ước tính theo giá niêm yết** (gói subscription không trừ tiền theo con số này) | Should |
 
 ---
 
@@ -180,6 +206,16 @@ runs(id, task_id, session_id, kind[initial|resume|retry], started_at, ended_at, 
 events(id, run_id, ts, type, payload_json)      -- log stream-json
 reviews(id, task_id, action[approve|request_changes|reject], feedback, created_at)
 ```
+Bổ sung ở v0.3:
+```
+projects   + default_model, monthly_budget_usd, budget_action[warn|pause]
+tasks      + model                                   -- '' = kế thừa, 'auto' | haiku | sonnet | opus
+runs       + model, requested_model, model_source[auto|manual|default|escalated], model_reason,
+             model_usage (JSON theo model), context_tokens
+templates  + model
+permission_requests + deny_reason
+settings   + defaultModel (mặc định 'auto'), autoEscalate (mặc định true)
+```
 
 ### 5.3 API (REST + WS)
 | Method | Path | Mô tả |
@@ -195,6 +231,10 @@ reviews(id, task_id, action[approve|request_changes|reject], feedback, created_a
 | POST | `/api/tasks/:id/input` | Trả lời hoặc cấp quyền |
 | POST | `/hooks/:event` | Nhận sự kiện từ hooks của Claude Code |
 | WS | `/ws` | Đẩy sự kiện realtime (task status, log) |
+| POST | `/api/model-suggest` | v0.3: model sẽ dùng và lý do (không gọi Claude, < 20ms) |
+| GET | `/api/permission-presets` | v0.3: danh sách preset allowlist |
+| GET | `/api/projects/:id/rule-suggestions` | v0.3: rule gợi ý từ lịch sử (+ `POST .../dismiss`) |
+| POST | `/api/permissions/batch` | v0.3: duyệt hàng loạt `{ids, decision, reason?}` |
 
 ### 5.4 Hooks của Claude Code
 Cấu hình trong `.claude/settings.json` của worktree hoặc project:
@@ -223,6 +263,9 @@ Cấu hình trong `.claude/settings.json` của worktree hoặc project:
 | **P2 – Review** | Worktree theo task, xem diff, Approve/Merge, Request changes (`--resume`), Reject | 1–2 ngày |
 | **P3 – Needs Input** | Hooks, duyệt quyền trên web, thông báo trình duyệt | 1–2 ngày |
 | **P4 – Nâng cao** | Nhiều project, template, thống kê, Telegram, lên lịch | Tùy chọn |
+| **P5 – Chọn model** | FR-70..76 | ~4 ngày |
+| **P6 – Budget** | FR-80..83 | ~1,5 ngày |
+| **P7 – Duyệt quyền nâng cao** | FR-43..46 | ~2,5 ngày |
 
 ---
 
@@ -234,6 +277,10 @@ Cấu hình trong `.claude/settings.json` của worktree hoặc project:
 - **AC-04**: Chạy song song 2 task trên cùng repo mà không xung đột file.
 - **AC-05**: Không có bất kỳ lời gọi trực tiếp nào tới Claude API, không cần `ANTHROPIC_API_KEY`.
 - **AC-06**: Khởi động lại backend không mất dữ liệu task.
+- **AC-07** (v0.3): Tạo task mà không chọn model: "Sửa typo README" chạy Haiku, task thêm tính năng thông thường chạy Sonnet, "Refactor kiến trúc…" chạy Opus. Thẻ task hiện model và lý do chọn.
+- **AC-08** (v0.3): Request changes giữ nguyên model. Retry sau lỗi tự nâng một bậc, trừ khi model được chọn tay.
+- **AC-09** (v0.3): Project đặt budget ở chế độ "Tạm dừng": khi vượt budget thì task mới không chạy và có lý do hiển thị, cảnh báo 80%/100% chỉ gửi một lần trong tháng.
+- **AC-10** (v0.3): Lệnh rủi ro cao luôn phải duyệt tay (kể cả khi khớp allowlist) và không có nút "Luôn cho phép".
 
 ---
 
@@ -246,6 +293,10 @@ Cấu hình trong `.claude/settings.json` của worktree hoặc project:
 | Merge conflict khi nhiều task sửa cùng file | Phát hiện conflict khi merge, chuyển task về Review kèm cảnh báo |
 | Định dạng output CLI thay đổi theo phiên bản | Gom phần parse vào một module, ghi lại phiên bản `claude` đã test |
 | Worktree tích tụ chiếm dung lượng | Tự dọn worktree khi task Done/Rejected |
+| Tự chọn model sai (model rẻ làm hỏng, tốn thêm một lần chạy) | Ngưỡng chọn Haiku chặt; tự nâng model khi lỗi (FR-75); hiệu chỉnh theo lịch sử (FR-76); người dùng luôn chọn tay được |
+| Đổi model giữa phiên làm mất prompt cache (cache gắn với từng model) | Resume giữ model (FR-74); khi nâng model mà ngữ cảnh ≥ 80k token thì mở phiên mới kèm tóm tắt |
+| Chi phí hiển thị khác số tiền thực trả (gói subscription) | Ghi rõ "ước tính theo giá niêm yết"; giới hạn thật vẫn là hạn mức gói (đã xử lý rate limit) |
+| Duyệt quyền qua Telegram bị người lạ bấm | Chỉ nhận callback từ đúng chat ID đã cấu hình; lệnh rủi ro không có "Luôn cho phép" |
 
 ---
 
@@ -259,6 +310,9 @@ Cấu hình trong `.claude/settings.json` của worktree hoặc project:
 | Q4 | Stack **Node/React** hay **Python (FastAPI)**? | Node/React |
 | Q5 | Số task chạy song song tối đa? | 2 |
 | Q6 | Có cần thông báo Telegram? | Không ở v1 |
+| Q7 (v0.3) | Model mặc định của hệ thống khi người dùng không chọn? | **Tự động** (FR-72) |
+| Q8 (v0.3) | Khi vượt budget mặc định làm gì? | **Chỉ cảnh báo**; "Tạm dừng" bật theo từng project |
+| Q9 (v0.3) | Có dùng LLM (Haiku) để phân loại độ khó task không? | **Không** ở giai đoạn này: tốn thêm khoảng 0,5–1 cent mỗi task qua CLI, lợi ích chưa rõ so với quy tắc + tự nâng model |
 
 ---
 

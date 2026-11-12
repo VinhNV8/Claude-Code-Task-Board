@@ -1,7 +1,7 @@
 // Chuyển từng dòng stream-json của Claude Code thành LogEvent cho giao diện.
 // Schema đã kiểm chứng ở docs/P0-SPIKE.md (S6).
 import { relative, isAbsolute } from 'node:path'
-import type { LogEventInput } from './types.ts'
+import type { LogEventInput, ModelUsage } from './types.ts'
 
 export interface ResultInfo {
   isError: boolean
@@ -11,12 +11,20 @@ export interface ResultInfo {
   sessionId?: string
   permissionDenials: { tool: string; input: string }[]
   apiErrorStatus?: number | null
+  /** Token và chi phí theo từng model (`modelUsage` của event result), undefined nếu CLI không gửi. */
+  modelUsage?: Record<string, ModelUsage>
+  /** Kích thước ngữ cảnh của message assistant cuối cùng của phiên chính. */
+  contextTokens?: number
 }
 
 export interface Parsed {
   events: LogEventInput[]
   result?: ResultInfo
   sessionId?: string
+  /** ID model thực tế từ event `system/init`. */
+  model?: string
+  /** Dòng `rate_limit_event`: status ('allowed', 'allowed_warning', 'rejected'...) và giờ reset (epoch ms). */
+  rateLimit?: { status: string; resetsAt?: number }
 }
 
 const MAX_OUTPUT = 4000
@@ -27,8 +35,28 @@ function truncate(s: string, n = MAX_OUTPUT) {
 
 type Json = Record<string, any>
 
+const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : 0)
+
+/** `j.modelUsage` của event result → Record<model, ModelUsage> (costUSD → costUsd, thiếu số thì 0). */
+export function toModelUsage(raw: unknown): Record<string, ModelUsage> | undefined {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined
+  const out: Record<string, ModelUsage> = {}
+  for (const [model, u] of Object.entries(raw as Json)) {
+    const x: Json = u && typeof u === 'object' ? u : {}
+    out[model] = {
+      inputTokens: num(x.inputTokens),
+      outputTokens: num(x.outputTokens),
+      cacheReadInputTokens: num(x.cacheReadInputTokens),
+      cacheCreationInputTokens: num(x.cacheCreationInputTokens),
+      costUsd: num(x.costUSD ?? x.costUsd),
+    }
+  }
+  return out
+}
+
 export class StreamParser {
   private toolNames = new Map<string, string>()
+  private lastContextTokens: number | undefined
   constructor(private cwd: string) {}
 
   private rel(p: unknown) {
@@ -93,6 +121,7 @@ export class StreamParser {
 
     if (j.type === 'system' && j.subtype === 'init') {
       out.sessionId = j.session_id
+      if (typeof j.model === 'string' && j.model) out.model = j.model
       out.events.push({
         type: 'system',
         text: `Khởi tạo phiên • model ${j.model} • mode ${j.permissionMode} • Claude Code ${j.claude_code_version ?? ''}`.trim(),
@@ -101,6 +130,10 @@ export class StreamParser {
     }
 
     if (j.type === 'assistant' && j.message?.content) {
+      // Ngữ cảnh của phiên chính (bỏ qua message của subagent: parent_tool_use_id khác null).
+      const u = j.message.usage as Json | undefined
+      if (u && typeof u === 'object' && !j.parent_tool_use_id)
+        this.lastContextTokens = num(u.input_tokens) + num(u.cache_read_input_tokens) + num(u.cache_creation_input_tokens)
       for (const c of j.message.content as Json[]) {
         if (c.type === 'text' && c.text?.trim()) out.events.push({ type: 'assistant', text: c.text.trim() })
         if (c.type === 'tool_use') {
@@ -140,6 +173,8 @@ export class StreamParser {
         sessionId: j.session_id,
         permissionDenials: denials,
         apiErrorStatus: j.api_error_status,
+        modelUsage: toModelUsage(j.modelUsage),
+        contextTokens: this.lastContextTokens,
       }
       out.events.push({ type: 'result', isError: out.result.isError, text: truncate(text) })
       for (const d of denials)
@@ -147,7 +182,17 @@ export class StreamParser {
       return out
     }
 
-    // system/thinking_tokens, rate_limit_event, stream_event...: bỏ qua
+    // Trạng thái hạn mức của gói: runner dùng để nhận diện lỗi giới hạn sử dụng (status 'rejected') và giờ reset.
+    if (j.type === 'rate_limit_event' && j.rate_limit_info) {
+      const info = j.rate_limit_info as Json
+      out.rateLimit = {
+        status: String(info.status ?? ''),
+        resetsAt: typeof info.resetsAt === 'number' ? info.resetsAt * 1000 : undefined,
+      }
+      return out
+    }
+
+    // system/thinking_tokens, stream_event...: bỏ qua
     return out
   }
 }

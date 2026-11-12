@@ -1,7 +1,11 @@
 // Retry task Failed (PLAN mục 2.7): lần chạy lại phải bắt đầu trên code sạch của mainBranch,
 // không mang theo thay đổi dở dang (đã commit hay chưa) của lần chạy trước.
 import { existsSync } from 'node:fs'
+import { broadcast } from './bus.ts'
+import { projects, tasks } from './db.ts'
 import { removeWorktree, resetWorktree } from './git.ts'
+import { ReviewError, withLock } from './review.ts'
+import { isTesting, stopTests } from './testRunner.ts'
 import type { Project, Task } from './types.ts'
 
 /** Các cột của task cần cập nhật trước khi đưa lại vào hàng đợi. `null` = xoá giá trị. */
@@ -19,7 +23,10 @@ export interface RetryPatch {
  *   khỏi task để startRun tạo worktree mới từ mainBranch.
  * Throw nếu không đưa được worktree về trạng thái sạch.
  */
-export async function prepareRetry(task: Pick<Task, 'id' | 'branch' | 'worktreePath'>, project: Project): Promise<RetryPatch> {
+export async function prepareRetry(
+  task: Pick<Task, 'id' | 'branch' | 'worktreePath'>,
+  project: Pick<Project, 'id' | 'repoPath' | 'mainBranch'>,
+): Promise<RetryPatch> {
   if (task.worktreePath && existsSync(task.worktreePath)) {
     const wt = await resetWorktree(project, task.id)
     return { branch: wt.branch, worktreePath: wt.path, sessionId: null }
@@ -28,4 +35,44 @@ export async function prepareRetry(task: Pick<Task, 'id' | 'branch' | 'worktreeP
   // không checkout lại commit cũ. Task chưa từng có worktree thì không đụng vào repo.
   if (task.branch || task.worktreePath) await removeWorktree(project, task.id)
   return { branch: null, worktreePath: null, sessionId: null }
+}
+
+/**
+ * POST /api/tasks/:id/retry: đưa worktree về code sạch rồi đưa task Failed về Queued.
+ * pump() sẽ tạo run `kind='retry'` với session mới (task đã có run trước đó, không có pendingFeedback).
+ * Chạy trong khoá của project: bấm Retry 2 lần liên tiếp thì lần sau thấy task đã Queued → 409,
+ * không reset đè lên worktree của run vừa bắt đầu.
+ */
+export async function retryTask(taskId: number, deps: { pump: () => void }): Promise<Task> {
+  const first = tasks.get(taskId)
+  if (!first) throw new ReviewError(404, `Không tìm thấy task #${taskId}`)
+  return withLock(first.projectId, async () => {
+    const task = tasks.get(taskId)
+    if (!task) throw new ReviewError(404, `Không tìm thấy task #${taskId}`)
+    if (task.status !== 'failed') throw new ReviewError(409, 'Chỉ chạy lại task ở Failed')
+    const project = projects.get(task.projectId)
+    if (!project) throw new ReviewError(404, `Không tìm thấy project của task #${taskId}`)
+
+    if (isTesting(taskId)) await stopTests(taskId, 'Đã dừng vì task được chạy lại.')
+    let patch: RetryPatch
+    try {
+      patch = await prepareRetry(task, project)
+    } catch (err) {
+      throw new ReviewError(500, `Không đưa được worktree về nhánh "${project.mainBranch}": ${(err as Error).message}`)
+    }
+    // Retry luôn là phiên mới, không mang feedback "Yêu cầu sửa" còn sót.
+    const queued = tasks.patch(taskId, {
+      ...patch,
+      status: 'queued',
+      failReason: null,
+      reviewWarning: null,
+      pendingFeedback: null,
+      resumeNext: null,
+      notBefore: null,
+      rateLimitRetries: 0,
+    })!
+    broadcast({ type: 'task', task: queued })
+    deps.pump()
+    return queued
+  })
 }

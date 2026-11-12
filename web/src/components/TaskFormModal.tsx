@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { Play, Save } from 'lucide-react'
 import { createTask, updateTask, useStore } from '../store/store'
 import { collectTags, normalizeTags } from '../lib/taskFilter'
+import { MODEL_OPTIONS, inheritedModelHint, modelLabel } from '../lib/model'
 import type { PermissionMode, Priority, PromptTemplate, Task } from '../types'
 import { TagInput } from './TagInput'
 import { Button, Field, Modal, inputCls } from './ui'
@@ -24,7 +25,7 @@ export function TaskFormModal({
   editing?: Task
   defaultProjectId?: string
 }) {
-  const { projects, templates, tasks } = useStore()
+  const { projects, templates, tasks, settings } = useStore()
   const navigate = useNavigate()
   const [title, setTitle] = useState('')
   const [prompt, setPrompt] = useState('')
@@ -32,6 +33,7 @@ export function TaskFormModal({
   const [priority, setPriority] = useState<Priority>('normal')
   const [mode, setMode] = useState<PermissionMode>('acceptEdits')
   const [tags, setTags] = useState<string[]>([])
+  const [model, setModel] = useState('')
   const [touched, setTouched] = useState(false)
   const [saving, setSaving] = useState(false)
 
@@ -45,6 +47,7 @@ export function TaskFormModal({
       setPriority(editing.priority)
       setMode(editing.permissionMode)
       setTags(editing.tags)
+      setModel(editing.model ?? '')
     } else {
       setTitle('')
       setPrompt('')
@@ -53,6 +56,7 @@ export function TaskFormModal({
       setPriority('normal')
       setMode(projects.find((p) => p.id === pid)?.permissionMode ?? 'acceptEdits')
       setTags([])
+      setModel('')
     }
   }, [open, editing, defaultProjectId, projects])
 
@@ -83,11 +87,11 @@ export function TaskFormModal({
     setSaving(true)
     try {
       if (editing) {
-        await updateTask(editing.id, { title, prompt, projectId, priority, permissionMode: mode, tags: tagList })
+        await updateTask(editing.id, { title, prompt, projectId, priority, permissionMode: mode, tags: tagList, model })
         onClose()
         return
       }
-      const id = await createTask({ title, prompt, projectId, priority, permissionMode: mode, tags: tagList, run })
+      const id = await createTask({ title, prompt, projectId, priority, permissionMode: mode, tags: tagList, model, run })
       onClose()
       if (run) navigate(`/tasks/${id}`)
     } catch {
@@ -193,6 +197,21 @@ export function TaskFormModal({
             </select>
           </Field>
           <TagInput label="Tag" value={tags} onChange={setTags} suggestions={tagSuggestions} />
+          <Field
+            label="Model"
+            hint={model ? `Chọn riêng: ${modelLabel(model)}` : inheritedModelHint(projects.find((p) => p.id === projectId), settings)}
+          >
+            <select className={inputCls} value={model} onChange={(e) => setModel(e.target.value)}>
+              <option value="">Theo mặc định</option>
+              {MODEL_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+              {/* ID đầy đủ đặt qua API: vẫn hiện để không mất khi sửa task */}
+              {model && !MODEL_OPTIONS.some((o) => o.value === model) && <option value={model}>{model}</option>}
+            </select>
+          </Field>
         </div>
       </div>
     </Modal>

@@ -4,7 +4,7 @@ import { ChartColumn, Clock, DollarSign, ListTodo, RefreshCw, Repeat } from 'luc
 import { fetchStats, useStore } from '../store/store'
 import { Button, EmptyState, inputCls } from '../components/ui'
 import { STATUS_META, STATUS_ORDER } from '../lib/format'
-import type { Stats as StatsData, StatsDay, StatsRange } from '../types'
+import type { Stats as StatsData, StatsDay, StatsRange, StatsTagModel } from '../types'
 
 const RANGES: StatsRange[] = [7, 30, 90]
 
@@ -136,7 +136,55 @@ function StatsBody({ data }: { data: StatsData }) {
         <StatusBreakdown byStatus={t.byStatus} total={t.tasks} />
         <ProjectTable data={data} />
       </div>
+
+      <TagModelTable rows={data.byTagModel ?? []} />
     </>
+  )
+}
+
+const TIER_LABEL: Record<StatsTagModel['tier'], string> = { haiku: 'Haiku', sonnet: 'Sonnet', opus: 'Opus' }
+
+/** P5-07 (FR-76): tỉ lệ được duyệt ngay theo loại task (tag) × model của run đầu tiên. */
+function TagModelTable({ rows }: { rows: StatsTagModel[] }) {
+  const rateCls = (r: number) =>
+    r >= 0.8 ? 'text-emerald-600 dark:text-emerald-400' : r < 0.5 ? 'text-red-600 dark:text-red-400' : 'text-slate-700 dark:text-slate-200'
+  return (
+    <section className={`${card} overflow-x-auto`}>
+      <h2 className="mb-1 font-semibold">Hiệu quả theo loại task × model</h2>
+      <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">
+        Task đã duyệt/từ chối hoặc Failed trong khoảng thời gian, theo model của lần chạy đầu. Duyệt ngay: approve ở lần review đầu, không có lần chạy lỗi.
+      </p>
+      {rows.length === 0 ? (
+        <p className="py-6 text-center text-sm text-slate-400">Chưa có task nào có kết quả review trong khoảng thời gian này</p>
+      ) : (
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-slate-200 text-left text-xs text-slate-500 dark:border-slate-800 dark:text-slate-400">
+              <th className="pb-2 font-medium">Tag</th>
+              <th className="pb-2 font-medium">Model</th>
+              <th className="pb-2 text-right font-medium">Số task</th>
+              <th className="pb-2 text-right font-medium">Duyệt ngay</th>
+              <th className="pb-2 text-right font-medium">Chi phí TB</th>
+            </tr>
+          </thead>
+          <tbody className="tabular-nums">
+            {rows.map((r) => (
+              <tr key={`${r.tag}|${r.tier}`} className="border-b border-slate-100 last:border-0 dark:border-slate-800">
+                <td className="max-w-[12rem] truncate py-2 font-medium" title={r.tag}>
+                  {r.tag}
+                </td>
+                <td className="py-2">{TIER_LABEL[r.tier]}</td>
+                <td className="py-2 text-right">{r.n}</td>
+                <td className={`py-2 text-right font-medium ${rateCls(r.approvalRate)}`} title={`${Math.round(r.approvalRate * r.n)}/${r.n} task`}>
+                  {Math.round(r.approvalRate * 100)}%
+                </td>
+                <td className="py-2 text-right">{money(r.avgCost)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </section>
   )
 }
 

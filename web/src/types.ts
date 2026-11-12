@@ -24,6 +24,45 @@ export interface Project {
   maxParallel: number
   /** Lệnh kiểm tra chạy trong worktree từ trang Review (FR-34), ví dụ `npm test`. Không có: tắt tính năng. */
   testCommand?: string
+  /** Model mặc định cho task của project (alias hoặc ID `claude-…`). Rỗng: kế thừa Settings (PLAN P5, D2). */
+  defaultModel?: string
+  /** Budget tháng (USD, giá niêm yết, ước tính). Không có: không giới hạn (PLAN P6, B1). */
+  monthlyBudgetUsd?: number
+  /** Khi vượt budget: chỉ cảnh báo, hoặc tạm dừng chạy task mới (B3). */
+  budgetAction: BudgetAction
+}
+
+export type BudgetAction = 'warn' | 'pause'
+
+/** Bộ rule allowlist có sẵn (PLAN P7-01), lấy từ GET /api/permission-presets. */
+export interface PermissionPreset {
+  id: string
+  name: string
+  description: string
+  rules: string[]
+}
+
+/** Gợi ý thêm rule vào allowlist từ lịch sử duyệt (FR-44, PLAN P7-02). */
+export interface RuleSuggestion {
+  rule: string
+  /** Số lần đã cho phép trong 30 ngày */
+  count: number
+  lastAt: number
+  /** Lệnh/đầu vào gần nhất sinh ra rule này */
+  example: string
+}
+
+/** none: không đặt budget · ok: < 80% · warn: ≥ 80% · over: ≥ 100% (PLAN P6, B2). */
+export type BudgetLevel = 'none' | 'ok' | 'warn' | 'over'
+
+/** Chi tiêu tháng hiện tại của một project (ước tính theo giá niêm yết, B5). */
+export interface ProjectBudget {
+  spent: number
+  budget?: number
+  ratio?: number
+  level: BudgetLevel
+  /** Tháng theo giờ địa phương của server, dạng 'YYYY-MM'. */
+  month: string
 }
 
 export interface Task {
@@ -44,9 +83,24 @@ export interface Task {
   failReason?: string
   /** Cảnh báo gắn với trạng thái Review (conflict, repo chưa sạch...) */
   reviewWarning?: string
+  /** Feedback "Yêu cầu sửa" đang chờ slot: lần chạy kế tiếp từ hàng đợi sẽ là resume với feedback này. */
+  pendingFeedback?: string
+  /** Task Queued chỉ được chạy từ thời điểm này (epoch ms), đặt khi run trước gặp giới hạn sử dụng. */
+  notBefore?: number
+  /** Số lần đã tự đưa lại hàng đợi do giới hạn sử dụng (reset khi chạy thành công hoặc người dùng chạy lại). */
+  rateLimitRetries?: number
+  /** Lần chạy kế tiếp từ hàng đợi là "Tiếp tục" (run 'continue'): chạy tiếp phiên cũ trên worktree đang dở. */
+  resumeNext?: boolean
+  /** Model chọn riêng cho task (alias hoặc ID `claude-…`). Rỗng: kế thừa project → Settings (PLAN P5, D2). */
+  model?: string
+  /** Giới hạn chi phí mỗi lần chạy (USD, truyền `--max-budget-usd`). Không có: không giới hạn. */
+  maxCostUsd?: number
+  /** Lý do task Queued đang bị giữ lại (ví dụ project vượt budget, P6 B3). Chỉ tính lúc chạy, không lưu DB. */
+  blockedReason?: string
 }
 
-export type RunKind = 'initial' | 'resume' | 'retry'
+/** initial: lần đầu · resume: sửa theo feedback review · retry: chạy lại từ đầu · continue: tiếp tục phiên bị gián đoạn */
+export type RunKind = 'initial' | 'resume' | 'retry' | 'continue'
 
 export interface Run {
   id: string
@@ -60,6 +114,32 @@ export interface Run {
   numTurns?: number
   costUsd?: number
   summary?: string
+  /** ID model thực tế lấy từ event `init` (P5, D1/D8). */
+  model?: string
+  /** Token và chi phí theo từng model, từ `modelUsage` của event `result`. */
+  modelUsage?: Record<string, ModelUsage>
+  modelSource?: ModelSource
+  modelReason?: string
+  /** Giá trị đã truyền vào `--model` (alias hoặc ID). Không có: không truyền `--model`. Run resume/continue dùng lại (D3). */
+  requestedModel?: string
+  /** Kích thước ngữ cảnh của message assistant cuối (input + cache read + cache creation). */
+  contextTokens?: number
+  /** P5-06: loại thất bại; chỉ 'claude' mới khiến Retry tự nâng model (D6). */
+  failKind?: RunFailKind
+}
+
+/** Run lỗi do Claude / bị người dùng dừng / gặp giới hạn sử dụng / lỗi hạ tầng (không phải lỗi của model). */
+export type RunFailKind = 'claude' | 'stopped' | 'rate_limit' | 'infra'
+
+/** Nguồn chọn model của một run (PLAN P5, D8). */
+export type ModelSource = 'auto' | 'manual' | 'default' | 'escalated'
+
+export interface ModelUsage {
+  inputTokens: number
+  outputTokens: number
+  cacheReadInputTokens: number
+  cacheCreationInputTokens: number
+  costUsd: number
 }
 
 export type LogEvent =
@@ -72,6 +152,8 @@ export type LogEvent =
 export interface FileDiff {
   path: string
   status: 'added' | 'modified' | 'deleted'
+  /** Tên cũ khi file bị đổi tên (status vẫn là 'modified') */
+  oldPath?: string
   additions: number
   deletions: number
   hunks: DiffHunk[]
@@ -96,9 +178,15 @@ export interface PermissionRequest {
   input: string
   /** Quy tắc sẽ thêm vào project nếu chọn "Luôn cho phép" */
   rules?: string[]
+  /** Mức rủi ro (FR-45): 'high' → luôn duyệt tay, không có "Luôn cho phép". Server tính lúc đọc. */
+  risk?: 'high' | 'normal'
+  /** Lý do xếp rủi ro cao, tiếng Việt */
+  riskReasons?: string[]
   createdAt: number
   timeoutAt: number
   status: 'pending' | 'allowed' | 'denied' | 'timeout'
+  /** Lý do người dùng nhập khi Từ chối (FR-46), gửi kèm cho Claude */
+  denyReason?: string
 }
 
 export interface ReviewAction {
@@ -221,6 +309,20 @@ export interface Stats {
   totals: RunTotals & { tasks: number; byStatus: Record<TaskStatus, number> }
   daily: StatsDay[]
   projects: StatsProject[]
+  /** P5-07 (FR-76): hiệu quả theo loại task (tag) × model của run đầu tiên. */
+  byTagModel: StatsTagModel[]
+}
+
+/** Một dòng bảng tag × model: mẫu là task đã approve/reject hoặc Failed có kết quả trong khoảng thời gian. */
+export interface StatsTagModel {
+  /** Tag (chữ thường); "(không tag)" cho task không có tag */
+  tag: string
+  tier: 'haiku' | 'sonnet' | 'opus'
+  n: number
+  /** Tỉ lệ được duyệt ngay (0..1) */
+  approvalRate: number
+  /** Chi phí trung bình mỗi task (tổng các run) */
+  avgCost: number
 }
 
 export interface Settings {
@@ -228,6 +330,10 @@ export interface Settings {
   browserNotifications: boolean
   notifyOn: { review: boolean; needsInput: boolean; failed: boolean }
   permissionTimeoutMin: number
+  /** Model mặc định hệ thống (tầng cuối, D2). '' = không truyền `--model`, dùng mặc định của Claude CLI. */
+  defaultModel: string
+  /** P5-06 (D6): tự nâng model một bậc khi task thất bại / bị yêu cầu sửa nhiều lần. Mặc định bật. */
+  autoEscalate: boolean
   /** Thông báo Telegram (FR-51). Bot token không bao giờ trả ra API, chỉ có cờ hasToken. */
   telegram: TelegramSettings
 }

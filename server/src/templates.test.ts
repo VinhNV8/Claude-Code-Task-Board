@@ -52,7 +52,7 @@ test('db: nạp sẵn template mặc định khi tạo bảng', () => {
 })
 
 test('db: thêm, sửa, xoá template; xoá project thì xoá template riêng', () => {
-  projects.upsert({ id: 'p-tpl', name: 'P', repoPath: 'C:\\repo', mainBranch: 'main', permissionMode: 'acceptEdits', allowedTools: [], maxParallel: 1 })
+  projects.upsert({ id: 'p-tpl', name: 'P', repoPath: 'C:\\repo', mainBranch: 'main', permissionMode: 'acceptEdits', allowedTools: [], maxParallel: 1, budgetAction: 'warn' })
   const created = templates.upsert({ id: 'tpl-a', name: 'A', title: '', prompt: 'prompt dài hơn 10', tags: ['x'], projectId: 'p-tpl' })
   assert.deepEqual(created, { id: 'tpl-a', name: 'A', title: '', prompt: 'prompt dài hơn 10', tags: ['x'], projectId: 'p-tpl' })
   assert.equal(templates.all().at(-1)?.id, 'tpl-a')

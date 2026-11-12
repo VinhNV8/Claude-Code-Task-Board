@@ -20,6 +20,7 @@ const project: Project = {
   permissionMode: 'acceptEdits',
   allowedTools: [],
   maxParallel: 1,
+  budgetAction: 'warn' as const,
 }
 
 async function ok(cwd: string, args: string[]) {
@@ -105,7 +106,7 @@ test('removeWorktree xoá worktree + nhánh, gọi lại không lỗi', async ()
   await g.removeWorktree(project, 1)
   assert.ok(!existsSync(path))
   assert.equal((await g.git(repo, ['rev-parse', '--verify', '--quiet', 'refs/heads/claude/task-1'])).code, 1)
-  assert.doesNotMatch(await ok(repo, ['worktree', 'list']), /task/)
+  assert.doesNotMatch(await ok(repo, ['worktree', 'list']), /claude\/task-1|worktrees/) // thư mục temp có chữ "task" nên không so /task/
 
   await g.removeWorktree(project, 1) // đã xoá rồi: không throw
 })
@@ -126,4 +127,42 @@ test('resetWorktree tạo lại worktree nếu đã bị xoá', async () => {
   const { path } = await g.resetWorktree(project, 3)
   assert.equal(await ok(path, ['rev-parse', 'HEAD']), await ok(repo, ['rev-parse', 'main']))
   await g.removeWorktree(project, 3)
+})
+
+test('taskDiff: không có nhánh → [], có nhánh → diff thêm/sửa/xoá/đổi tên/nhị phân', async () => {
+  assert.deepEqual(await g.taskDiff(project, 404), [])
+
+  // Chuẩn bị trên main: các file sẽ bị sửa, xoá, đổi tên
+  writeFileSync(join(repo, 'edit me.txt'), 'a\nb\nc\n')
+  writeFileSync(join(repo, 'gone.txt'), 'bye\n')
+  writeFileSync(join(repo, 'old name.txt'), 'line 1\nline 2\nline 3\nline 4\nline 5\n')
+  await g.commitAll(repo, 'diff base')
+
+  const { path } = await g.createWorktree(project, 5)
+  writeFileSync(join(path, 'edit me.txt'), 'a\nB\nc\n')
+  rmSync(join(path, 'gone.txt'))
+  rmSync(join(path, 'old name.txt'))
+  writeFileSync(join(path, 'new name.txt'), 'line 1\nline 2\nline 3\nline 4\nline 5\nline 6\n')
+  mkdirSync(join(path, 'thư mục'))
+  writeFileSync(join(path, 'thư mục', 'mới.txt'), 'xin chào\n')
+  writeFileSync(join(path, 'img.bin'), Buffer.from([0, 1, 2, 0, 255, 0]))
+  assert.equal(await g.commitAll(path, 'task #5'), true)
+
+  // Thêm commit trên main sau khi tách nhánh: diff kiểu ... không được tính commit này
+  writeFileSync(join(repo, 'main only.txt'), 'x\n')
+  await g.commitAll(repo, 'main moves on')
+
+  const files = await g.taskDiff(project, 5)
+  const by = Object.fromEntries(files.map((f) => [f.path, f]))
+  assert.deepEqual(Object.keys(by).sort(), ['edit me.txt', 'gone.txt', 'img.bin', 'new name.txt', 'thư mục/mới.txt'])
+  assert.equal(by['edit me.txt'].status, 'modified')
+  assert.deepEqual([by['edit me.txt'].additions, by['edit me.txt'].deletions], [1, 1])
+  assert.equal(by['gone.txt'].status, 'deleted')
+  assert.equal(by['new name.txt'].status, 'modified')
+  assert.equal(by['new name.txt'].oldPath, 'old name.txt')
+  assert.deepEqual([by['new name.txt'].additions, by['new name.txt'].deletions], [1, 0])
+  assert.equal(by['thư mục/mới.txt'].status, 'added')
+  assert.equal(by['img.bin'].status, 'added')
+  assert.deepEqual(by['img.bin'].hunks, [])
+  await g.removeWorktree(project, 5)
 })
