@@ -1,12 +1,13 @@
-import { useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
-import { FolderGit2, KanbanSquare, Plus, Search } from 'lucide-react'
+import { useMemo } from 'react'
+import { Link, useSearchParams } from 'react-router-dom'
+import { FolderGit2, KanbanSquare, Plus, Search, Tag, X } from 'lucide-react'
 import { useStore } from '../store/store'
-import { STATUS_META, STATUS_ORDER } from '../lib/format'
+import { PRIORITY_META, STATUS_META, STATUS_ORDER } from '../lib/format'
+import { EMPTY_FILTER, PRIORITY_VALUES, collectTags, filterToParams, isFilterActive, matchTask, parseFilter, type BoardFilter } from '../lib/taskFilter'
 import { TaskCard } from '../components/TaskCard'
 import { useNewTask } from '../components/Layout'
 import { Button, EmptyState, inputCls } from '../components/ui'
-import type { TaskStatus } from '../types'
+import type { Priority, TaskStatus } from '../types'
 
 const HINT: Partial<Record<TaskStatus, string>> = {
   backlog: 'Việc đã tạo, chưa chạy',
@@ -19,18 +20,23 @@ const HINT: Partial<Record<TaskStatus, string>> = {
 export function Board() {
   const s = useStore()
   const openNew = useNewTask()
-  const [projectId, setProjectId] = useState('all')
-  const [q, setQ] = useState('')
-  const [hideOld, setHideOld] = useState(true)
+  // Bộ lọc nằm trên URL query để chia sẻ/tải lại không mất (FR-07)
+  const [params, setParams] = useSearchParams()
+  const parsed = useMemo(() => parseFilter(params), [params])
+  // project đã bị xoá thì coi như "tất cả"
+  const filter: BoardFilter = useMemo(
+    () => (parsed.projectId && !s.projects.some((p) => p.id === parsed.projectId) ? { ...parsed, projectId: null } : parsed),
+    [parsed, s.projects],
+  )
+  const setFilter = (patch: Partial<BoardFilter>) => setParams(filterToParams({ ...filter, ...patch }), { replace: true })
+  const projectId = filter.projectId ?? 'all'
+  const hideOld = !filter.showAll
+  const active = isFilterActive(filter)
 
-  const tasks = useMemo(() => {
-    const query = q.trim().toLowerCase()
-    return s.tasks.filter(
-      (t) =>
-        (projectId === 'all' || t.projectId === projectId) &&
-        (!query || t.title.toLowerCase().includes(query) || t.tags.some((x) => x.includes(query)) || String(t.id) === query.replace('#', '')),
-    )
-  }, [s.tasks, projectId, q])
+  const allTags = useMemo(() => collectTags(s.tasks.map((t) => t.tags)), [s.tasks])
+  const tagOptions = allTags.filter((t) => !filter.tags.some((x) => x.toLowerCase() === t.toLowerCase()))
+
+  const tasks = useMemo(() => s.tasks.filter((t) => matchTask(t, filter)), [s.tasks, filter])
 
   const byStatus = (st: TaskStatus) => {
     let list = tasks.filter((t) => t.status === st)
@@ -72,9 +78,14 @@ export function Board() {
         <h1 className="mr-2 text-lg font-semibold">Bảng công việc</h1>
         <div className="relative">
           <Search size={15} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input className={`${inputCls} w-56 py-1.5 pl-8`} placeholder="Tìm theo tiêu đề, tag, #id" value={q} onChange={(e) => setQ(e.target.value)} />
+          <input
+            className={`${inputCls} w-56 py-1.5 pl-8`}
+            placeholder="Tìm theo tiêu đề, prompt, tag, #id"
+            value={filter.q}
+            onChange={(e) => setFilter({ q: e.target.value })}
+          />
         </div>
-        <select className={`${inputCls} w-auto py-1.5`} value={projectId} onChange={(e) => setProjectId(e.target.value)}>
+        <select className={`${inputCls} w-auto py-1.5`} value={projectId} onChange={(e) => setFilter({ projectId: e.target.value === 'all' ? null : e.target.value })}>
           <option value="all">Tất cả project</option>
           {s.projects.map((p) => (
             <option key={p.id} value={p.id}>
@@ -82,8 +93,63 @@ export function Board() {
             </option>
           ))}
         </select>
+        <select
+          className={`${inputCls} w-auto py-1.5`}
+          aria-label="Lọc theo độ ưu tiên"
+          value={filter.priorities.length === 1 ? filter.priorities[0] : filter.priorities.length ? 'multi' : 'all'}
+          onChange={(e) => setFilter({ priorities: e.target.value === 'all' ? [] : [e.target.value as Priority] })}
+        >
+          <option value="all">Mọi độ ưu tiên</option>
+          {filter.priorities.length > 1 && (
+            <option value="multi" disabled>
+              {filter.priorities.map((p) => PRIORITY_META[p].label).join(', ')}
+            </option>
+          )}
+          {PRIORITY_VALUES.map((p) => (
+            <option key={p} value={p}>
+              {PRIORITY_META[p].label}
+            </option>
+          ))}
+        </select>
+        {tagOptions.length > 0 && (
+          <select
+            className={`${inputCls} w-auto py-1.5`}
+            aria-label="Lọc theo tag"
+            value=""
+            onChange={(e) => e.target.value && setFilter({ tags: [...filter.tags, e.target.value] })}
+          >
+            <option value="">{filter.tags.length ? '+ Thêm tag' : 'Lọc theo tag'}</option>
+            {tagOptions.map((t) => (
+              <option key={t} value={t}>
+                {t}
+              </option>
+            ))}
+          </select>
+        )}
+        {filter.tags.map((t) => (
+          <span key={t} className="inline-flex items-center gap-1 rounded bg-indigo-50 px-1.5 py-0.5 text-xs text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300">
+            <Tag size={11} /> {t}
+            <button
+              onClick={() => setFilter({ tags: filter.tags.filter((x) => x !== t) })}
+              className="rounded hover:text-indigo-900 dark:hover:text-white"
+              aria-label={`Bỏ lọc tag ${t}`}
+            >
+              <X size={12} />
+            </button>
+          </span>
+        ))}
+        {active && (
+          <>
+            <span className="text-xs text-slate-500 dark:text-slate-400">
+              {tasks.length}/{s.tasks.length} task
+            </span>
+            <Button variant="ghost" size="sm" onClick={() => setFilter({ ...EMPTY_FILTER, showAll: filter.showAll })}>
+              Xoá bộ lọc
+            </Button>
+          </>
+        )}
         <label className="ml-auto inline-flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
-          <input type="checkbox" checked={hideOld} onChange={(e) => setHideOld(e.target.checked)} />
+          <input type="checkbox" checked={hideOld} onChange={(e) => setFilter({ showAll: !e.target.checked })} />
           Chỉ hiện Done/Failed trong 24 giờ
         </label>
       </div>

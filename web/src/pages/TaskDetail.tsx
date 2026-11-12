@@ -19,6 +19,7 @@ import {
   X,
   XCircle,
 } from 'lucide-react'
+import { Markdown, stripMarkdown } from '../components/Markdown'
 import {
   approveTask,
   deleteTask,
@@ -34,6 +35,7 @@ import {
 import { Button, ConfirmDialog, EmptyState, StatusBadge, inputCls, useNow } from '../components/ui'
 import { LogView } from '../components/LogView'
 import { DiffView } from '../components/DiffView'
+import { TestPanel } from '../components/TestPanel'
 import { PermissionCard } from '../components/PermissionCard'
 import { TaskFormModal } from '../components/TaskFormModal'
 import { PRIORITY_META, clock, duration, timeAgo, usd } from '../lib/format'
@@ -233,10 +235,13 @@ export function TaskDetail() {
           )}
           {task.status === 'review' && latestRun?.summary && (
             <div className="rounded-lg border border-slate-200 bg-white p-3 text-sm dark:border-slate-800 dark:bg-slate-900">
-              <span className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-400">Claude tóm tắt</span>
-              {latestRun.summary}
+              <span className="mb-2 block text-xs font-medium uppercase tracking-wide text-slate-400">Claude tóm tắt</span>
+              <div className="max-h-72 overflow-y-auto pr-1">
+                <Markdown text={latestRun.summary} />
+              </div>
             </div>
           )}
+          <TestPanel task={task} project={project} now={now} />
           <DiffView key={diffs.map((d) => d.path + d.additions).join()} files={diffs} />
 
           {task.status === 'review' && (
@@ -307,9 +312,17 @@ export function TaskDetail() {
                   </div>
                 ))}
               </div>
-              <div className="rounded-lg border border-slate-200 bg-white p-4 text-sm dark:border-slate-800 dark:bg-slate-900">
-                <p className="mb-1 text-xs font-medium uppercase tracking-wide text-slate-400">Tóm tắt của Claude</p>
-                {latestRun.summary ?? <span className="text-slate-400">Chưa có, Claude vẫn đang làm việc.</span>}
+              <div className="rounded-lg border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
+                <p className="flex items-center gap-1.5 border-b border-slate-100 px-5 py-2.5 text-xs font-medium uppercase tracking-wide text-slate-500 dark:border-slate-800 dark:text-slate-400">
+                  <FileText size={14} /> Tóm tắt của Claude
+                </p>
+                <div className="px-5 py-4">
+                  {latestRun.summary ? (
+                    <Markdown text={latestRun.summary} className="max-w-3xl" />
+                  ) : (
+                    <span className="text-sm text-slate-400">Chưa có, Claude vẫn đang làm việc.</span>
+                  )}
+                </div>
               </div>
               {task.sessionId && <p className="font-mono text-xs text-slate-400">session: {task.sessionId}</p>}
             </>
@@ -347,7 +360,18 @@ export function TaskDetail() {
                       Feedback{rv ? ` (${timeAgo(rv.createdAt, now)})` : ''}: {r.feedback}
                     </p>
                   )}
-                  {r.summary && <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">{r.summary}</p>}
+                  {r.summary && (
+                    <details className="group mt-2">
+                      <summary className="cursor-pointer list-none text-sm text-slate-600 dark:text-slate-300">
+                        <span className="line-clamp-2 group-open:hidden">{stripMarkdown(r.summary)}</span>
+                        <span className="text-xs text-indigo-600 dark:text-indigo-400">
+                          <span className="group-open:hidden">Xem đầy đủ</span>
+                          <span className="hidden group-open:inline">Thu gọn</span>
+                        </span>
+                      </summary>
+                      <Markdown text={r.summary} className="mt-2" />
+                    </details>
+                  )}
                   <button
                     onClick={() => {
                       setRunId(r.id)

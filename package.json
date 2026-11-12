@@ -11,7 +11,15 @@
     "build": "npm run build -w web",
     "start": "npm run build && npm run start -w server",
     "typecheck": "npm run typecheck -w server && npx tsc --noEmit -p web",
-    "dev:mock": "npm run dev:mock -w web"
+    "dev:mock": "npm run dev:mock -w web",
+    "seed:backlog": "node scripts/seed-backlog.mjs",
+    "uat:deploy": "node scripts/uat.mjs deploy",
+    "uat:start": "node scripts/uat.mjs start",
+    "uat:stop": "node scripts/uat.mjs stop",
+    "uat:restart": "node scripts/uat.mjs restart",
+    "uat:status": "node scripts/uat.mjs status",
+    "uat:logs": "node scripts/uat.mjs logs",
+    "uat:copy-db": "node scripts/uat.mjs copy-db"
   },
   "devDependencies": {
     "concurrently": "9.1.0"

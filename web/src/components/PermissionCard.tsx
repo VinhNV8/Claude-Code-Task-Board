@@ -35,7 +35,11 @@ export function PermissionCard({ req, task, showTask }: { req: PermissionRequest
         <Button variant="secondary" onClick={() => decidePermission(req.id, 'deny')}>
           <X size={16} /> Từ chối
         </Button>
-        <Button variant="secondary" onClick={() => decidePermission(req.id, 'always')} title="Cho phép và thêm quy tắc vào project">
+        <Button
+          variant="secondary"
+          onClick={() => decidePermission(req.id, 'always')}
+          title={`Cho phép và thêm quy tắc vào project${req.rules?.length ? `: ${req.rules.join(', ')}` : ''}`}
+        >
           <ShieldCheck size={16} /> Luôn cho phép
         </Button>
         <Button variant="success" onClick={() => decidePermission(req.id, 'allow')}>

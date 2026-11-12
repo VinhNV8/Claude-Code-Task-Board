@@ -2,8 +2,12 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
 // `vite --mode mock`: dùng store giả lập (prototype), không cần backend.
-export default defineConfig(({ mode }) => ({
+// __APP_ENV__: nhãn môi trường hiển thị trên giao diện (dev | mock | uat | prod).
+export default defineConfig(({ mode, command }) => ({
   plugins: [react()],
+  define: {
+    __APP_ENV__: JSON.stringify(mode === 'mock' ? 'mock' : command === 'serve' ? 'dev' : process.env.APP_ENV ?? 'prod'),
+  },
   resolve: {
     alias: mode === 'mock' ? [{ find: /^(.*)\/store\/store$/, replacement: '$1/store/mock' }] : [],
   },

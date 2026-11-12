@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Play, Save } from 'lucide-react'
-import { promptTemplates } from '../mocks/data'
 import { createTask, updateTask, useStore } from '../store/store'
-import type { PermissionMode, Priority, Task } from '../types'
+import { collectTags, normalizeTags } from '../lib/taskFilter'
+import type { PermissionMode, Priority, PromptTemplate, Task } from '../types'
+import { TagInput } from './TagInput'
 import { Button, Field, Modal, inputCls } from './ui'
 
 const PERMISSION_LABEL: Record<PermissionMode, string> = {
@@ -23,14 +24,14 @@ export function TaskFormModal({
   editing?: Task
   defaultProjectId?: string
 }) {
-  const { projects } = useStore()
+  const { projects, templates, tasks } = useStore()
   const navigate = useNavigate()
   const [title, setTitle] = useState('')
   const [prompt, setPrompt] = useState('')
   const [projectId, setProjectId] = useState('')
   const [priority, setPriority] = useState<Priority>('normal')
   const [mode, setMode] = useState<PermissionMode>('acceptEdits')
-  const [tags, setTags] = useState('')
+  const [tags, setTags] = useState<string[]>([])
   const [touched, setTouched] = useState(false)
   const [saving, setSaving] = useState(false)
 
@@ -43,7 +44,7 @@ export function TaskFormModal({
       setProjectId(editing.projectId)
       setPriority(editing.priority)
       setMode(editing.permissionMode)
-      setTags(editing.tags.join(', '))
+      setTags(editing.tags)
     } else {
       setTitle('')
       setPrompt('')
@@ -51,9 +52,12 @@ export function TaskFormModal({
       setProjectId(pid)
       setPriority('normal')
       setMode(projects.find((p) => p.id === pid)?.permissionMode ?? 'acceptEdits')
-      setTags('')
+      setTags([])
     }
   }, [open, editing, defaultProjectId, projects])
+
+  // Gợi ý: tag của task đã có + tag trong template, dùng nhiều lên trước
+  const tagSuggestions = useMemo(() => collectTags([...tasks.map((t) => t.tags), ...templates.map((t) => t.tags)]), [tasks, templates])
 
   const errors = {
     title: !title.trim() ? 'Vui lòng nhập tiêu đề' : undefined,
@@ -62,10 +66,20 @@ export function TaskFormModal({
   }
   const valid = !errors.title && !errors.prompt && !errors.projectId
 
+  // Template chung + template riêng của project đang chọn
+  const usableTemplates = templates.filter((t) => !t.projectId || t.projectId === projectId)
+
+  function applyTemplate(t: PromptTemplate) {
+    setPrompt(t.prompt)
+    // Chỉ điền tiêu đề/tag khi người dùng chưa nhập, tránh ghi đè
+    if (!title.trim() && t.title) setTitle(t.title)
+    if (!tags.length && t.tags.length) setTags(normalizeTags(t.tags))
+  }
+
   async function submit(run: boolean) {
     setTouched(true)
     if (!valid) return
-    const tagList = tags.split(',').map((t) => t.trim()).filter(Boolean)
+    const tagList = normalizeTags(tags)
     setSaving(true)
     try {
       if (editing) {
@@ -122,12 +136,12 @@ export function TaskFormModal({
         <div>
           <div className="mb-1 flex items-center justify-between">
             <span className="text-sm font-medium text-slate-700 dark:text-slate-200">Mô tả yêu cầu (prompt gửi cho Claude)</span>
-            <div className="flex gap-1">
-              {promptTemplates.map((t) => (
+            <div className="flex flex-wrap justify-end gap-1">
+              {usableTemplates.map((t) => (
                 <button
                   key={t.id}
                   type="button"
-                  onClick={() => setPrompt(t.text)}
+                  onClick={() => applyTemplate(t)}
                   className="rounded border border-slate-200 px-2 py-0.5 text-xs text-slate-600 hover:border-indigo-400 hover:text-indigo-600 dark:border-slate-700 dark:text-slate-300"
                   title="Dùng template"
                 >
@@ -178,9 +192,7 @@ export function TaskFormModal({
               <option value="plan">plan</option>
             </select>
           </Field>
-          <Field label="Tag" hint="Phân cách bằng dấu phẩy">
-            <input className={inputCls} value={tags} onChange={(e) => setTags(e.target.value)} placeholder="bug, ui" />
-          </Field>
+          <TagInput label="Tag" value={tags} onChange={setTags} suggestions={tagSuggestions} />
         </div>
       </div>
     </Modal>

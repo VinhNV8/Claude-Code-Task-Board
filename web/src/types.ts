@@ -22,6 +22,8 @@ export interface Project {
   permissionMode: PermissionMode
   allowedTools: string[]
   maxParallel: number
+  /** Lệnh kiểm tra chạy trong worktree từ trang Review (FR-34), ví dụ `npm test`. Không có: tắt tính năng. */
+  testCommand?: string
 }
 
 export interface Task {
@@ -92,6 +94,8 @@ export interface PermissionRequest {
   taskId: number
   tool: string
   input: string
+  /** Quy tắc sẽ thêm vào project nếu chọn "Luôn cho phép" */
+  rules?: string[]
   createdAt: number
   timeoutAt: number
   status: 'pending' | 'allowed' | 'denied' | 'timeout'
@@ -113,11 +117,135 @@ export interface Toast {
   taskId?: number
 }
 
+/** Template prompt dùng lại khi tạo task (FR-06). */
+export interface PromptTemplate {
+  id: string
+  /** Tên ngắn hiện trên nút chọn template */
+  name: string
+  /** Tiêu đề task gợi ý (có thể rỗng) */
+  title: string
+  prompt: string
+  tags: string[]
+  /** Không có: dùng cho mọi project */
+  projectId?: string
+}
+
+/** Lịch tạo task tự động theo cron (PLAN 4.6). Đến giờ, backend tạo task mới ở Queued từ mẫu này. */
+export interface Schedule {
+  id: string
+  /** Biểu thức cron 5 trường (phút giờ ngày tháng thứ), tính theo giờ của máy chạy server */
+  cron: string
+  projectId: string
+  title: string
+  prompt: string
+  priority: Priority
+  enabled: boolean
+  /** Lần chạy kế tiếp (epoch ms); không có khi lịch đang tắt */
+  nextRunAt?: number
+  /** Lần gần nhất đã tạo task */
+  lastRunAt?: number
+  createdAt: number
+}
+
+/** Một lần lịch đã tạo task (lịch sử). taskId không có nếu task đã bị xoá. */
+export interface ScheduleRun {
+  id: number
+  scheduleId: string
+  taskId?: number
+  /** Tiêu đề task lúc tạo */
+  title: string
+  /** Thời điểm theo lịch */
+  scheduledFor: number
+  /** Thời điểm thực tế tạo task */
+  firedAt: number
+  /** Tạo bù khi server khởi động lại sau khi lỡ giờ */
+  catchUp: boolean
+}
+
+export type TestStatus ='running' | 'passed' | 'failed' | 'stopped' | 'error'
+
+/** Lần chạy lệnh test gần nhất của một task (FR-34). Output tải riêng (GET /api/tasks/:id/test) và stream qua WS. */
+export interface TestRun {
+  taskId: number
+  command: string
+  status: TestStatus
+  startedAt: number
+  endedAt?: number
+  exitCode?: number
+  /** Lý do khi status là error/stopped hoặc quá thời gian */
+  error?: string
+}
+
+/** Output đã nhận của lần chạy test; `end` là vị trí (số ký tự) cuối cùng trong toàn bộ luồng output. */
+export interface TestOutput {
+  text: string
+  end: number
+}
+
+/** Khoảng thời gian chọn được trên trang Thống kê (PLAN 4.4). */
+export type StatsRange = 7 | 30 | 90
+
+/** Số liệu cộng dồn của các lần chạy (runs) bắt đầu trong khoảng thời gian. */
+export interface RunTotals {
+  runs: number
+  costUsd: number
+  turns: number
+  /** Tổng thời gian chạy (ms) của các lần chạy đã kết thúc */
+  durationMs: number
+}
+
+export interface StatsDay extends RunTotals {
+  /** Ngày theo giờ địa phương của người xem, dạng YYYY-MM-DD */
+  date: string
+  /** Task tạo trong ngày */
+  created: number
+  /** Task đang ở Done/Failed có lần cập nhật cuối trong ngày (xấp xỉ thời điểm kết thúc) */
+  done: number
+  failed: number
+}
+
+export interface StatsProject extends RunTotals {
+  projectId: string
+  name: string
+  /** Task tạo trong khoảng thời gian */
+  tasks: number
+  byStatus: Record<TaskStatus, number>
+}
+
+export interface Stats {
+  days: StatsRange
+  /** Mốc bắt đầu (đầu ngày địa phương) và kết thúc của khoảng thời gian, epoch ms */
+  from: number
+  to: number
+  projectId?: string
+  totals: RunTotals & { tasks: number; byStatus: Record<TaskStatus, number> }
+  daily: StatsDay[]
+  projects: StatsProject[]
+}
+
 export interface Settings {
   maxParallel: number
   browserNotifications: boolean
   notifyOn: { review: boolean; needsInput: boolean; failed: boolean }
   permissionTimeoutMin: number
+  /** Thông báo Telegram (FR-51). Bot token không bao giờ trả ra API, chỉ có cờ hasToken. */
+  telegram: TelegramSettings
+}
+
+export interface TelegramSettings {
+  enabled: boolean
+  chatId: string
+  /** Địa chỉ giao diện dùng để tạo liên kết mở task, ví dụ http://127.0.0.1:3000 */
+  appUrl: string
+  hasToken: boolean
+}
+
+/** Dữ liệu gửi lên khi lưu cấu hình Telegram. botToken: chuỗi = đặt mới, '' hoặc null = xoá, bỏ trống = giữ nguyên. */
+export interface TelegramSettingsInput {
+  enabled?: boolean
+  chatId?: string
+  appUrl?: string
+  botToken?: string | null
 }
 
 export interface DemoFlags {

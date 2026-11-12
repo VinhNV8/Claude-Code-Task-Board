@@ -1,0 +1,200 @@
+{
+  "version": "1.0",
+  "source": "docs/PLAN.md v0.2 (2026-11-11)",
+  "note": "Mỗi phần tử là một task cho Claude Task Board. Nạp vào cột Backlog bằng: node scripts/seed-backlog.mjs",
+  "commonFooter": "\n\n---\nBối cảnh chung (áp dụng cho mọi task):\n- Dự án Claude Task Board, đọc docs/SPEC.md và docs/PLAN.md trước khi làm. Giao diện đã được duyệt ở PT: không thiết kế lại UI, chỉ nối backend thật vào component có sẵn (web/src/components, web/src/pages, web/src/store/store.ts).\n- Backend: Fastify + TypeScript chạy bằng tsx, SQLite qua node:sqlite (server/src/db.ts), route ở server/src/routes.ts, runner ở server/src/runner.ts. Kiểu dữ liệu dùng chung ở web/src/types.ts.\n- Chạy trên Windows: dùng execFile/spawn với mảng tham số (không ghép chuỗi lệnh), đường dẫn có dấu cách phải chạy đúng, windowsHide: true.\n- Thông báo lỗi trả cho người dùng bằng tiếng Việt, dùng HttpError như các route hiện có. Mọi thay đổi trạng thái phải broadcast qua bus để web cập nhật realtime.\n- Trước khi kết thúc: chạy `npm run typecheck` và `npm test -w server`, cả hai phải đạt. Thêm unit test cho logic mới khi có thể.\n- Kết thúc bằng tóm tắt ngắn: đã làm gì, file nào thay đổi, cách kiểm tra thủ công.",
+  "tasks": [
+    {
+      "code": "P2-01",
+      "title": "[P2-01] Module git.ts: quản lý worktree và nhánh task",
+      "priority": "high",
+      "tags": ["P2", "backend", "git"],
+      "dependsOn": [],
+      "prompt": "Tạo module server/src/git.ts (PLAN mục 2.1) gói các thao tác git cần cho review flow. Yêu cầu:\n1. Hàm tiện ích `git(cwd, args)` dùng execFile('git', ['-C', cwd, ...args]) trả về {stdout, stderr, code}, không throw khi exit code khác 0.\n2. `createWorktree(project, taskId)`: tạo nhánh `claude/task-<id>` từ `project.mainBranch` và worktree tại `data/worktrees/<projectId>/<taskId>` (dùng DATA_DIR từ db.ts) bằng `git worktree add -b claude/task-<id> <path> <mainBranch>`. Nếu worktree/nhánh đã tồn tại (chạy lại) thì tái sử dụng, không lỗi.\n3. `removeWorktree(project, taskId)`: `git worktree remove --force` + `git branch -D claude/task-<id>` + `git worktree prune`; bỏ qua lỗi nếu đã bị xoá.\n4. `resetWorktree(project, taskId)`: đưa worktree về đúng `mainBranch` hiện tại (`git reset --hard <mainBranch>` + `git clean -fd`).\n5. `commitAll(worktreePath, message)`: `git add -A`, nếu có thay đổi thì commit và trả về true, không có thay đổi thì trả về false. Commit phải chạy được cả khi máy chưa cấu hình user.name/email (truyền `-c user.name=Claude Task Board -c user.email=taskboard@localhost`).\n6. `mainRepoStatus(project)`: trả {branch, clean} của repo chính (`git rev-parse --abbrev-ref HEAD`, `git status --porcelain`).\nViết unit test trong server/src/git.test.ts dùng một repo tạm tạo trong thư mục temp (git init, commit đầu tiên) để kiểm tra create/commit/reset/remove. Chưa sửa runner ở task này."
+    },
+    {
+      "code": "P2-02",
+      "title": "[P2-02] Runner chạy trong worktree, commit kết quả và chuyển sang Review",
+      "priority": "high",
+      "tags": ["P2", "backend", "runner"],
+      "dependsOn": ["P2-01"],
+      "prompt": "Dùng server/src/git.ts (task P2-01) để nối review flow vào server/src/runner.ts (PLAN mục 2.1, 2.2):\n1. Trong `startRun`, nếu task chưa có worktreePath thì gọi createWorktree, lưu `branch` và `worktreePath` vào task (cột đã có trong bảng tasks), rồi spawn Claude với `cwd = worktreePath`. Lỗi tạo worktree thì task chuyển Failed với lý do rõ ràng.\n2. Trong `finish`, khi run thành công: gọi commitAll(worktreePath, `task #<id>: <title> (run <n>)`) với n là số thứ tự run của task. Có commit thì task chuyển **review**, không có thay đổi thì chuyển **done** và dọn worktree + nhánh.\n3. Bỏ comment \"P1: chưa có worktree...\" đã lỗi thời.\n4. `recover()` không được xoá worktree của task Failed (để còn Retry).\nKiểm tra thủ công: tạo task \"Tạo file hello.txt\" trên một repo nháp, task phải lên Review, repo chính không bị đổi, nhánh claude/task-<id> có 1 commit."
+    },
+    {
+      "code": "P2-03",
+      "title": "[P2-03] API Diff: so sánh nhánh task với nhánh chính",
+      "priority": "high",
+      "tags": ["P2", "backend", "api"],
+      "dependsOn": ["P2-02"],
+      "prompt": "Cài đặt diff cho task ở Review (PLAN mục 2.3).\n1. Trong git.ts thêm `taskDiff(project, taskId)`: chạy `git diff <mainBranch>...claude/task-<id>` (thêm `--no-color --no-ext-diff -M`) và parse thành `FileDiff[]` đúng kiểu trong web/src/types.ts (path, status added/modified/deleted, additions, deletions, hunks với DiffLine có oldNo/newNo). Xem web/src/lib/diff.ts, nếu đã có parser dùng được thì chuyển sang dùng chung thay vì viết lại. File nhị phân: đưa vào danh sách với hunks rỗng.\n2. Route `GET /api/tasks/:id/diff` trả FileDiff[]; task không có nhánh thì trả [].\n3. `/api/state` hiện trả `diffs: {}`: điền diff cho các task đang ở review, và broadcast cập nhật diff khi task chuyển sang review (thêm loại message vào ServerMessage trong bus.ts và xử lý ở web/src/store/store.ts nếu chưa có).\n4. Unit test cho parser với một patch mẫu có file thêm, sửa, xoá, đổi tên."
+    },
+    {
+      "code": "P2-04",
+      "title": "[P2-04] Bảng reviews và hành động Approve & Merge",
+      "priority": "high",
+      "tags": ["P2", "backend", "api", "git"],
+      "dependsOn": ["P2-03"],
+      "prompt": "Cài đặt `POST /api/tasks/:id/review` với `{action:'approve'}` (PLAN mục 2.4, 2.8), thay cho stub 501 trong routes.ts.\n1. db.ts: thêm bảng `reviews(id TEXT PK, task_id, action, feedback, created_at)` và repo `reviews` (add, byTask, all). `/api/state` trả `reviews` thật thay cho mảng rỗng; broadcast review mới qua WS (thêm loại message nếu cần và xử lý ở store.ts).\n2. Approve: chỉ cho task ở status review. Kiểm tra repo chính bằng mainRepoStatus: phải đang ở mainBranch và sạch; nếu không thì trả 409 và đặt `reviewWarning` với thông báo tiếng Việt cụ thể (đang ở nhánh nào / có file chưa commit).\n3. Merge: `git merge --no-ff claude/task-<id> -m \"Merge task #<id>: <title>\"` trong repo chính. Thành công: ghi review, task Done, xoá worktree + nhánh, xoá reviewWarning. Conflict: `git merge --abort`, task giữ Review, reviewWarning liệt kê file conflict, trả 409.\n4. Đảm bảo hai lệnh approve đồng thời trên cùng repo không chạy chồng (khoá theo projectId).\nTest với repo tạm: merge sạch, repo bẩn bị chặn, conflict được abort và repo chính trở lại sạch."
+    },
+    {
+      "code": "P2-05",
+      "title": "[P2-05] Request changes (resume phiên Claude) và Reject",
+      "priority": "high",
+      "tags": ["P2", "backend", "api"],
+      "dependsOn": ["P2-04"],
+      "prompt": "Hoàn thiện `POST /api/tasks/:id/review` cho hai hành động còn lại (PLAN mục 2.5, 2.6):\n1. `{action:'request_changes', feedback}`: feedback bắt buộc (ít nhất 5 ký tự, lỗi 400 tiếng Việt). Ghi review, rồi gọi startRun(task, 'resume', feedback) chạy `--resume <sessionId>` trong cùng worktree. Run mới phải lưu feedback. Khi run kết thúc, commit mới được thêm lên nhánh và task quay lại Review với diff mới (diff tính lại).\n2. Tôn trọng giới hạn song song: nếu hết slot thì task chuyển Queued và lần chạy kế tiếp phải là resume kèm feedback (không phải retry). Cần lưu feedback chờ chạy, ví dụ trên run đã tạo hoặc cột mới trong tasks; chọn cách đơn giản và ghi rõ trong code.\n3. `{action:'reject'}`: ghi review, xoá worktree + nhánh, task Failed với failReason 'Bị từ chối khi review'.\n4. Action không hợp lệ thì 400.\nKiểm tra AC-03: sau Request changes, Claude nhớ ngữ cảnh lần trước và diff có thêm commit mới."
+    },
+    {
+      "code": "P2-06",
+      "title": "[P2-06] Retry task Failed trên worktree sạch",
+      "priority": "normal",
+      "tags": ["P2", "backend", "runner"],
+      "dependsOn": ["P2-05"],
+      "prompt": "Sửa `POST /api/tasks/:id/retry` và luồng pump (PLAN mục 2.7):\n1. Task Failed còn worktree: gọi resetWorktree về mainBranch trước khi chạy lại. Task bị Reject (không còn worktree): xoá branch/worktreePath trong task để startRun tạo mới.\n2. Run mới có kind='retry', dùng session mới (không resume).\n3. Viết test/kịch bản kiểm tra: task lỗi → Retry → chạy trên code sạch, không mang thay đổi dở dang của lần trước."
+    },
+    {
+      "code": "P2-07",
+      "title": "[P2-07] Web: nối tab Diff, thanh Review, tab Lịch sử và badge Review với API thật",
+      "priority": "high",
+      "tags": ["P2", "frontend"],
+      "dependsOn": ["P2-03", "P2-04", "P2-05"],
+      "prompt": "Giao diện review đã có sẵn từ prototype (web/src/components/DiffView.tsx, web/src/pages/TaskDetail.tsx, web/src/pages/Inbox.tsx, web/src/store/store.ts). Nhiệm vụ là làm cho chúng chạy đúng với backend thật, không thiết kế lại (PLAN mục 2.9–2.12):\n1. Tab Diff: lấy diff từ state (và gọi `GET /api/tasks/:id/diff` khi mở task nếu state chưa có); danh sách file bên trái, unified/side-by-side bên phải; trạng thái đang tải và rỗng.\n2. Thanh hành động: Approve & Merge / Request changes (ô feedback) / Reject (hộp xác nhận). Hiển thị `reviewWarning` (conflict, repo chính chưa sạch) đúng như prototype. Nút bị vô hiệu khi đang gửi.\n3. Tab Lịch sử: danh sách run initial/resume/retry kèm feedback từ reviews/runs, xem lại log từng run qua `/api/runs/:id/events`.\n4. Badge cột Review và badge \"Cần xử lý\" đếm đúng từ dữ liệu thật.\n5. Kiểm tra cả chế độ `npm run dev:mock` vẫn chạy (không làm hỏng store mock)."
+    },
+    {
+      "code": "P2-08",
+      "title": "[P2-08] Kiểm thử P2 (AC-02, AC-03, AC-04) và cập nhật PLAN",
+      "priority": "normal",
+      "tags": ["P2", "test", "docs"],
+      "dependsOn": ["P2-06", "P2-07"],
+      "prompt": "Viết test tích hợp tự động cho review flow ở server (không gọi Claude thật: tách phần spawn để có thể thay bằng tiến trình giả ghi file rồi in stream-json mẫu từ server/fixtures). Kịch bản theo PLAN mục P2 > Kiểm thử:\n1. Hai task song song cùng repo sửa hai file khác nhau: cả hai lên Review với diff độc lập, merge lần lượt thành công (AC-04).\n2. Hai task cùng sửa một dòng: task merge sau báo conflict, vẫn ở Review, repo chính sạch.\n3. Request changes tạo run kind=resume và thêm commit mới (AC-03).\n4. Repo chính có thay đổi chưa commit: Approve bị chặn với thông báo rõ ràng.\nSau đó cập nhật bảng Tiến độ trong docs/PLAN.md: P2 hoàn thành, chờ điểm duyệt #2, kèm bảng kết quả kiểm thử giống phần P1."
+    },
+    {
+      "code": "P3-01",
+      "title": "[P3-01] MCP permission server (stdio) với tool approve",
+      "priority": "normal",
+      "tags": ["P3", "backend", "mcp"],
+      "dependsOn": ["P2-08"],
+      "prompt": "Tạo server/src/mcp/permission.ts (PLAN mục 3.1), tham khảo bản spike đã chạy được ở server/fixtures/mcp-approve.spike.mjs và docs/P0-SPIKE.md (S8).\n1. MCP server stdio dùng @modelcontextprotocol/sdk (thêm dependency vào server/package.json, ghim phiên bản cụ thể), tên server `taskboard`, một tool `approve` nhận {tool_name, input, tool_use_id?}.\n2. Tool gọi HTTP long-poll về backend: `POST http://127.0.0.1:<port>/api/internal/permissions` với taskId lấy từ env TASKBOARD_TASK_ID, chờ đến khi có quyết định rồi trả đúng định dạng Claude yêu cầu: `{behavior:'allow', updatedInput}` hoặc `{behavior:'deny', message}` dưới dạng text JSON. Port và token nội bộ lấy từ env.\n3. Mất kết nối backend thì trả deny kèm lý do, không treo vĩnh viễn.\nChưa nối vào runner ở task này; chỉ cần chạy độc lập được và có test gọi tool qua client MCP giả lập."
+    },
+    {
+      "code": "P3-02",
+      "title": "[P3-02] Bảng permission_requests và API duyệt quyền",
+      "priority": "normal",
+      "tags": ["P3", "backend", "api"],
+      "dependsOn": ["P3-01"],
+      "prompt": "Cài đặt phía backend cho yêu cầu quyền (PLAN mục 3.3):\n1. db.ts: bảng `permission_requests(id, task_id, tool, input_json, status, created_at, timeout_at, decided_at)`; status theo kiểu PermissionRequest trong web/src/types.ts.\n2. Route nội bộ `POST /api/internal/permissions` (chỉ chấp nhận token nội bộ sinh khi server khởi động): tạo request pending, chuyển task sang **needs_input**, broadcast `{type:'permission'}` và task, rồi giữ kết nối (long-poll) đến khi có quyết định.\n3. `POST /api/permissions/:id {decision: allow|deny|always}` thay cho stub 501: cập nhật request, trả kết quả cho long-poll đang chờ, task về **running** nếu không còn request pending.\n4. `/api/state` trả `permissions` thật (các request pending). Đóng tab rồi mở lại vẫn thấy request đang chờ.\n5. Khi task bị Stop hoặc tiến trình kết thúc: các request pending của task chuyển denied và long-poll được giải phóng."
+    },
+    {
+      "code": "P3-03",
+      "title": "[P3-03] Runner truyền --mcp-config và --permission-prompt-tool khi spawn",
+      "priority": "normal",
+      "tags": ["P3", "backend", "runner"],
+      "dependsOn": ["P3-02"],
+      "prompt": "Nối MCP permission server vào runner (PLAN mục 3.2):\n1. Mỗi run ghi file cấu hình MCP tạm (trong data/runs/<runId>.mcp.json) khai báo server `taskboard` chạy `node --import tsx server/src/mcp/permission.ts` (hoặc cách chạy phù hợp, đường dẫn tuyệt đối), env gồm TASKBOARD_TASK_ID, port, token nội bộ.\n2. Thêm tham số `--mcp-config <file>` và `--permission-prompt-tool mcp__taskboard__approve`, bỏ `--permission-prompts none` của P1 (kiểm tra lại flag đúng theo `claude --help` và docs/P0-SPIKE.md).\n3. Dọn file tạm khi run kết thúc.\n4. Phương án dự phòng (PLAN rủi ro P3): thêm cấu hình/biến môi trường để tắt prompt tool và quay về acceptEdits + whitelist nếu cơ chế này lỗi.\nKiểm tra thủ công: task yêu cầu `npm install` chuyển Needs Input; Allow thì chạy tiếp; Deny thì Claude nhận từ chối và xử lý tiếp."
+    },
+    {
+      "code": "P3-04",
+      "title": "[P3-04] Tự cho phép theo whitelist và tuỳ chọn \"Luôn cho phép\"",
+      "priority": "normal",
+      "tags": ["P3", "backend"],
+      "dependsOn": ["P3-02"],
+      "prompt": "Cài đặt quy tắc tự cho phép (PLAN mục 3.4, FR-42, FR-61):\n1. Khi nhận yêu cầu quyền, so khớp tool + input với `projects.allowed_tools` theo cú pháp quy tắc của Claude Code (ví dụ `Bash(npm test:*)`, `Edit`, `Read`). Khớp thì trả allow ngay, không tạo request pending, không làm phiền người dùng; vẫn ghi một event vào log của run để truy vết.\n2. Quyết định `always`: allow request hiện tại và thêm quy tắc tương ứng vào allowed_tools của project (với Bash: lấy lệnh đầu tiên + `:*`), broadcast project cập nhật.\n3. Unit test cho hàm so khớp quy tắc với nhiều trường hợp (khớp prefix, không khớp, tool không có tham số)."
+    },
+    {
+      "code": "P3-05",
+      "title": "[P3-05] Timeout yêu cầu quyền tự Deny",
+      "priority": "normal",
+      "tags": ["P3", "backend"],
+      "dependsOn": ["P3-02"],
+      "prompt": "Cài đặt timeout cho yêu cầu quyền (PLAN mục 3.5): dùng `settings.permissionTimeoutMin` (mặc định 30). Request pending quá hạn thì chuyển status 'timeout', trả deny cho Claude kèm thông báo \"Hết thời gian chờ duyệt quyền\", broadcast cập nhật. Khi server khởi động lại, request pending cũ được đóng như timeout. Lưu `timeout_at` để web hiển thị đếm ngược đúng. Viết test với thời gian giả (inject clock hoặc timeout ngắn)."
+    },
+    {
+      "code": "P3-06",
+      "title": "[P3-06] Hook Notification của Claude gửi về backend",
+      "priority": "low",
+      "tags": ["P3", "backend"],
+      "dependsOn": ["P3-03"],
+      "prompt": "Bổ sung hook (PLAN mục 3.6): khi spawn, truyền `--settings <file tạm>` cấu hình hook `Notification` gọi về `POST /api/hooks/notification` (kèm token nội bộ và TASKBOARD_TASK_ID). Backend ghi nội dung thành event `system` trong log của run hiện tại và broadcast để web có thể hiện toast. Lệnh hook phải chạy được trên Windows (ưu tiên một script node nhỏ trong server/src/hooks/ thay vì curl). Dọn file tạm khi run kết thúc."
+    },
+    {
+      "code": "P3-07",
+      "title": "[P3-07] Web: thẻ Needs Input, Settings project và Web Notification với dữ liệu thật",
+      "priority": "normal",
+      "tags": ["P3", "frontend"],
+      "dependsOn": ["P3-02", "P3-04", "P3-05"],
+      "prompt": "Nối các thành phần đã có từ prototype với backend thật (PLAN mục 3.7–3.9), không thiết kế lại:\n1. web/src/components/PermissionCard.tsx và trang Inbox: hiện tool + input, các nút Cho phép / Từ chối / Luôn cho phép gọi `decidePermission`, đếm ngược theo `timeoutAt` của server; request biến mất khi được quyết định ở tab khác (qua WS).\n2. Settings/Projects: sửa allowed_tools, permission_mode, max_parallel lưu xuống backend; `PUT /api/settings` cho permissionTimeoutMin và tuỳ chọn thông báo.\n3. Web Notification: xin quyền một lần; báo khi task chuyển Review, Needs Input hoặc Failed theo `settings.notifyOn`; title tab hiển thị số việc cần xử lý. Bấm thông báo mở đúng task.\n4. Đảm bảo `npm run dev:mock` vẫn chạy."
+    },
+    {
+      "code": "P3-08",
+      "title": "[P3-08] Kiểm thử P3 và cập nhật PLAN",
+      "priority": "normal",
+      "tags": ["P3", "test", "docs"],
+      "dependsOn": ["P3-03", "P3-06", "P3-07"],
+      "prompt": "Kiểm thử P3 theo PLAN mục P3 > Kiểm thử: (1) lệnh ngoài whitelist → Needs Input, Allow chạy tiếp, Deny Claude xử lý tiếp; (2) lệnh trong whitelist chạy ngay không hỏi; (3) đóng/mở lại tab vẫn thấy yêu cầu đang chờ; (4) timeout tự Deny. Tự động hoá phần backend được (dùng MCP client giả gọi tool approve), phần cần Claude thật thì ghi hướng dẫn chạy tay. Đối chiếu toàn bộ FR Must/Should trong docs/SPEC.md, liệt kê FR nào đã đạt/chưa đạt. Cập nhật bảng Tiến độ trong docs/PLAN.md: P3 hoàn thành, chờ điểm duyệt #3."
+    },
+    {
+      "code": "C-01",
+      "title": "[C-01] Nhận diện lỗi rate limit và tự đưa task lại hàng đợi",
+      "priority": "normal",
+      "tags": ["chung", "backend", "runner"],
+      "dependsOn": [],
+      "prompt": "Xử lý rủi ro \"Vượt giới hạn sử dụng của gói\" (PLAN mục Rủi ro theo giai đoạn > Chung). Hiện runner.ts chỉ ghi failReason khi gặp apiErrorStatus 429. Yêu cầu: khi run thất bại do rate limit (429 hoặc thông điệp usage limit trong result/stderr; xem fixtures để nhận diện), task chuyển lại Queued kèm thời điểm được chạy lại (ví dụ cột `not_before` trong tasks, mặc định chờ 15 phút, đọc giờ reset nếu thông điệp có). pump() bỏ qua task chưa tới giờ và tự hẹn giờ pump lại. Web hiển thị trên thẻ task \"Chờ đến HH:mm do giới hạn sử dụng\". Giới hạn số lần tự thử lại (ví dụ 3) rồi mới Failed. Unit test cho phần nhận diện lỗi và sắp xếp hàng đợi."
+    },
+    {
+      "code": "P4-01",
+      "title": "[P4-01] Template prompt (FR-06)",
+      "priority": "low",
+      "tags": ["P4", "fullstack"],
+      "dependsOn": ["P3-08"],
+      "prompt": "Cài đặt template prompt thật (PLAN 4.1, FR-06). Prototype đã có phần chọn template trong web/src/components/TaskFormModal.tsx với dữ liệu giả: lưu template vào bảng `templates(id, name, title, prompt, tags, project_id nullable)`, API CRUD, trang/khung quản lý template trong Settings, và form tạo task lấy template từ API. Có sẵn vài template mặc định (sửa bug, viết test, refactor)."
+    },
+    {
+      "code": "P4-02",
+      "title": "[P4-02] Tag, tìm kiếm và lọc nâng cao trên board (FR-07)",
+      "priority": "low",
+      "tags": ["P4", "frontend"],
+      "dependsOn": ["P3-08"],
+      "prompt": "Cài đặt PLAN 4.2 (FR-07): ô tìm kiếm theo tiêu đề/prompt/#id trên Kanban, lọc theo tag, độ ưu tiên và project (kết hợp được), giữ bộ lọc trên URL query để chia sẻ/tải lại không mất. Nhập/sửa tag trong form task với gợi ý từ tag đã dùng."
+    },
+    {
+      "code": "P4-03",
+      "title": "[P4-03] Chạy test của repo ngay trên trang Review (FR-34)",
+      "priority": "low",
+      "tags": ["P4", "fullstack"],
+      "dependsOn": ["P3-08"],
+      "prompt": "Cài đặt PLAN 4.3 (FR-34): project có thêm cấu hình `test_command` (ví dụ `npm test`). Trên trang Review có nút \"Chạy test\" chạy lệnh trong worktree của task, stream output qua WS, hiển thị kết quả đạt/lỗi và thời gian; lưu lần chạy gần nhất. Không cho chạy song song hai lần test trên cùng task; có nút dừng."
+    },
+    {
+      "code": "P4-04",
+      "title": "[P4-04] Trang thống kê task, chi phí và thời gian",
+      "priority": "low",
+      "tags": ["P4", "fullstack"],
+      "dependsOn": ["P3-08"],
+      "prompt": "Cài đặt PLAN 4.4: API tổng hợp từ bảng runs/tasks (số task theo trạng thái, tổng cost_usd, số turns, thời gian chạy) theo ngày và theo project, khoảng thời gian chọn được (7/30/90 ngày). Trang Thống kê mới trong sidebar với các ô số liệu và biểu đồ theo ngày, đúng phong cách UI hiện có, hỗ trợ sáng/tối."
+    },
+    {
+      "code": "P4-05",
+      "title": "[P4-05] Thông báo qua Telegram (FR-51)",
+      "priority": "low",
+      "tags": ["P4", "backend"],
+      "dependsOn": ["P3-08"],
+      "prompt": "Cài đặt PLAN 4.5 (FR-51): cấu hình bot token và chat id trong Settings (lưu ở bảng settings, không trả token ra API sau khi lưu). Gửi tin khi task chuyển Review, Needs Input hoặc Failed theo notifyOn, kèm liên kết mở task. Có nút \"Gửi thử\". Lỗi gửi không được làm hỏng luồng chính, chỉ ghi log."
+    },
+    {
+      "code": "P4-06",
+      "title": "[P4-06] Lên lịch chạy task theo cron",
+      "priority": "low",
+      "tags": ["P4", "fullstack"],
+      "dependsOn": ["P3-08"],
+      "prompt": "Cài đặt PLAN 4.6: cho phép tạo lịch (cron expression + mẫu task: project, tiêu đề, prompt, ưu tiên). Đến giờ thì backend tạo task mới ở Queued. Lưu bảng `schedules`, có bật/tắt, xem lần chạy kế tiếp, lịch sử task đã tạo. Server tắt lúc đến giờ thì khi bật lại không chạy bù quá 1 lần."
+    },
+    {
+      "code": "P4-07",
+      "title": "[P4-07] Truy cập từ xa an toàn (Tailscale + token đăng nhập)",
+      "priority": "low",
+      "tags": ["P4", "security"],
+      "dependsOn": ["P3-08"],
+      "prompt": "Cài đặt PLAN 4.7 (NFR-04): mặc định vẫn chỉ bind 127.0.0.1. Thêm cấu hình bật truy cập từ xa (bind địa chỉ do người dùng chỉ định, ví dụ IP Tailscale) và bắt buộc đăng nhập bằng token: trang đăng nhập, cookie HttpOnly, mọi /api và /ws đều kiểm tra; các route nội bộ /api/internal và /api/hooks chỉ chấp nhận từ localhost. Viết hướng dẫn cấu hình Tailscale trong README."
+    }
+  ]
+}

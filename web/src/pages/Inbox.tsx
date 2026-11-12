@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom'
 import { ArrowRight, CircleCheckBig, GitPullRequest, Hand, XCircle } from 'lucide-react'
 import { useStore } from '../store/store'
 import { PermissionCard } from '../components/PermissionCard'
+import { stripMarkdown } from '../components/Markdown'
 import { EmptyState, StatusBadge } from '../components/ui'
 import { timeAgo } from '../lib/format'
 
@@ -50,7 +51,7 @@ export function Inbox() {
                         <span className="mr-2 font-mono text-slate-400">#{t.id}</span>
                         {t.title}
                       </p>
-                      <p className="mt-0.5 line-clamp-1 text-xs text-slate-500 dark:text-slate-400">{lastRun?.summary}</p>
+                      <p className="mt-0.5 line-clamp-1 text-xs text-slate-500 dark:text-slate-400">{lastRun?.summary && stripMarkdown(lastRun.summary)}</p>
                       {t.reviewWarning && <p className="mt-1 text-xs text-rose-600">⚠ {t.reviewWarning}</p>}
                     </div>
                     <div className="shrink-0 text-right text-xs text-slate-500 dark:text-slate-400">

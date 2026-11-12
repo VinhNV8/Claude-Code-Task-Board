@@ -2,12 +2,16 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from '
 import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom'
 import {
   Bell,
+  ChartColumn,
   CheckCircle2,
   FlaskConical,
   FolderGit2,
   Inbox,
   KanbanSquare,
+  LogOut,
   Moon,
+  PanelLeftClose,
+  PanelLeftOpen,
   Plus,
   RotateCcw,
   Settings as SettingsIcon,
@@ -18,6 +22,16 @@ import {
 } from 'lucide-react'
 import { IS_MOCK, dismissToast, resetDemo, setDemo, useStore } from '../store/store'
 import { TaskFormModal } from './TaskFormModal'
+import { fetchAuthStatus, logout } from '../lib/auth'
+import { compactBadge, isSidebarShortcut, loadCollapsed, saveCollapsed } from '../lib/sidebar'
+
+// Nhãn môi trường để không nhầm tab DEV với UAT. Bản prod/mock không hiện nhãn.
+const ENV_BADGE: Record<string, { label: string; cls: string } | undefined> = {
+  dev: { label: 'DEV', cls: 'bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-300' },
+  uat: { label: 'UAT', cls: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-300' },
+}
+const envBadge = ENV_BADGE[__APP_ENV__]
+const TITLE = envBadge ? `[${envBadge.label}] Claude Task Board` : 'Claude Task Board'
 import { Button } from './ui'
 
 // ------------------------------------------------------------ mở modal tạo task từ bất kỳ đâu
@@ -48,18 +62,56 @@ function useTheme() {
   return [dark, setDark] as const
 }
 
+// ------------------------------------------------------------ mở rộng/thu nhỏ left-menu (chỉ áp dụng màn hình md+)
+
+function storage(): Storage | undefined {
+  try {
+    return window.localStorage
+  } catch {
+    return undefined
+  }
+}
+
+function useSidebarCollapsed() {
+  const [collapsed, setCollapsed] = useState(() => loadCollapsed(storage()))
+  useEffect(() => saveCollapsed(storage(), collapsed), [collapsed])
+  // phím tắt [: thu/mở menu
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement | null
+      if (isSidebarShortcut({ key: e.key, ctrlKey: e.ctrlKey, metaKey: e.metaKey, altKey: e.altKey, targetTag: el?.tagName, isContentEditable: el?.isContentEditable })) {
+        e.preventDefault()
+        setCollapsed((c) => !c)
+      }
+    }
+    window.addEventListener('keydown', h)
+    return () => window.removeEventListener('keydown', h)
+  }, [])
+  return [collapsed, setCollapsed] as const
+}
+
 // ------------------------------------------------------------ layout
 
 export function Layout() {
   const s = useStore()
   const [dark, setDark] = useTheme()
+  const [collapsed, setCollapsed] = useSidebarCollapsed()
+  // Khi thu nhỏ: ẩn chữ trên md+ (mobile vẫn là thanh ngang như cũ)
+  const mdHide = collapsed ? 'md:hidden' : ''
   const [newOpen, setNewOpen] = useState(false)
   const [newProject, setNewProject] = useState<string | undefined>()
+  // Nút đăng xuất chỉ hiện khi backend bật đăng nhập (truy cập từ xa, PLAN 4.7)
+  const [authRequired, setAuthRequired] = useState(false)
+  useEffect(() => {
+    fetchAuthStatus()
+      .then((a) => setAuthRequired(a.required))
+      .catch(() => undefined)
+  }, [])
   const attention = s.tasks.filter((t) => t.status === 'needs_input' || t.status === 'review').length
   const needsInput = s.tasks.filter((t) => t.status === 'needs_input').length
 
   useEffect(() => {
-    document.title = attention > 0 ? `(${attention}) Claude Task Board` : 'Claude Task Board'
+    document.title = attention > 0 ? `(${attention}) ${TITLE}` : TITLE
   }, [attention])
 
   // phím tắt N: tạo task mới
@@ -90,6 +142,7 @@ export function Layout() {
       urgent: needsInput > 0,
     },
     { to: '/projects', label: 'Projects', icon: <FolderGit2 size={18} /> },
+    { to: '/stats', label: 'Thống kê', icon: <ChartColumn size={18} /> },
     { to: '/settings', label: 'Cài đặt', icon: <SettingsIcon size={18} /> },
   ]
 
@@ -97,18 +150,28 @@ export function Layout() {
     <NewTaskCtx.Provider value={openNew}>
       <div className="flex min-h-screen flex-col bg-slate-50 text-slate-900 md:flex-row dark:bg-slate-950 dark:text-slate-100">
         {/* Sidebar */}
-        <aside className="flex shrink-0 items-center gap-1 overflow-x-auto border-b border-slate-200 bg-white px-3 py-2 md:sticky md:top-0 md:h-screen md:w-56 md:flex-col md:items-stretch md:border-b-0 md:border-r md:px-3 md:py-4 dark:border-slate-800 dark:bg-slate-900">
-          <Link to="/" className="mr-2 flex items-center gap-2 px-2 font-semibold md:mb-4 md:mr-0">
-            <span className="grid h-7 w-7 place-items-center rounded-md bg-indigo-600 text-sm text-white">CT</span>
-            <span className="hidden whitespace-nowrap md:inline">Claude Task Board</span>
+        <aside
+          data-collapsed={collapsed}
+          className={`flex shrink-0 items-center gap-1 overflow-x-auto border-b border-slate-200 bg-white px-3 py-2 md:sticky md:top-0 md:h-screen md:flex-col md:items-stretch md:overflow-x-hidden md:border-b-0 md:border-r md:py-4 md:transition-[width] md:duration-200 dark:border-slate-800 dark:bg-slate-900 ${
+            collapsed ? 'md:w-16 md:px-2' : 'md:w-56 md:px-3'
+          }`}
+        >
+          <Link to="/" className="mr-2 flex items-center gap-2 px-2 font-semibold md:mb-4 md:mr-0" title="Claude Task Board">
+            <span className="grid h-7 w-7 shrink-0 place-items-center rounded-md bg-indigo-600 text-sm text-white">CT</span>
+            <span className={`hidden whitespace-nowrap ${collapsed ? '' : 'md:inline'}`}>Claude Task Board</span>
+            {envBadge && (
+              <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold tracking-wide ${envBadge.cls} ${mdHide}`}>{envBadge.label}</span>
+            )}
           </Link>
           {nav.map((n) => (
             <NavLink
               key={n.to}
               to={n.to}
               end={n.end}
+              title={collapsed ? n.label : undefined}
+              aria-label={n.label}
               className={({ isActive }) =>
-                `flex shrink-0 items-center gap-2.5 rounded-md px-2.5 py-2 text-sm ${
+                `relative flex shrink-0 items-center gap-2.5 rounded-md px-2.5 py-2 text-sm ${
                   isActive
                     ? 'bg-indigo-50 font-medium text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300'
                     : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800'
@@ -116,19 +179,50 @@ export function Layout() {
               }
             >
               {n.icon}
-              <span className="hidden sm:inline">{n.label}</span>
+              <span className={`hidden whitespace-nowrap sm:inline ${mdHide}`}>{n.label}</span>
               {!!n.badge && (
-                <span className={`ml-auto rounded-full px-1.5 text-xs font-semibold text-white ${n.urgent ? 'bg-amber-500' : 'bg-violet-500'}`}>{n.badge}</span>
+                <span className={`ml-auto rounded-full px-1.5 text-xs font-semibold text-white ${n.urgent ? 'bg-amber-500' : 'bg-violet-500'} ${mdHide}`}>{n.badge}</span>
+              )}
+              {!!n.badge && collapsed && (
+                <span
+                  className={`absolute right-0.5 top-0.5 hidden min-w-[16px] rounded-full px-1 text-center text-[10px] font-semibold leading-4 text-white md:block ${
+                    n.urgent ? 'bg-amber-500' : 'bg-violet-500'
+                  }`}
+                >
+                  {compactBadge(n.badge)}
+                </span>
               )}
             </NavLink>
           ))}
           <div className="ml-auto flex items-center gap-1 md:ml-0 md:mt-auto md:flex-col md:items-stretch">
             <button
               onClick={() => setDark(!dark)}
+              title={collapsed ? (dark ? 'Giao diện sáng' : 'Giao diện tối') : undefined}
               className="flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
             >
               {dark ? <Sun size={18} /> : <Moon size={18} />}
-              <span className="hidden md:inline">{dark ? 'Giao diện sáng' : 'Giao diện tối'}</span>
+              <span className={`hidden whitespace-nowrap ${collapsed ? '' : 'md:inline'}`}>{dark ? 'Giao diện sáng' : 'Giao diện tối'}</span>
+            </button>
+            {authRequired && (
+              <button
+                onClick={() => void logout()}
+                className="flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
+                title="Đăng xuất"
+              >
+                <LogOut size={18} />
+                <span className={`hidden whitespace-nowrap ${collapsed ? '' : 'md:inline'}`}>Đăng xuất</span>
+              </button>
+            )}
+            {/* Nút mở rộng/thu nhỏ menu — chỉ có trên md+ (mobile là thanh ngang) */}
+            <button
+              onClick={() => setCollapsed(!collapsed)}
+              aria-expanded={!collapsed}
+              aria-label={collapsed ? 'Mở rộng menu' : 'Thu nhỏ menu'}
+              title={`${collapsed ? 'Mở rộng menu' : 'Thu nhỏ menu'} (phím tắt: [)`}
+              className="hidden items-center gap-2.5 rounded-md px-2.5 py-2 text-sm text-slate-600 hover:bg-slate-100 md:flex dark:text-slate-300 dark:hover:bg-slate-800"
+            >
+              {collapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
+              <span className={`whitespace-nowrap ${collapsed ? 'hidden' : ''}`}>Thu nhỏ menu</span>
             </button>
           </div>
         </aside>

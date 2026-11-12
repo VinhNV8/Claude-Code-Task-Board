@@ -3,7 +3,7 @@
 // P1 sẽ thay các action bên dưới bằng lời gọi REST/WS tới backend thật,
 // còn giao diện giữ nguyên.
 import { useSyncExternalStore } from 'react'
-import { buildSeed, defaultSettings, diffPool, feedbackDiff, seedProjects } from '../mocks/data'
+import { buildSeed, defaultSettings, diffPool, feedbackDiff, promptTemplates, seedProjects } from '../mocks/data'
 import type {
   DemoFlags,
   FileDiff,
@@ -13,23 +13,35 @@ import type {
   PermissionRequest,
   Priority,
   Project,
+  PromptTemplate,
   ReviewAction,
   Run,
   RunKind,
+  Schedule,
+  ScheduleRun,
   Settings,
+  Stats,
+  StatsRange,
   Task,
   TaskStatus,
+  TelegramSettingsInput,
+  TestOutput,
+  TestRun,
   Toast,
 } from '../types'
 
 export interface State {
   projects: Project[]
+  templates: PromptTemplate[]
+  schedules: Schedule[]
   tasks: Task[]
   runs: Run[]
   events: LogEvent[]
   diffs: Record<number, FileDiff[]>
   permissions: PermissionRequest[]
   reviews: ReviewAction[]
+  testRuns: TestRun[]
+  testOutputs: Record<number, TestOutput>
   toasts: Toast[]
   settings: Settings
   demo: DemoFlags
@@ -48,12 +60,16 @@ function initialState(empty = false): State {
   const seed = buildSeed()
   return {
     projects: seedProjects,
+    templates: promptTemplates,
+    schedules: [],
     tasks: empty ? [] : seed.tasks,
     runs: empty ? [] : seed.runs,
     events: empty ? [] : seed.events,
     diffs: empty ? {} : seed.diffs,
     permissions: empty ? [] : seed.permissions,
     reviews: empty ? [] : seed.reviews,
+    testRuns: [],
+    testOutputs: {},
     toasts: [],
     settings: defaultSettings,
     demo: defaultDemo,
@@ -75,6 +91,56 @@ function set(fn: (s: State) => Partial<State>) {
 export const getState = () => state
 export const IS_MOCK = true
 export function ensureEvents(_runId: string) {}
+
+// ------------------------------------------------------------ giả lập chạy test (FR-34)
+
+const testTimers = new Map<number, ReturnType<typeof setInterval>>()
+
+export function ensureTestOutput(_taskId: number) {}
+
+function finishTest(taskId: number, patch: Partial<TestRun>) {
+  clearInterval(testTimers.get(taskId))
+  testTimers.delete(taskId)
+  set((s) => ({ testRuns: s.testRuns.map((r) => (r.taskId === taskId ? { ...r, ...patch, endedAt: Date.now() } : r)) }))
+}
+
+export function runTests(taskId: number) {
+  if (testTimers.has(taskId)) return toast({ kind: 'error', title: 'Không chạy được test', body: 'Test của task này đang chạy, hãy đợi xong hoặc bấm Dừng' })
+  const project = state.projects.find((p) => p.id === state.tasks.find((t) => t.id === taskId)?.projectId)
+  const command = project?.testCommand ?? 'npm test'
+  const fail = Math.random() < 0.3
+  const lines = [
+    `> ${command}`,
+    '',
+    ' ✓ src/cart.test.ts (8 tests) 41ms',
+    ' ✓ src/checkout.test.ts (5 tests) 63ms',
+    fail ? ' ✗ src/login.test.ts > hiển thị lỗi khi sai mật khẩu\n   AssertionError: expected "" to contain "Sai mật khẩu"' : ' ✓ src/login.test.ts (6 tests) 27ms',
+    '',
+    fail ? ' Tests  1 failed | 18 passed (19)' : ' Tests  19 passed (19)',
+  ]
+  const run: TestRun = { taskId, command, status: 'running', startedAt: Date.now() }
+  set((s) => ({
+    testRuns: [...s.testRuns.filter((r) => r.taskId !== taskId), run],
+    testOutputs: { ...s.testOutputs, [taskId]: { text: '', end: 0 } },
+  }))
+  let i = 0
+  testTimers.set(
+    taskId,
+    setInterval(() => {
+      if (i < lines.length) {
+        const chunk = lines[i++] + '\n'
+        set((s) => {
+          const cur = s.testOutputs[taskId] ?? { text: '', end: 0 }
+          return { testOutputs: { ...s.testOutputs, [taskId]: { text: cur.text + chunk, end: cur.end + chunk.length } } }
+        })
+      } else finishTest(taskId, fail ? { status: 'failed', exitCode: 1 } : { status: 'passed', exitCode: 0 })
+    }, 400 / state.demo.speed),
+  )
+}
+
+export function stopTests(taskId: number) {
+  if (testTimers.has(taskId)) finishTest(taskId, { status: 'stopped', error: 'Đã dừng bởi người dùng.' })
+}
 
 export function useStore(): State {
   return useSyncExternalStore(
@@ -572,8 +638,78 @@ export function deleteProject(id: string) {
   set((s) => ({ projects: s.projects.filter((p) => p.id !== id) }))
 }
 
-export function updateSettings(patch: Partial<Settings>) {
+export type TemplateInput = Omit<PromptTemplate, 'id'> & { id?: string }
+
+export async function saveTemplate(t: TemplateInput): Promise<string | null> {
+  if (!t.name.trim()) return 'Nhập tên template'
+  if (t.prompt.trim().length < 10) return 'Nội dung prompt cần ít nhất 10 ký tự'
+  const saved: PromptTemplate = { ...t, id: t.id || `tpl-${uid()}` }
+  set((s) => ({
+    templates: s.templates.some((x) => x.id === saved.id) ? s.templates.map((x) => (x.id === saved.id ? saved : x)) : [...s.templates, saved],
+  }))
+  toast({ kind: 'success', title: `Đã lưu template ${saved.name}` })
+  return null
+}
+
+export function deleteTemplate(id: string) {
+  set((s) => ({ templates: s.templates.filter((t) => t.id !== id) }))
+}
+
+export function updateSettings(patch: Partial<Omit<Settings, 'telegram'>>) {
   set((s) => ({ settings: { ...s.settings, ...patch } }))
+}
+
+// Telegram (FR-51): prototype chỉ lưu cấu hình, không gửi tin thật.
+export async function saveTelegram(input: TelegramSettingsInput): Promise<string | null> {
+  set((s) => {
+    const { botToken, ...rest } = input
+    const hasToken = botToken === undefined ? s.settings.telegram.hasToken : !!botToken
+    return { settings: { ...s.settings, telegram: { ...s.settings.telegram, ...rest, hasToken } } }
+  })
+  return null
+}
+
+export async function testTelegram(_input: TelegramSettingsInput): Promise<string | null> {
+  return 'Gửi thử Telegram chỉ hoạt động khi chạy với backend thật (npm run dev)'
+}
+
+// Thống kê (PLAN 4.4) tổng hợp ở backend; prototype không có dữ liệu lịch sử.
+export async function fetchStats(_days: StatsRange, _projectId?: string): Promise<Stats> {
+  throw new Error('Trang thống kê chỉ có dữ liệu khi chạy với backend thật (npm run dev)')
+}
+
+// Lên lịch (PLAN 4.6): prototype chỉ lưu danh sách, không tự tạo task theo giờ.
+export type ScheduleInput = Pick<Schedule, 'cron' | 'projectId' | 'title' | 'prompt' | 'priority' | 'enabled'> & { id?: string }
+
+export async function saveSchedule(input: ScheduleInput): Promise<string | null> {
+  if (!input.cron.trim()) return 'Nhập biểu thức cron'
+  if (!input.title.trim()) return 'Vui lòng nhập tiêu đề'
+  if (input.prompt.trim().length < 10) return 'Mô tả cần ít nhất 10 ký tự'
+  const prev = state.schedules.find((x) => x.id === input.id)
+  const saved: Schedule = { ...prev, ...input, id: input.id || `sch-${uid()}`, createdAt: prev?.createdAt ?? Date.now(), nextRunAt: undefined }
+  set((s) => ({ schedules: prev ? s.schedules.map((x) => (x.id === saved.id ? saved : x)) : [...s.schedules, saved] }))
+  toast({ kind: 'success', title: 'Đã lưu lịch', body: saved.title })
+  return null
+}
+
+export async function setScheduleEnabled(id: string, enabled: boolean) {
+  set((s) => ({ schedules: s.schedules.map((x) => (x.id === id ? { ...x, enabled } : x)) }))
+}
+
+export async function deleteSchedule(id: string) {
+  set((s) => ({ schedules: s.schedules.filter((x) => x.id !== id) }))
+}
+
+export async function fetchScheduleRuns(_id: string): Promise<ScheduleRun[]> {
+  return []
+}
+
+export async function previewCron(_cron: string): Promise<number[]> {
+  throw new Error('Xem trước lịch chỉ có khi chạy với backend thật (npm run dev)')
+}
+
+export function onScheduleRun(_fn: (r: ScheduleRun) => void) {
+  return () => {}
 }
 
 // ------------------------------------------------------------ bảng điều khiển demo

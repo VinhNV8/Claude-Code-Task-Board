@@ -5,6 +5,7 @@ import { Inbox } from './pages/Inbox'
 import { TaskDetail } from './pages/TaskDetail'
 import { Projects } from './pages/Projects'
 import { Settings } from './pages/Settings'
+import { Stats } from './pages/Stats'
 
 export function App() {
   return (
@@ -15,6 +16,7 @@ export function App() {
           <Route path="/inbox" element={<Inbox />} />
           <Route path="/tasks/:id" element={<TaskDetail />} />
           <Route path="/projects" element={<Projects />} />
+          <Route path="/stats" element={<Stats />} />
           <Route path="/settings" element={<Settings />} />
         </Route>
       </Routes>

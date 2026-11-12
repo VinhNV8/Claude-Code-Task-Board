@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { FolderGit2, GitBranch, Pencil, Plus, ShieldCheck, Trash2, X } from 'lucide-react'
+import { FlaskConical, FolderGit2, GitBranch, Pencil, Plus, ShieldCheck, Trash2, X } from 'lucide-react'
 import { deleteProject, saveProject, useStore } from '../store/store'
 import { Button, ConfirmDialog, EmptyState, Field, Modal, inputCls } from '../components/ui'
 import { STATUS_META } from '../lib/format'
@@ -61,6 +61,11 @@ export function Projects() {
                     <ShieldCheck size={12} /> {p.permissionMode}
                   </span>
                   <span>Song song tối đa: {p.maxParallel}</span>
+                  {p.testCommand && (
+                    <span className="inline-flex items-center gap-1 font-mono">
+                      <FlaskConical size={12} /> {p.testCommand}
+                    </span>
+                  )}
                 </div>
                 <div className="mt-3 flex flex-wrap gap-1.5">
                   {(['running', 'needs_input', 'review', 'queued'] as const).map((st) => (
@@ -176,6 +181,20 @@ export function ProjectModal({ project, onClose }: { project: Project | null; on
             <input type="number" min={1} max={5} className={inputCls} value={p.maxParallel} onChange={(e) => setP({ ...p, maxParallel: Number(e.target.value) || 1 })} />
           </Field>
         </div>
+        <Field
+          label="Lệnh test (tuỳ chọn)"
+          hint="Chạy trong worktree của task khi bấm “Chạy test” trên trang Review. Không hỗ trợ &&, |, >: hãy dùng script, ví dụ npm run test:ci hoặc npm it (cài rồi test)."
+        >
+          <input
+            className={`${inputCls} font-mono`}
+            value={p.testCommand ?? ''}
+            onChange={(e) => {
+              setP({ ...p, testCommand: e.target.value })
+              setServerError(null)
+            }}
+            placeholder="npm test"
+          />
+        </Field>
         <div>
           <span className="text-sm font-medium">Tool được tự động cho phép (whitelist)</span>
           <p className="mb-2 text-xs text-slate-500">

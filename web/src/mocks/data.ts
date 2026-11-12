@@ -6,6 +6,7 @@ import type {
   LogEventInput,
   PermissionRequest,
   Project,
+  PromptTemplate,
   ReviewAction,
   Run,
   Settings,
@@ -24,6 +25,7 @@ export const seedProjects: Project[] = [
     permissionMode: 'acceptEdits',
     allowedTools: ['Read', 'Edit', 'Write', 'Glob', 'Grep', 'Bash(npm test:*)', 'Bash(git status)'],
     maxParallel: 2,
+    testCommand: 'npm test',
   },
   {
     id: 'p-api',
@@ -33,6 +35,7 @@ export const seedProjects: Project[] = [
     permissionMode: 'acceptEdits',
     allowedTools: ['Read', 'Edit', 'Glob', 'Grep', 'Bash(dotnet test:*)'],
     maxParallel: 1,
+    testCommand: 'dotnet test',
   },
   {
     id: 'p-docs',
@@ -50,6 +53,7 @@ export const defaultSettings: Settings = {
   browserNotifications: false,
   notifyOn: { review: true, needsInput: true, failed: true },
   permissionTimeoutMin: 30,
+  telegram: { enabled: false, chatId: '', appUrl: '', hasToken: false },
 }
 
 // ---------------------------------------------------------------- Diff mẫu
@@ -437,9 +441,10 @@ export function buildSeed() {
   return { tasks, runs, events, diffs, permissions, reviews, nextTaskId: 111 }
 }
 
-export const promptTemplates = [
-  { id: 'bug', name: 'Sửa lỗi', text: 'Lỗi: <mô tả lỗi>\nCách tái hiện: <các bước>\nKỳ vọng: <hành vi đúng>\n\nHãy tìm nguyên nhân, sửa lỗi và viết test để ngăn tái diễn.' },
-  { id: 'test', name: 'Viết test', text: 'Viết unit test cho <module/file>. Bao phủ các trường hợp biên. Chạy test và đảm bảo tất cả pass.' },
-  { id: 'refactor', name: 'Refactor', text: 'Refactor <phần code> để <mục tiêu>. Không thay đổi hành vi. Chạy test sau khi sửa.' },
-  { id: 'feature', name: 'Tính năng mới', text: 'Tính năng: <mô tả>\nYêu cầu:\n- \n- \n\nHãy triển khai, viết test và tóm tắt các thay đổi.' },
+// Giống template mặc định của backend (server/src/templates.ts)
+export const promptTemplates: PromptTemplate[] = [
+  { id: 'tpl-bug', name: 'Sửa lỗi', title: 'Sửa lỗi: ', tags: ['bug'], prompt: 'Lỗi: <mô tả lỗi>\nCách tái hiện: <các bước>\nKỳ vọng: <hành vi đúng>\n\nHãy tìm nguyên nhân, sửa lỗi và viết test để ngăn tái diễn.' },
+  { id: 'tpl-test', name: 'Viết test', title: 'Viết test cho ', tags: ['test'], prompt: 'Viết unit test cho <module/file>. Bao phủ các trường hợp biên. Chạy test và đảm bảo tất cả pass.' },
+  { id: 'tpl-refactor', name: 'Refactor', title: 'Refactor ', tags: ['refactor'], prompt: 'Refactor <phần code> để <mục tiêu>. Không thay đổi hành vi. Chạy test sau khi sửa.' },
+  { id: 'tpl-feature', name: 'Tính năng mới', title: '', tags: ['feature'], prompt: 'Tính năng: <mô tả>\nYêu cầu:\n- \n- \n\nHãy triển khai, viết test và tóm tắt các thay đổi.' },
 ]
