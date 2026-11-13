@@ -1,13 +1,13 @@
 import type { Priority, TaskStatus } from '../types.ts'
 
-export const STATUS_META: Record<TaskStatus, { label: string; dot: string; badge: string; col: string }> = {
-  backlog: { label: 'Backlog', dot: 'bg-slate-400', badge: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300', col: 'border-t-slate-400' },
-  queued: { label: 'Queued', dot: 'bg-sky-500', badge: 'bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300', col: 'border-t-sky-500' },
-  running: { label: 'Running', dot: 'bg-indigo-500', badge: 'bg-indigo-100 text-indigo-800 dark:bg-indigo-950 dark:text-indigo-300', col: 'border-t-indigo-500' },
-  needs_input: { label: 'Needs Input', dot: 'bg-amber-500', badge: 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300', col: 'border-t-amber-500' },
-  review: { label: 'Review', dot: 'bg-violet-500', badge: 'bg-violet-100 text-violet-800 dark:bg-violet-950 dark:text-violet-300', col: 'border-t-violet-500' },
-  done: { label: 'Done', dot: 'bg-emerald-500', badge: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300', col: 'border-t-emerald-500' },
-  failed: { label: 'Failed', dot: 'bg-rose-500', badge: 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300', col: 'border-t-rose-500' },
+export const STATUS_META: Record<TaskStatus, { label: string; dot: string; badge: string; col: string; text: string }> = {
+  backlog: { label: 'Chờ chạy', dot: 'bg-slate-400', badge: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300', col: 'border-t-slate-400', text: 'text-slate-400 dark:text-slate-500' },
+  queued: { label: 'Hàng đợi', dot: 'bg-sky-500', badge: 'bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300', col: 'border-t-sky-500', text: 'text-sky-500' },
+  running: { label: 'Đang chạy', dot: 'bg-indigo-500', badge: 'bg-indigo-100 text-indigo-800 dark:bg-indigo-950 dark:text-indigo-300', col: 'border-t-indigo-500', text: 'text-indigo-500 dark:text-indigo-400' },
+  needs_input: { label: 'Cần bạn', dot: 'bg-amber-500', badge: 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300', col: 'border-t-amber-500', text: 'text-amber-500' },
+  review: { label: 'Chờ duyệt', dot: 'bg-violet-500', badge: 'bg-violet-100 text-violet-800 dark:bg-violet-950 dark:text-violet-300', col: 'border-t-violet-500', text: 'text-violet-500 dark:text-violet-400' },
+  done: { label: 'Xong', dot: 'bg-emerald-500', badge: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300', col: 'border-t-emerald-500', text: 'text-emerald-500' },
+  failed: { label: 'Lỗi', dot: 'bg-rose-500', badge: 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300', col: 'border-t-rose-500', text: 'text-rose-500' },
 }
 
 export const STATUS_ORDER: TaskStatus[] = ['backlog', 'queued', 'running', 'needs_input', 'review', 'done', 'failed']

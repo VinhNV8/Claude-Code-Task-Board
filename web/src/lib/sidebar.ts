@@ -1,6 +1,8 @@
 // Trạng thái mở rộng/thu nhỏ left-menu (file thuần, không phụ thuộc DOM/React để test được)
 
 export const SIDEBAR_STORAGE_KEY = 'sidebar-collapsed'
+/** Panel Bộ lọc trên Bảng công việc dùng chung cơ chế lưu */
+export const FILTER_PANEL_STORAGE_KEY = 'board-filter-collapsed'
 
 /** Phần tối thiểu của Storage mà ta dùng (localStorage hoặc bản giả trong test) */
 export type KVStorage = Pick<Storage, 'getItem' | 'setItem'>
@@ -15,17 +17,17 @@ export function serializeCollapsed(collapsed: boolean): string {
 }
 
 /** Đọc trạng thái; storage lỗi (private mode, bị chặn) ⇒ mở rộng */
-export function loadCollapsed(storage: KVStorage | undefined | null): boolean {
+export function loadCollapsed(storage: KVStorage | undefined | null, key = SIDEBAR_STORAGE_KEY): boolean {
   try {
-    return parseCollapsed(storage?.getItem(SIDEBAR_STORAGE_KEY))
+    return parseCollapsed(storage?.getItem(key))
   } catch {
     return false
   }
 }
 
-export function saveCollapsed(storage: KVStorage | undefined | null, collapsed: boolean): void {
+export function saveCollapsed(storage: KVStorage | undefined | null, collapsed: boolean, key = SIDEBAR_STORAGE_KEY): void {
   try {
-    storage?.setItem(SIDEBAR_STORAGE_KEY, serializeCollapsed(collapsed))
+    storage?.setItem(key, serializeCollapsed(collapsed))
   } catch {
     /* bỏ qua */
   }

@@ -7,8 +7,8 @@ export type FilterPriority = (typeof PRIORITY_VALUES)[number]
 export interface BoardFilter {
   /** Từ khoá: tiêu đề, prompt, tag hoặc #id */
   q: string
-  /** null = mọi project */
-  projectId: string | null
+  /** Rỗng = mọi project; nhiều giá trị = thuộc một trong các project */
+  projectIds: string[]
   /** Task phải có đủ mọi tag đã chọn */
   tags: string[]
   /** Rỗng = mọi độ ưu tiên; nhiều giá trị = một trong các giá trị */
@@ -26,7 +26,7 @@ export interface FilterableTask {
   tags: string[]
 }
 
-export const EMPTY_FILTER: BoardFilter = { q: '', projectId: null, tags: [], priorities: [], showAll: false }
+export const EMPTY_FILTER: BoardFilter = { q: '', projectIds: [], tags: [], priorities: [], showAll: false }
 
 export const MAX_TAGS = 20
 export const MAX_TAG_LENGTH = 40
@@ -65,14 +65,14 @@ function splitParam(v: string | null): string[] {
   return v ? v.split(',').map((x) => x.trim()).filter(Boolean) : []
 }
 
-/** Đọc bộ lọc từ URL query: ?q=&project=&tags=a,b&priority=high,urgent&all=1 */
+/** Đọc bộ lọc từ URL query: ?q=&project=a&project=b&tags=a,b&priority=high,urgent&all=1 (project lặp lại vì id có thể chứa dấu phẩy) */
 export function parseFilter(params: URLSearchParams): BoardFilter {
   const priorities = splitParam(params.get('priority')).filter((p): p is FilterPriority =>
     (PRIORITY_VALUES as readonly string[]).includes(p),
   )
   return {
     q: params.get('q') ?? '',
-    projectId: params.get('project') || null,
+    projectIds: [...new Set(params.getAll('project').filter(Boolean))],
     tags: normalizeTags(splitParam(params.get('tags'))),
     priorities: PRIORITY_VALUES.filter((p) => priorities.includes(p)),
     showAll: params.get('all') === '1',
@@ -83,7 +83,7 @@ export function parseFilter(params: URLSearchParams): BoardFilter {
 export function filterToParams(f: BoardFilter): URLSearchParams {
   const p = new URLSearchParams()
   if (f.q) p.set('q', f.q)
-  if (f.projectId) p.set('project', f.projectId)
+  for (const id of f.projectIds) p.append('project', id)
   if (f.tags.length) p.set('tags', f.tags.join(','))
   if (f.priorities.length) p.set('priority', f.priorities.join(','))
   if (f.showAll) p.set('all', '1')
@@ -92,12 +92,12 @@ export function filterToParams(f: BoardFilter): URLSearchParams {
 
 /** Có bộ lọc nào làm hẹp danh sách task không (không tính showAll). */
 export function isFilterActive(f: BoardFilter): boolean {
-  return !!f.q.trim() || !!f.projectId || f.tags.length > 0 || f.priorities.length > 0
+  return !!f.q.trim() || f.projectIds.length > 0 || f.tags.length > 0 || f.priorities.length > 0
 }
 
-/** Số nhóm bộ lọc đang bật (project, ưu tiên, tag, "hiện cả cũ") — hiện trên badge nút Bộ lọc. Từ khoá tìm kiếm không tính. */
+/** Số lựa chọn lọc đang bật (từng project, ưu tiên, tag, "hiện cả cũ") — hiện trên badge panel Bộ lọc. Từ khoá tìm kiếm không tính. */
 export function activeFilterCount(f: BoardFilter): number {
-  return (f.projectId ? 1 : 0) + f.priorities.length + f.tags.length + (f.showAll ? 1 : 0)
+  return f.projectIds.length + f.priorities.length + f.tags.length + (f.showAll ? 1 : 0)
 }
 
 /** Bật/tắt một giá trị trong danh sách (so tên không phân biệt hoa thường). Giữ thứ tự thêm vào. */
@@ -120,7 +120,7 @@ export type ActiveChip =
 
 export function activeChips(f: BoardFilter): ActiveChip[] {
   return [
-    ...(f.projectId ? [{ kind: 'project', value: f.projectId } as const] : []),
+    ...f.projectIds.map((value) => ({ kind: 'project', value }) as const),
     ...f.priorities.map((value) => ({ kind: 'priority', value }) as const),
     ...f.tags.map((value) => ({ kind: 'tag', value }) as const),
   ]
@@ -130,7 +130,7 @@ export function activeChips(f: BoardFilter): ActiveChip[] {
 export function removeChip(f: BoardFilter, chip: ActiveChip): BoardFilter {
   switch (chip.kind) {
     case 'project':
-      return { ...f, projectId: null }
+      return { ...f, projectIds: f.projectIds.filter((id) => id !== chip.value) }
     case 'priority':
       return { ...f, priorities: f.priorities.filter((p) => p !== chip.value) }
     case 'tag':
@@ -138,7 +138,7 @@ export function removeChip(f: BoardFilter, chip: ActiveChip): BoardFilter {
   }
 }
 
-/** Xoá mọi bộ lọc nhưng giữ từ khoá nếu keepQuery (dùng cho nút "Xoá bộ lọc" trong popover). */
+/** Xoá mọi bộ lọc nhưng giữ từ khoá nếu keepQuery (dùng cho nút "Đặt lại" trong panel). */
 export function clearFilters(f: BoardFilter, keepQuery = true): BoardFilter {
   return { ...EMPTY_FILTER, q: keepQuery ? f.q : '' }
 }
@@ -156,13 +156,51 @@ export function matchQuery(t: FilterableTask, q: string): boolean {
 }
 
 export function matchTask(t: FilterableTask, f: BoardFilter): boolean {
-  if (f.projectId && t.projectId !== f.projectId) return false
+  if (f.projectIds.length && !f.projectIds.includes(t.projectId)) return false
   if (f.priorities.length && !(f.priorities as readonly string[]).includes(t.priority)) return false
   if (f.tags.length) {
     const own = new Set(t.tags.map((x) => x.toLowerCase()))
     if (!f.tags.every((x) => own.has(x.toLowerCase()))) return false
   }
   return matchQuery(t, f.q)
+}
+
+/** Bật/tắt một project (so khớp chính xác id). */
+export function toggleProject(list: readonly string[], id: string): string[] {
+  return list.includes(id) ? list.filter((x) => x !== id) : [...list, id]
+}
+
+/** Bỏ id project không còn tồn tại (project đã bị xoá) — giữ nguyên object nếu không có gì thay đổi. */
+export function pruneProjects(f: BoardFilter, existing: readonly string[]): BoardFilter {
+  const keep = f.projectIds.filter((id) => existing.includes(id))
+  return keep.length === f.projectIds.length ? f : { ...f, projectIds: keep }
+}
+
+/**
+ * Số task cho từng lựa chọn trong panel lọc: số task sẽ hiện nếu bật thêm lựa chọn đó
+ * (giữ nguyên các nhóm lọc khác và từ khoá).
+ * - Project, ưu tiên (OR trong nhóm): đếm như khi chỉ chọn riêng giá trị đó.
+ * - Tag (AND): đếm như khi thêm tag đó vào các tag đang chọn.
+ */
+export interface FacetCounts {
+  projects: Record<string, number>
+  priorities: Record<FilterPriority, number>
+  /** Khoá là tag viết thường */
+  tags: Record<string, number>
+}
+
+export function facetCounts(tasks: readonly FilterableTask[], f: BoardFilter, projectIds: readonly string[], tags: readonly string[]): FacetCounts {
+  const count = (g: BoardFilter) => tasks.reduce((n, t) => n + (matchTask(t, g) ? 1 : 0), 0)
+  const projects: Record<string, number> = {}
+  for (const id of projectIds) projects[id] = count({ ...f, projectIds: [id] })
+  const priorities = {} as Record<FilterPriority, number>
+  for (const p of PRIORITY_VALUES) priorities[p] = count({ ...f, priorities: [p] })
+  const tagCounts: Record<string, number> = {}
+  for (const tag of tags) {
+    const on = f.tags.some((x) => x.toLowerCase() === tag.toLowerCase())
+    tagCounts[tag.toLowerCase()] = count(on ? f : { ...f, tags: [...f.tags, tag] })
+  }
+  return { projects, priorities, tags: tagCounts }
 }
 
 /** Tag đã dùng, sắp theo số lần dùng giảm dần rồi theo chữ cái. */

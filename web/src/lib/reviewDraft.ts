@@ -34,6 +34,11 @@ function save(taskId: number, d: ReviewDraft) {
 
 const newId = () => Math.random().toString(36).slice(2, 10)
 
+/** Task còn nhận xét theo dòng chưa gửi (duyệt nhanh từ thẻ "Cần bạn" thì phải mở khung chi tiết để quyết định). */
+export function hasDraftComments(taskId: number): boolean {
+  return load(taskId).comments.length > 0
+}
+
 export function useReviewDraft(taskId: number | undefined) {
   const [draft, setDraft] = useState<ReviewDraft>(() => (taskId === undefined ? EMPTY : load(taskId)))
   useEffect(() => setDraft(taskId === undefined ? EMPTY : load(taskId)), [taskId])

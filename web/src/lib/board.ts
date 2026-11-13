@@ -8,6 +8,11 @@ export const BOARD_COLUMNS: BoardColumn[] = ['backlog', 'queued', 'running', 'ne
 
 const DAY = 24 * 3600_000
 
+/** Task Done cũ hơn 24 giờ bị ẩn khỏi bảng khi `hideOld` (task Fail luôn hiện ở Backlog). */
+export function isStale(task: Pick<Task, 'status' | 'updatedAt'>, hideOld: boolean, now = Date.now()): boolean {
+  return hideOld && task.status === 'done' && now - task.updatedAt >= DAY
+}
+
 /** Task đã thất bại (hiện cờ Fail trên thẻ). */
 export function isFailed(task: Pick<Task, 'status'>): boolean {
   return task.status === 'failed'
@@ -89,7 +94,7 @@ export function columnTasks<T extends Pick<Task, 'status' | 'updatedAt'>>(
 ): T[] {
   const now = opts.now ?? Date.now()
   let list = tasks.filter((t) => boardColumn(t) === col)
-  if (opts.hideOld && col === 'done') list = list.filter((t) => now - t.updatedAt < DAY)
+  if (col === 'done') list = list.filter((t) => !isStale(t, opts.hideOld, now))
   // Queued (FR-08, R4): task đang chờ đứng sau task nó chờ; còn lại theo đúng thứ tự hàng đợi (ưu tiên → tạo trước).
   if (col === 'queued' && list.every(isQueueItem)) return sortByDeps(list as (T & QueueItem)[])
   return list.sort((a, b) => Number(isFailed(b)) - Number(isFailed(a)) || b.updatedAt - a.updatedAt)

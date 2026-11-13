@@ -605,10 +605,12 @@ export async function decidePermissionsBatch(ids: string[], decision: 'allow' | 
 }
 
 /** Trả về thông báo lỗi (để hiện trong form) hoặc null nếu thành công. */
-export async function saveProject(p: Project): Promise<string | null> {
+/** Thêm/sửa project. Trả về thông báo lỗi để hiện trong form, hoặc null nếu thành công (`onSaved` nhận project đã lưu). */
+export async function saveProject(p: Project, onSaved?: (saved: Project) => void): Promise<string | null> {
   try {
     const saved = await api<Project>('POST', '/projects', p)
     set((s) => ({ projects: upsert(s.projects, saved) }))
+    onSaved?.(saved)
     toast({ kind: 'success', title: `Đã lưu project ${saved.name}` })
     return null
   } catch (e) {

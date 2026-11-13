@@ -1,25 +1,27 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
-import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom'
+import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import {
   Bell,
   ChartColumn,
   CheckCircle2,
   FlaskConical,
   FolderGit2,
-  Inbox,
   KanbanSquare,
   LogOut,
   Moon,
   PanelLeftClose,
   PanelLeftOpen,
   Plus,
+  Radar,
   RotateCcw,
+  Search,
   Settings as SettingsIcon,
   Sun,
   TriangleAlert,
   X,
   XCircle,
 } from 'lucide-react'
+import { CommandPalette } from './CommandPalette'
 import { IS_MOCK, closeDepsConfirm, dismissToast, getState, resetDemo, runTaskNow, setDemo, updateSettings, useStore } from '../store/store'
 import { askPermissionOnce } from '../lib/notify'
 import { TaskFormModal } from './TaskFormModal'
@@ -133,11 +135,17 @@ export function Layout() {
     }
   }, [])
 
-  // phím tắt N: tạo task mới
+  // phím tắt N: tạo task mới · Ctrl/⌘ K: bảng lệnh
+  const [paletteOpen, setPaletteOpen] = useState(false)
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === 'k') {
+        e.preventDefault()
+        setPaletteOpen((o) => !o)
+        return
+      }
       const tag = (e.target as HTMLElement).tagName
-      if (e.key === 'n' && !e.ctrlKey && !e.metaKey && !['INPUT', 'TEXTAREA', 'SELECT'].includes(tag)) {
+      if (e.key === 'n' && !e.ctrlKey && !e.metaKey && !['INPUT', 'TEXTAREA', 'SELECT'].includes(tag) && !document.querySelector('[aria-modal="true"]')) {
         e.preventDefault()
         setNewOpen(true)
       }
@@ -146,23 +154,29 @@ export function Layout() {
     return () => window.removeEventListener('keydown', h)
   }, [])
 
+  // Mục menu đang mở: "Cần bạn" là view Điều phối của trang Công việc
+  const loc = useLocation()
+  const onWork = loc.pathname === '/'
+  const workView = new URLSearchParams(loc.search).get('view')
+
   const openNew = (projectId?: string) => {
     setNewProject(projectId)
     setNewOpen(true)
   }
 
-  const nav = [
-    { to: '/', label: 'Bảng công việc', icon: <KanbanSquare size={18} />, end: true },
+  const nav: { to: string; label: string; icon: ReactNode; active: boolean; badge?: number; urgent?: boolean }[] = [
+    { to: '/', label: 'Công việc', icon: <KanbanSquare size={18} />, active: onWork && workView !== 'ops' },
     {
-      to: '/inbox',
-      label: 'Cần xử lý',
-      icon: <Inbox size={18} />,
+      to: '/?view=ops',
+      label: 'Cần bạn',
+      icon: <Radar size={18} />,
+      active: onWork && workView === 'ops',
       badge: attention,
       urgent: needsInput > 0,
     },
-    { to: '/projects', label: 'Projects', icon: <FolderGit2 size={18} /> },
-    { to: '/stats', label: 'Thống kê', icon: <ChartColumn size={18} /> },
-    { to: '/settings', label: 'Cài đặt', icon: <SettingsIcon size={18} /> },
+    { to: '/projects', label: 'Projects', icon: <FolderGit2 size={18} />, active: loc.pathname.startsWith('/projects') },
+    { to: '/stats', label: 'Thống kê', icon: <ChartColumn size={18} />, active: loc.pathname.startsWith('/stats') },
+    { to: '/settings', label: 'Cài đặt', icon: <SettingsIcon size={18} />, active: loc.pathname.startsWith('/settings') },
   ]
 
   return (
@@ -183,19 +197,17 @@ export function Layout() {
             )}
           </Link>
           {nav.map((n) => (
-            <NavLink
+            <Link
               key={n.to}
               to={n.to}
-              end={n.end}
               title={collapsed ? n.label : undefined}
               aria-label={n.label}
-              className={({ isActive }) =>
-                `relative flex shrink-0 items-center gap-2.5 rounded-md px-2.5 py-2 text-sm ${
-                  isActive
-                    ? 'bg-indigo-50 font-medium text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300'
-                    : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800'
-                }`
-              }
+              aria-current={n.active ? 'page' : undefined}
+              className={`relative flex shrink-0 items-center gap-2.5 rounded-md px-2.5 py-2 text-sm ${
+                n.active
+                  ? 'bg-indigo-50 font-medium text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300'
+                  : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800'
+              }`}
             >
               {n.icon}
               <span className={`hidden whitespace-nowrap sm:inline ${mdHide}`}>{n.label}</span>
@@ -211,7 +223,7 @@ export function Layout() {
                   {compactBadge(n.badge)}
                 </span>
               )}
-            </NavLink>
+            </Link>
           ))}
           <div className="ml-auto flex items-center gap-1 md:ml-0 md:mt-auto md:flex-col md:items-stretch">
             <button
@@ -251,9 +263,21 @@ export function Layout() {
           <header className="sticky top-0 z-20 flex items-center gap-3 border-b border-slate-200 bg-white/80 px-4 py-2.5 backdrop-blur md:px-6 dark:border-slate-800 dark:bg-slate-900/80">
             <RunningIndicator />
             <div className="ml-auto flex items-center gap-2">
+              <button
+                onClick={() => setPaletteOpen(true)}
+                className="hidden w-56 items-center gap-2 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-sm text-slate-400 hover:border-slate-300 hover:text-slate-600 md:flex dark:border-slate-700 dark:bg-slate-900 dark:hover:text-slate-300"
+                title="Tìm task hoặc chạy lệnh (Ctrl K)"
+              >
+                <Search size={15} />
+                <span className="flex-1 text-left">Tìm task, lệnh…</span>
+                <kbd className="rounded border border-slate-300 px-1 font-mono text-[10px] dark:border-slate-600">Ctrl K</kbd>
+              </button>
+              <button onClick={() => setPaletteOpen(true)} className="rounded-md p-2 text-slate-500 hover:bg-slate-100 md:hidden dark:hover:bg-slate-800" aria-label="Tìm task hoặc lệnh">
+                <Search size={18} />
+              </button>
               {attention > 0 && (
                 <Link
-                  to="/inbox"
+                  to="/?view=ops"
                   className={`hidden items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium sm:inline-flex ${
                     needsInput > 0
                       ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
@@ -283,6 +307,7 @@ export function Layout() {
         </div>
 
         <TaskFormModal open={newOpen} onClose={() => setNewOpen(false)} defaultProjectId={newProject} />
+        <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} onNewTask={() => openNew()} />
         <Toasts />
         <DepsConfirm />
         {IS_MOCK && <DemoPanel />}
@@ -296,17 +321,23 @@ function RunningIndicator() {
   const running = s.tasks.filter((t) => t.status === 'running').length
   const queued = s.tasks.filter((t) => t.status === 'queued').length
   const slots = s.tasks.filter((t) => t.status === 'running' || t.status === 'needs_input').length
+  const max = Math.max(s.settings.maxParallel, slots)
   return (
-    <div className="flex items-center gap-3 text-xs text-slate-500 dark:text-slate-400">
-      <span className="inline-flex items-center gap-1.5">
-        <span className={`h-2 w-2 rounded-full ${running ? 'animate-pulse bg-indigo-500' : 'bg-slate-300 dark:bg-slate-600'}`} />
-        {running} đang chạy
+    <Link
+      to="/?view=ops"
+      className="flex items-center gap-2.5 rounded-full border border-slate-200 px-2.5 py-1 text-xs tabular-nums text-slate-500 hover:border-slate-300 hover:text-slate-800 dark:border-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+      title={`${running} đang chạy, ${slots - running} chờ quyền, ${queued} trong hàng đợi. Bấm để mở Điều phối`}
+    >
+      <span className="inline-flex gap-0.5" aria-hidden="true">
+        {Array.from({ length: max }, (_, i) => (
+          <span key={i} className={`h-2.5 w-1.5 rounded-sm ${i < running ? 'bg-indigo-500' : i < slots ? 'bg-amber-500' : 'bg-slate-200 dark:bg-slate-700'}`} />
+        ))}
       </span>
-      <span className="hidden sm:inline">· {queued} trong hàng đợi</span>
-      <span className="hidden sm:inline">
-        · slot {slots}/{s.settings.maxParallel}
+      <span>
+        {slots}/{s.settings.maxParallel} slot
       </span>
-    </div>
+      <span className="hidden sm:inline">· {queued} chờ</span>
+    </Link>
   )
 }
 

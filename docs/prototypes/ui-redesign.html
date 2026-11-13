@@ -1,0 +1,1240 @@
+<title>Task Board Redesign</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: thanh chuyển phương án cố định trên cùng; mỗi phương án = ghi chú thiết kế + khung app mô phỏng (cuộn ngang riêng khi màn hẹp). */
+:root{
+  /* ---- vỏ prototype ---- */
+  --bg:#f5f6f8; --surface:#ffffff; --fg:#161a22; --muted:#5b6472; --line:#e2e5ea; --accent:#4f46e5; --accent-soft:#eceafd; --accent-fg:#ffffff;
+  --f-ui:"Be Vietnam Pro",system-ui,"Segoe UI",sans-serif; --f-mono:"JetBrains Mono",ui-monospace,Consolas,monospace;
+  /* ---- màu trạng thái (dùng chung) ---- */
+  --s-backlog:#94a3b8; --s-queued:#0284c7; --s-run:#4f46e5; --s-need:#d97706; --s-review:#7c3aed; --s-done:#059669; --s-fail:#e11d48;
+  --need-soft:#fef3c7; --fail-soft:#ffe4e6; --ok-soft:#d1fae5;
+  /* ---- Phương án A: Tinh gọn ---- */
+  --a-bg:#fbfbfc; --a-side:#f3f4f6; --a-surface:#ffffff; --a-fg:#1b1e24; --a-muted:#6b7280; --a-line:#e7e9ed; --a-col:#f4f5f7; --a-accent:#4c4fd8; --a-hover:#eceef2;
+  /* ---- Phương án B: Trạm điều phối (cố ý chỉ một giao diện tối) ---- */
+  --b-bg:#0b0d10; --b-panel:#12161b; --b-panel2:#171c22; --b-line:#232a33; --b-fg:#e4e8ee; --b-muted:#7f8a9a; --b-accent:#a5a8ff; --b-amber:#f5b544; --b-green:#4ade80; --b-red:#fb7185; --b-violet:#c4a5ff;
+  /* ---- Phương án C: Phân luồng ---- */
+  --c-bg:#eef1f3; --c-pane:#ffffff; --c-fg:#14202b; --c-muted:#5d6b78; --c-line:#dde3e7; --c-accent:#0f766e; --c-accent-soft:#dff3f0; --c-sel:#e9f5f3; --c-add:#e6f6ec; --c-del:#fdecee; --c-add-fg:#166534; --c-del-fg:#9f1239;
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+  --bg:#0e1015; --surface:#161921; --fg:#e7e9ee; --muted:#9aa3b2; --line:#272b35; --accent:#8b85ff; --accent-soft:#25234a; --accent-fg:#0e1015;
+  --s-backlog:#7c8798; --s-queued:#38bdf8; --s-run:#818cf8; --s-need:#fbbf24; --s-review:#a78bfa; --s-done:#34d399; --s-fail:#fb7185;
+  --need-soft:#3a2a0a; --fail-soft:#3b1520; --ok-soft:#0d3326;
+  --a-bg:#111318; --a-side:#0c0e12; --a-surface:#1a1d24; --a-fg:#e6e8ec; --a-muted:#8d95a3; --a-line:#262a33; --a-col:#15181e; --a-accent:#9497ff; --a-hover:#20242c;
+  --c-bg:#0b1013; --c-pane:#121a1e; --c-fg:#e3eaee; --c-muted:#8b9aa5; --c-line:#22303a; --c-accent:#2dd4bf; --c-accent-soft:#123532; --c-sel:#15282b; --c-add:#10291b; --c-del:#30141b; --c-add-fg:#86efac; --c-del-fg:#fda4af;
+  color-scheme:dark;
+}}
+:root[data-theme="dark"]{
+  --bg:#0e1015; --surface:#161921; --fg:#e7e9ee; --muted:#9aa3b2; --line:#272b35; --accent:#8b85ff; --accent-soft:#25234a; --accent-fg:#0e1015;
+  --s-backlog:#7c8798; --s-queued:#38bdf8; --s-run:#818cf8; --s-need:#fbbf24; --s-review:#a78bfa; --s-done:#34d399; --s-fail:#fb7185;
+  --need-soft:#3a2a0a; --fail-soft:#3b1520; --ok-soft:#0d3326;
+  --a-bg:#111318; --a-side:#0c0e12; --a-surface:#1a1d24; --a-fg:#e6e8ec; --a-muted:#8d95a3; --a-line:#262a33; --a-col:#15181e; --a-accent:#9497ff; --a-hover:#20242c;
+  --c-bg:#0b1013; --c-pane:#121a1e; --c-fg:#e3eaee; --c-muted:#8b9aa5; --c-line:#22303a; --c-accent:#2dd4bf; --c-accent-soft:#123532; --c-sel:#15282b; --c-add:#10291b; --c-del:#30141b; --c-add-fg:#86efac; --c-del-fg:#fda4af;
+  color-scheme:dark;
+}
+
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font-family:var(--f-ui);font-size:14px;line-height:1.55;-webkit-font-smoothing:antialiased}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--surface)}
+button{font:inherit;color:inherit;cursor:pointer}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.mono{font-family:var(--f-mono)}
+.num{font-variant-numeric:tabular-nums}
+
+/* ============ vỏ prototype ============ */
+.topbar{position:sticky;top:env(safe-area-inset-top,0px);z-index:20;background:var(--surface);border-bottom:1px solid var(--line)}
+.topbar-in{display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px;padding-block:10px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));max-width:1440px;margin:0 auto}
+.brand{display:flex;align-items:center;gap:10px;font-weight:600;white-space:nowrap}
+.brand-mark{width:26px;height:26px;border-radius:7px;background:var(--accent);color:var(--accent-fg);display:grid;place-items:center;font-size:12px;font-weight:700}
+.brand small{font-weight:500;color:var(--muted);font-size:12px}
+.tabs{display:flex;gap:4px;overflow-x:auto;flex:1;min-width:0;scrollbar-width:none}
+.tab{border:0;background:transparent;padding:7px 12px;border-radius:8px;font-size:13px;font-weight:500;color:var(--muted);white-space:nowrap}
+.tab:hover{background:var(--bg);color:var(--fg)}
+.tab[aria-selected="true"]{background:var(--accent-soft);color:var(--accent)}
+.tab b{font-family:var(--f-mono);font-weight:500;margin-right:4px}
+.theme-btn{border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:6px 10px;font-size:12px;color:var(--muted);white-space:nowrap}
+
+.wrap{max-width:1440px;margin:0 auto;padding-block:28px 64px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.view[hidden]{display:none!important}
+h1,h2,h3{text-wrap:balance;line-height:1.25;margin:0}
+h1{font-size:28px;font-weight:700;letter-spacing:-.02em}
+h2{font-size:20px;font-weight:600;letter-spacing:-.01em}
+h3{font-size:15px;font-weight:600}
+.lead{color:var(--muted);max-width:68ch;margin:8px 0 0}
+.eyebrow{font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.section{margin-top:40px;display:flex;flex-direction:column;gap:16px}
+
+.brief{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:20px 0 24px}
+.brief > div{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px 16px;min-width:0}
+.brief .eyebrow{display:block;margin-bottom:4px}
+.brief p{margin:0;font-size:13px}
+@media (max-width:900px){.brief{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:520px){.brief{grid-template-columns:1fr}}
+
+.mock-scroll{overflow-x:auto;border-radius:12px;border:1px solid var(--line);box-shadow:0 1px 2px rgba(0,0,0,.04),0 12px 32px -12px rgba(15,20,30,.18)}
+.mock{min-width:1180px;height:720px;display:flex;overflow:hidden;position:relative}
+.scroll-hint{display:none;font-size:12px;color:var(--muted);margin-bottom:6px}
+@media (max-width:1200px){.scroll-hint{display:block}}
+
+/* ============ Tổng quan ============ */
+.issues{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+@media (max-width:820px){.issues{grid-template-columns:1fr}}
+.issue{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px 16px;display:grid;grid-template-columns:auto 1fr;gap:4px 12px;min-width:0}
+.sev{grid-row:span 2;font-size:11px;font-weight:600;padding:2px 8px;border-radius:99px;align-self:start;white-space:nowrap}
+.sev.hi{background:var(--fail-soft);color:var(--s-fail)}
+.sev.md{background:var(--need-soft);color:var(--s-need)}
+.sev.lo{background:var(--bg);color:var(--muted);border:1px solid var(--line)}
+.issue h3{font-size:14px}
+.issue p{margin:0;font-size:13px;color:var(--muted)}
+.issue code{font-family:var(--f-mono);font-size:12px;color:var(--fg)}
+
+.tbl-wrap{overflow-x:auto;background:var(--surface);border:1px solid var(--line);border-radius:10px}
+table{border-collapse:collapse;width:100%;min-width:760px;font-size:13px}
+th,td{text-align:left;padding:11px 14px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:600;background:var(--bg)}
+tr:last-child td{border-bottom:0}
+td:first-child{font-weight:600;white-space:nowrap}
+.dots{display:inline-flex;gap:3px;vertical-align:middle}
+.dots i{width:8px;height:8px;border-radius:50%;background:var(--line)}
+.dots i.on{background:var(--accent)}
+.rec-col{background:var(--accent-soft)}
+
+.reco{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:24px;display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:28px}
+@media (max-width:900px){.reco{grid-template-columns:1fr}}
+.reco-tag{display:inline-flex;align-items:center;gap:6px;background:var(--accent);color:var(--accent-fg);font-size:12px;font-weight:600;padding:4px 10px;border-radius:99px;align-self:flex-start}
+.reco ul{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:8px}
+.reco li{font-size:13.5px}
+.reco li b{font-weight:600}
+
+.phases{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+@media (max-width:900px){.phases{grid-template-columns:1fr}}
+.phase{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px;display:flex;flex-direction:column;gap:10px;min-width:0}
+.phase-head{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+.phase-head .eyebrow{color:var(--accent)}
+.phase ul{margin:0;padding-left:18px;font-size:13px;display:flex;flex-direction:column;gap:6px}
+.phase code{font-family:var(--f-mono);font-size:11.5px;background:var(--bg);padding:1px 5px;border-radius:4px;border:1px solid var(--line);word-break:break-all}
+.phase .eff{margin-top:auto;font-size:12px;color:var(--muted);border-top:1px dashed var(--line);padding-top:8px}
+
+.tokens{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px}
+@media (max-width:820px){.tokens{grid-template-columns:1fr}}
+.tok{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px;min-width:0}
+.glyph-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px 16px;margin-top:10px}
+.glyph-row{display:flex;align-items:center;gap:8px;font-size:13px}
+.glyph-row small{color:var(--muted);font-size:11.5px;display:block}
+.scale{display:flex;flex-direction:column;gap:6px;margin-top:10px}
+.scale div{display:flex;align-items:baseline;gap:12px;border-bottom:1px dashed var(--line);padding-bottom:6px}
+.scale span:first-child{font-family:var(--f-mono);font-size:11px;color:var(--muted);width:92px;flex-shrink:0}
+
+.phone-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:24px;align-items:start}
+@media (max-width:820px){.phone-row{grid-template-columns:1fr}}
+.phone{width:300px;max-width:100%;border:8px solid #1d2129;border-radius:34px;background:var(--a-bg);color:var(--a-fg);font-family:Inter,var(--f-ui);overflow:hidden;justify-self:center}
+.phone-top{display:flex;align-items:center;justify-content:space-between;padding:14px 14px 8px;font-size:13px;font-weight:600}
+.phone-sec{padding:6px 12px 10px;display:flex;flex-direction:column;gap:8px}
+.phone-sec .lbl{font-size:11px;font-weight:600;color:var(--a-muted);letter-spacing:.04em;text-transform:uppercase}
+.p-card{background:var(--a-surface);border:1px solid var(--a-line);border-radius:10px;padding:10px;font-size:12.5px;display:flex;flex-direction:column;gap:6px}
+.p-card.need{border-color:var(--s-need)}
+.p-btns{display:flex;gap:6px}
+.p-btns button{flex:1;border:1px solid var(--a-line);background:var(--a-surface);border-radius:8px;padding:8px 0;font-size:12px;font-weight:600}
+.p-btns .pri{background:var(--a-accent);border-color:var(--a-accent);color:#fff}
+.phone-nav{display:flex;justify-content:space-around;border-top:1px solid var(--a-line);padding:10px 0 14px;font-size:10.5px;color:var(--a-muted);background:var(--a-surface)}
+.phone-nav span{display:flex;flex-direction:column;align-items:center;gap:2px}
+.phone-nav .on{color:var(--a-accent);font-weight:600}
+
+/* ============ Glyph trạng thái ============ */
+.g{width:14px;height:14px;flex-shrink:0;display:inline-block;vertical-align:-2px}
+@keyframes spin{to{transform:rotate(360deg)}}
+.g-run{animation:spin 2.4s linear infinite}
+
+/* ============ PHƯƠNG ÁN A ============ */
+.A{background:var(--a-bg);color:var(--a-fg);font-family:Inter,var(--f-ui);font-size:13px}
+.A-side{width:216px;background:var(--a-side);border-right:1px solid var(--a-line);padding:14px 10px;display:flex;flex-direction:column;gap:2px;flex-shrink:0}
+.A-logo{display:flex;align-items:center;gap:8px;padding:2px 8px 14px;font-weight:600;font-size:13.5px}
+.A-logo .brand-mark{width:22px;height:22px;font-size:10px;border-radius:6px;background:var(--a-accent);color:#fff}
+.A-nav{display:flex;align-items:center;gap:9px;padding:6px 8px;border-radius:6px;color:var(--a-muted);border:0;background:none;text-align:left;width:100%;font-size:13px}
+.A-nav:hover{background:var(--a-hover);color:var(--a-fg)}
+.A-nav.on{background:var(--a-surface);color:var(--a-fg);font-weight:500;box-shadow:0 0 0 1px var(--a-line)}
+.A-nav .cnt{margin-left:auto;font-size:11px;font-variant-numeric:tabular-nums}
+.A-nav .cnt.need{background:var(--s-need);color:#fff;border-radius:99px;padding:0 6px;font-weight:600}
+.A-group{margin-top:16px;padding:0 8px 4px;font-size:11px;font-weight:500;color:var(--a-muted);display:flex;justify-content:space-between}
+.sq{width:9px;height:9px;border-radius:3px;flex-shrink:0}
+.A-main{flex:1;display:flex;flex-direction:column;min-width:0}
+.A-top{display:flex;align-items:center;gap:12px;padding:10px 20px;border-bottom:1px solid var(--a-line);background:var(--a-bg)}
+.A-crumb{font-size:13px;color:var(--a-muted)} .A-crumb b{color:var(--a-fg);font-weight:500}
+.A-search{margin-left:auto;display:flex;align-items:center;gap:8px;border:1px solid var(--a-line);background:var(--a-surface);border-radius:7px;padding:5px 8px 5px 10px;color:var(--a-muted);width:280px;font-size:12.5px}
+.kbd{font-family:var(--f-mono);font-size:10.5px;border:1px solid var(--a-line);border-bottom-width:2px;border-radius:4px;padding:0 5px;color:var(--a-muted);background:var(--a-bg);margin-left:auto}
+.A-live{display:inline-flex;align-items:center;gap:7px;font-size:12px;color:var(--a-muted);border:1px solid var(--a-line);border-radius:99px;padding:4px 10px;background:var(--a-surface);font-variant-numeric:tabular-nums}
+.slotbar{display:inline-flex;gap:2px}
+.slotbar i{width:6px;height:10px;border-radius:2px;background:var(--a-line)}
+.slotbar i.on{background:var(--s-run)}
+.A-btn{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--a-line);background:var(--a-surface);border-radius:7px;padding:5px 10px;font-size:12.5px;font-weight:500;color:var(--a-fg)}
+.A-btn.pri{background:var(--a-accent);border-color:var(--a-accent);color:#fff}
+.A-btn .kbd{border-color:rgba(255,255,255,.35);color:rgba(255,255,255,.85);background:transparent;margin-left:2px}
+.A-filters{display:flex;align-items:center;gap:6px;padding:10px 20px}
+.chip{display:inline-flex;align-items:center;gap:6px;border:1px dashed var(--a-line);border-radius:99px;padding:3px 10px;font-size:12px;color:var(--a-muted);background:transparent}
+.chip.set{border-style:solid;background:var(--a-surface);color:var(--a-fg)}
+.chip .x{opacity:.6}
+.seg{margin-left:auto;display:inline-flex;border:1px solid var(--a-line);border-radius:7px;overflow:hidden;background:var(--a-surface)}
+.seg button{border:0;background:none;padding:4px 10px;font-size:12px;color:var(--a-muted)}
+.seg button.on{background:var(--a-hover);color:var(--a-fg);font-weight:500}
+.A-board{flex:1;display:flex;gap:10px;padding:2px 20px 20px;overflow:auto;align-items:flex-start}
+.A-col{width:252px;flex-shrink:0;display:flex;flex-direction:column;gap:6px;border-radius:10px;padding:6px}
+.A-col.need{background:color-mix(in srgb,var(--s-need) 9%,transparent);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--s-need) 35%,transparent)}
+.A-colh{display:flex;align-items:center;gap:7px;padding:4px 4px 6px;font-weight:500;font-size:12.5px}
+.A-colh .n{color:var(--a-muted);font-variant-numeric:tabular-nums;font-weight:400}
+.A-colh .add{margin-left:auto;border:0;background:none;color:var(--a-muted);border-radius:4px;padding:0 4px;font-size:16px;line-height:1}
+.A-card{background:var(--a-surface);border:1px solid var(--a-line);border-radius:8px;padding:10px 11px;display:flex;flex-direction:column;gap:7px;cursor:pointer;transition:border-color .12s}
+.A-card:hover{border-color:color-mix(in srgb,var(--a-accent) 55%,var(--a-line))}
+.A-card .t{font-size:13px;font-weight:500;line-height:1.4}
+.A-meta{display:flex;align-items:center;gap:6px;color:var(--a-muted);font-size:11.5px;font-variant-numeric:tabular-nums;min-width:0}
+.A-meta .r{margin-left:auto;white-space:nowrap}
+.flag{font-size:10.5px;font-weight:600;padding:1px 6px;border-radius:4px}
+.flag.fail{background:var(--fail-soft);color:var(--s-fail)}
+.flag.pri{color:var(--s-fail)}
+.flag.dep{background:var(--a-col);color:var(--a-muted);border:1px solid var(--a-line)}
+.A-act{display:flex;gap:6px}
+.A-act button{border:1px solid var(--a-line);background:var(--a-bg);border-radius:6px;padding:3px 8px;font-size:11.5px;font-weight:500;color:var(--a-fg)}
+.A-act button.go{background:var(--s-need);border-color:var(--s-need);color:#fff}
+.A-cmd{background:var(--a-bg);border:1px solid var(--a-line);border-radius:6px;padding:6px 8px;font-family:var(--f-mono);font-size:11px;color:var(--a-fg);overflow-wrap:anywhere}
+.prog{height:3px;background:var(--a-line);border-radius:2px;overflow:hidden}
+.prog i{display:block;height:100%;background:var(--s-run);border-radius:2px}
+.A-done{width:44px;flex-shrink:0;border:1px dashed var(--a-line);border-radius:10px;align-self:stretch;display:flex;flex-direction:column;align-items:center;gap:8px;padding:10px 0;color:var(--a-muted);font-size:12px;background:none}
+.A-done span{writing-mode:vertical-rl}
+.overlay{position:absolute;inset:0;background:rgba(10,12,16,.35);display:flex;justify-content:center;align-items:flex-start;padding-top:90px;z-index:5}
+.overlay[hidden]{display:none!important}
+.palette{width:560px;background:var(--a-surface);border:1px solid var(--a-line);border-radius:12px;box-shadow:0 24px 60px -12px rgba(0,0,0,.4);overflow:hidden;color:var(--a-fg)}
+.palette input{width:100%;border:0;border-bottom:1px solid var(--a-line);background:transparent;padding:14px 16px;font:inherit;font-size:14px;color:var(--a-fg);outline:none}
+.pal-g{padding:8px 8px 4px;font-size:11px;color:var(--a-muted);font-weight:500;padding-left:16px}
+.pal-i{display:flex;align-items:center;gap:10px;padding:8px 16px;font-size:13px}
+.pal-i.on{background:var(--a-hover)}
+.pal-i .kbd{margin-left:auto}
+
+/* ============ PHƯƠNG ÁN B ============ */
+.B{background:var(--b-bg);color:var(--b-fg);font-family:"IBM Plex Sans",var(--f-ui);flex-direction:column;font-size:13px;color-scheme:dark}
+.B-top{display:flex;align-items:center;gap:20px;padding:0 20px;height:48px;border-bottom:1px solid var(--b-line);flex-shrink:0}
+.B-logo{display:flex;align-items:center;gap:8px;font-weight:600}
+.B-logo .brand-mark{width:22px;height:22px;font-size:10px;border-radius:6px;background:var(--b-accent);color:var(--b-bg)}
+.B-nav{display:flex;gap:2px;height:100%}
+.B-nav button{border:0;background:none;color:var(--b-muted);padding:0 12px;font-size:13px;border-bottom:2px solid transparent;height:100%}
+.B-nav button.on{color:var(--b-fg);border-bottom-color:var(--b-accent)}
+.B-nav .c{font-family:var(--f-mono);font-size:11px;background:var(--b-amber);color:var(--b-bg);border-radius:99px;padding:0 6px;margin-left:4px;font-weight:600}
+.B-stat{margin-left:auto;display:flex;gap:18px;font-family:var(--f-mono);font-size:11.5px;color:var(--b-muted)}
+.B-stat b{color:var(--b-fg);font-weight:500}
+.B-new{border:1px solid var(--b-line);background:var(--b-panel2);color:var(--b-fg);border-radius:7px;padding:5px 12px;font-size:12.5px;font-weight:500}
+.B-body{flex:1;overflow:auto;padding:18px 20px 24px;display:flex;flex-direction:column;gap:22px}
+.B-h{display:flex;align-items:center;gap:10px;margin-bottom:10px;font-size:12px;letter-spacing:.07em;text-transform:uppercase;color:var(--b-muted);font-weight:500}
+.B-h b{color:var(--b-fg);font-family:var(--f-mono);font-weight:500;letter-spacing:0}
+.B-h .rule{flex:1;height:1px;background:var(--b-line)}
+.B-h .hint{text-transform:none;letter-spacing:0;font-size:11.5px}
+.B-attn{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.B-card{background:var(--b-panel);border:1px solid var(--b-line);border-radius:10px;padding:12px 14px;display:flex;flex-direction:column;gap:10px;transition:opacity .25s,transform .25s;min-width:0}
+.B-card.need{border-color:color-mix(in srgb,var(--b-amber) 55%,var(--b-line));box-shadow:0 0 0 3px color-mix(in srgb,var(--b-amber) 10%,transparent)}
+.B-card.gone{opacity:0;transform:scale(.97)}
+.B-kind{display:flex;align-items:center;gap:6px;font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase}
+.B-kind.need{color:var(--b-amber)} .B-kind.rev{color:var(--b-violet)} .B-kind.fail{color:var(--b-red)}
+.B-kind .id{margin-left:auto;font-family:var(--f-mono);color:var(--b-muted);letter-spacing:0;font-weight:400}
+.B-title{font-size:14px;font-weight:500;line-height:1.4}
+.B-sub{font-size:12px;color:var(--b-muted)}
+.B-cmd{font-family:var(--f-mono);font-size:11.5px;background:var(--b-bg);border:1px solid var(--b-line);border-radius:6px;padding:8px 10px;overflow-wrap:anywhere}
+.B-cmd .p{color:var(--b-amber)}
+.B-btns{display:flex;gap:6px;flex-wrap:wrap;margin-top:auto}
+.B-btns button{border:1px solid var(--b-line);background:var(--b-panel2);color:var(--b-fg);border-radius:7px;padding:6px 11px;font-size:12px;font-weight:500}
+.B-btns .ok{background:var(--b-green);border-color:var(--b-green);color:#06210f}
+.B-btns .warn{background:var(--b-amber);border-color:var(--b-amber);color:#2a1a02}
+.B-btns .rv{background:var(--b-violet);border-color:var(--b-violet);color:#1d0f3a}
+.diffbar{display:flex;height:6px;border-radius:3px;overflow:hidden;gap:2px}
+.diffbar i{display:block;height:100%}
+.B-slots{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.B-slot{background:var(--b-panel);border:1px solid var(--b-line);border-radius:10px;display:flex;flex-direction:column;min-width:0;overflow:hidden}
+.B-slot-h{display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1px solid var(--b-line)}
+.B-slot-h .lbl{font-family:var(--f-mono);font-size:11px;color:var(--b-muted)}
+.pulse{width:8px;height:8px;border-radius:50%;background:var(--b-accent);box-shadow:0 0 0 0 var(--b-accent);animation:pulse 1.6s infinite}
+@keyframes pulse{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--b-accent) 60%,transparent)}100%{box-shadow:0 0 0 8px transparent}}
+.B-slot-h .tm{margin-left:auto;font-family:var(--f-mono);font-size:12px;font-variant-numeric:tabular-nums}
+.B-slot-b{padding:12px 14px;display:flex;flex-direction:column;gap:8px}
+.B-log{font-family:var(--f-mono);font-size:11px;line-height:1.7;background:var(--b-bg);border-top:1px solid var(--b-line);padding:10px 14px;height:118px;overflow:hidden;display:flex;flex-direction:column;justify-content:flex-end;color:var(--b-muted)}
+.B-log div{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.B-log .tool{color:var(--b-accent)} .B-log .ok{color:var(--b-green)}
+.B-log .last::after{content:"▍";color:var(--b-fg);animation:blink 1s steps(2) infinite;margin-left:2px}
+@keyframes blink{50%{opacity:0}}
+.B-kpis{display:flex;gap:14px;font-family:var(--f-mono);font-size:11px;color:var(--b-muted)}
+.B-kpis b{color:var(--b-fg);font-weight:500}
+.B-empty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;border:1px dashed var(--b-line);border-radius:10px;padding:20px;color:var(--b-muted);text-align:center;font-size:12.5px}
+.B-empty b{color:var(--b-fg);font-weight:500}
+.B-pipe{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.B-lane{background:var(--b-panel);border:1px solid var(--b-line);border-radius:10px;padding:10px 12px;display:flex;flex-direction:column;gap:2px;min-width:0}
+.B-lane-h{display:flex;align-items:center;gap:7px;font-size:12px;font-weight:500;padding-bottom:6px}
+.B-lane-h .n{font-family:var(--f-mono);color:var(--b-muted);font-weight:400}
+.B-row{display:flex;align-items:center;gap:8px;padding:5px 0;border-top:1px solid var(--b-line);font-size:12.5px;min-width:0}
+.B-row .id{font-family:var(--f-mono);font-size:11px;color:var(--b-muted)}
+.B-row .tt{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1}
+.B-row .r{font-family:var(--f-mono);font-size:11px;color:var(--b-muted);white-space:nowrap}
+.B-toast{position:absolute;right:20px;bottom:20px;background:var(--b-panel2);border:1px solid var(--b-line);border-radius:8px;padding:10px 14px;font-size:12.5px;display:flex;gap:8px;align-items:center;box-shadow:0 10px 30px rgba(0,0,0,.5);z-index:4}
+.B-toast[hidden]{display:none!important}
+
+/* ============ PHƯƠNG ÁN C ============ */
+.C{background:var(--c-bg);color:var(--c-fg);font-family:var(--f-ui);font-size:13px}
+.C-rail{width:56px;flex-shrink:0;display:flex;flex-direction:column;align-items:center;gap:6px;padding:12px 0;border-right:1px solid var(--c-line);background:var(--c-pane)}
+.C-rail .brand-mark{width:28px;height:28px;background:var(--c-accent);color:var(--c-pane);margin-bottom:10px}
+.C-ri{width:36px;height:36px;border-radius:9px;display:grid;place-items:center;color:var(--c-muted);border:0;background:none;position:relative}
+.C-ri.on{background:var(--c-accent-soft);color:var(--c-accent)}
+.C-ri .b{position:absolute;top:3px;right:2px;min-width:15px;height:15px;border-radius:99px;background:var(--s-need);color:#fff;font-size:9.5px;font-weight:700;display:grid;place-items:center;padding:0 3px}
+.C-list{width:384px;flex-shrink:0;display:flex;flex-direction:column;border-right:1px solid var(--c-line);background:var(--c-pane)}
+.C-lh{padding:14px 14px 10px;display:flex;flex-direction:column;gap:10px;border-bottom:1px solid var(--c-line)}
+.C-lh-row{display:flex;align-items:center;gap:8px}
+.C-lh h4{margin:0;font-size:15px;font-weight:600}
+.C-new{margin-left:auto;border:0;background:var(--c-accent);color:var(--c-pane);border-radius:7px;padding:5px 10px;font-size:12px;font-weight:600}
+.C-search{display:flex;align-items:center;gap:8px;border:1px solid var(--c-line);border-radius:8px;padding:6px 10px;color:var(--c-muted);font-size:12.5px;background:var(--c-bg)}
+.C-seg{display:flex;gap:4px;flex-wrap:wrap}
+.C-seg button{border:1px solid var(--c-line);background:var(--c-pane);border-radius:99px;padding:3px 10px;font-size:12px;color:var(--c-muted)}
+.C-seg button.on{background:var(--c-fg);border-color:var(--c-fg);color:var(--c-pane);font-weight:500}
+.C-items{flex:1;overflow:auto}
+.C-gh{position:sticky;top:0;background:var(--c-bg);padding:6px 14px;font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--c-muted);display:flex;gap:6px;align-items:center;border-bottom:1px solid var(--c-line);z-index:1}
+.C-item{display:grid;grid-template-columns:16px minmax(0,1fr) auto;gap:2px 10px;padding:10px 14px;border-bottom:1px solid var(--c-line);cursor:pointer;border-left:3px solid transparent;width:100%;text-align:left;background:none;border-top:0;border-right:0}
+.C-item:hover{background:var(--c-bg)}
+.C-item.on{background:var(--c-sel);border-left-color:var(--c-accent)}
+.C-item .g{margin-top:3px}
+.C-item .tt{font-weight:500;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.C-item .tm{font-size:11px;color:var(--c-muted);font-variant-numeric:tabular-nums;white-space:nowrap}
+.C-item .sb{grid-column:2/4;font-size:12px;color:var(--c-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.C-lf{padding:8px 14px;border-top:1px solid var(--c-line);font-size:11px;color:var(--c-muted);display:flex;gap:12px}
+.C-lf .kbd{margin:0;border-color:var(--c-line);background:var(--c-bg);color:var(--c-muted)}
+.C-detail{flex:1;min-width:0;display:flex;flex-direction:column;background:var(--c-pane)}
+.C-dh{padding:16px 24px 0;display:flex;flex-direction:column;gap:10px;border-bottom:1px solid var(--c-line)}
+.C-dmeta{display:flex;align-items:center;gap:10px;font-size:12px;color:var(--c-muted);flex-wrap:wrap}
+.pill{display:inline-flex;align-items:center;gap:6px;border-radius:99px;padding:2px 9px;font-size:11.5px;font-weight:600}
+.C-dtitle{display:flex;align-items:flex-start;gap:16px}
+.C-dtitle h4{margin:0;font-size:19px;font-weight:600;letter-spacing:-.01em;line-height:1.3;flex:1}
+.C-acts{display:flex;gap:6px;flex-shrink:0}
+.C-acts button{border:1px solid var(--c-line);background:var(--c-pane);border-radius:8px;padding:6px 12px;font-size:12.5px;font-weight:500;color:var(--c-fg)}
+.C-acts .pri{background:var(--c-accent);border-color:var(--c-accent);color:var(--c-pane)}
+.C-acts .amb{background:var(--s-need);border-color:var(--s-need);color:#fff}
+.C-tabs{display:flex;gap:18px}
+.C-tabs button{border:0;background:none;padding:8px 0 10px;font-size:13px;color:var(--c-muted);border-bottom:2px solid transparent}
+.C-tabs button.on{color:var(--c-fg);border-bottom-color:var(--c-accent);font-weight:500}
+.C-tabs .n{font-family:var(--f-mono);font-size:11px;margin-left:4px}
+.C-dbody{flex:1;overflow:auto;display:grid;grid-template-columns:200px minmax(0,1fr)}
+.C-dbody.single{display:block;padding:20px 24px}
+.C-files{border-right:1px solid var(--c-line);padding:10px 8px;display:flex;flex-direction:column;gap:2px;background:var(--c-bg)}
+.C-file{display:flex;align-items:center;gap:6px;padding:5px 8px;border-radius:6px;font-family:var(--f-mono);font-size:11.5px;min-width:0}
+.C-file.on{background:var(--c-pane);box-shadow:0 0 0 1px var(--c-line)}
+.C-file span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0}
+.C-file small{font-size:10.5px}
+.add-fg{color:var(--c-add-fg)} .del-fg{color:var(--c-del-fg)}
+.C-diff{font-family:var(--f-mono);font-size:12px;line-height:1.75;padding:12px 0;min-width:0}
+.C-diff .fh{padding:0 20px 10px;font-size:12px;color:var(--c-muted);display:flex;gap:10px}
+.C-diff .ln{display:grid;grid-template-columns:40px 40px minmax(0,1fr);padding-right:16px}
+.C-diff .ln span:not(:last-child){color:var(--c-muted);text-align:right;padding-right:10px;font-size:11px;user-select:none}
+.C-diff .ln code{white-space:pre-wrap;overflow-wrap:anywhere;font-family:inherit}
+.C-diff .add{background:var(--c-add)} .C-diff .del{background:var(--c-del)}
+.C-diff .hunk{color:var(--c-muted);background:var(--c-bg);padding:2px 20px;font-size:11px}
+.C-comment{margin:6px 16px 6px 80px;border:1px solid var(--c-line);border-radius:8px;padding:10px 12px;font-family:var(--f-ui);font-size:12.5px;background:var(--c-pane);display:flex;flex-direction:column;gap:6px;box-shadow:0 2px 8px rgba(0,0,0,.05)}
+.C-comment b{font-weight:600}
+.C-sum{display:flex;flex-direction:column;gap:16px;max-width:760px}
+.C-sum p{margin:0;line-height:1.65}
+.C-box{border:1px solid var(--c-line);border-radius:10px;padding:14px 16px;display:flex;flex-direction:column;gap:10px;background:var(--c-bg)}
+.C-box.need{border-color:var(--s-need);background:color-mix(in srgb,var(--s-need) 7%,var(--c-pane))}
+.C-log{font-family:var(--f-mono);font-size:12px;line-height:1.8;display:flex;flex-direction:column}
+.C-log .row{display:grid;grid-template-columns:64px 72px minmax(0,1fr);gap:8px;padding:3px 0;border-bottom:1px dashed var(--c-line)}
+.C-log .tm{color:var(--c-muted)} .C-log .k{color:var(--c-accent)}
+
+/* ============ KẾT HỢP (dùng token của A) ============ */
+.H .A-main{position:relative}
+.H-switch{display:inline-flex;border:1px solid var(--a-line);border-radius:8px;background:var(--a-surface);padding:2px;gap:2px}
+.H-switch button{border:0;background:none;border-radius:6px;padding:4px 9px;font-size:12.5px;color:var(--a-muted);display:inline-flex;gap:6px;align-items:center;white-space:nowrap}
+.H-switch button.on{background:var(--a-hover);color:var(--a-fg);font-weight:500;box-shadow:0 0 0 1px var(--a-line)}
+.H-switch .kbd{margin-left:0;font-size:10px}
+.H-body{flex:1;min-height:0;display:flex;overflow:hidden;position:relative}
+.H-scroll{flex:1;overflow:auto;padding:14px 20px 20px;display:flex;flex-direction:column;gap:18px;min-width:0}
+.H-strip{border:1px solid color-mix(in srgb,var(--s-need) 40%,var(--a-line));background:color-mix(in srgb,var(--s-need) 6%,var(--a-surface));border-radius:10px;padding:10px 12px;display:flex;flex-direction:column;gap:9px}
+.H-strip.calm{flex-direction:row;align-items:center;gap:8px;border-color:var(--a-line);background:var(--a-surface);color:var(--a-muted);font-size:12.5px}
+.H-strip-h{display:flex;align-items:center;gap:8px;font-weight:600;font-size:12.5px}
+.H-strip-h .sub{font-weight:400;color:var(--a-muted)}
+.H-strip-h button{margin-left:auto;border:0;background:none;color:var(--a-muted);font-size:12px;border-radius:5px;padding:2px 6px}
+.H-strip-h button:hover{background:var(--a-hover);color:var(--a-fg)}
+.H-strip-row{display:flex;gap:8px;overflow-x:auto;padding-bottom:2px}
+.H-strip-row .H-att{flex:0 0 320px}
+.H-att{background:var(--a-surface);border:1px solid var(--a-line);border-radius:9px;padding:10px 12px;display:flex;flex-direction:column;gap:7px;min-width:0}
+.H-att.need{border-color:color-mix(in srgb,var(--s-need) 60%,var(--a-line))}
+.H-att-k{display:flex;align-items:center;gap:6px;font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase}
+.H-att-k .r{margin-left:auto;display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:400;letter-spacing:0;text-transform:none;color:var(--a-muted)}
+.H-tt{border:0;background:none;padding:0;text-align:left;font-size:13.5px;font-weight:500;color:var(--a-fg);line-height:1.4}
+.H-tt:hover{color:var(--a-accent)}
+.H .A-act{flex-wrap:wrap}
+.H .A-act button.pri,.H-acts .pri{background:var(--a-accent);border-color:var(--a-accent);color:#fff}
+.H .A-act button.go,.H-acts .amb,.A-btn.go{background:var(--s-need);border-color:var(--s-need);color:#fff}
+.H .A-card.sel{border-color:var(--a-accent);box-shadow:0 0 0 2px color-mix(in srgb,var(--a-accent) 25%,transparent)}
+.H-cols{display:flex;gap:10px;align-items:flex-start}
+.H-cols .A-col{width:auto;flex:1 1 0;min-width:190px}
+.H-sec-h{display:flex;align-items:center;gap:8px;font-size:11.5px;font-weight:600;color:var(--a-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px}
+.H-sec-h b{color:var(--a-fg);font-family:var(--f-mono);font-weight:500;letter-spacing:0}
+.H-sec-h .rule{flex:1;height:1px;background:var(--a-line)}
+.H-sec-h .hint{text-transform:none;letter-spacing:0;font-weight:400}
+.H-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.H-slot{background:var(--a-surface);border:1px solid var(--a-line);border-radius:10px;overflow:hidden;display:flex;flex-direction:column;min-width:0;min-height:200px}
+.H-slot.hold{border-color:color-mix(in srgb,var(--s-need) 50%,var(--a-line))}
+.H-slot-h{display:flex;align-items:center;gap:8px;padding:9px 12px;border-bottom:1px solid var(--a-line);font-size:11px;color:var(--a-muted);font-family:var(--f-mono)}
+.H-slot-h .tm{margin-left:auto;color:var(--a-fg);font-size:12px;font-variant-numeric:tabular-nums}
+.H-slot-b{padding:10px 12px;display:flex;flex-direction:column;gap:6px}
+.H-pulse{width:7px;height:7px;border-radius:50%;background:var(--s-run);animation:hpulse 1.6s infinite}
+@keyframes hpulse{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--s-run) 55%,transparent)}100%{box-shadow:0 0 0 7px transparent}}
+.H-log{font-family:var(--f-mono);font-size:11px;line-height:1.7;background:var(--a-col);border-top:1px solid var(--a-line);padding:8px 12px;height:100px;overflow:hidden;display:flex;flex-direction:column;justify-content:flex-end;color:var(--a-muted);margin-top:auto}
+.H-log div,.H-plog div{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.H-log .tool,.H-plog .tool{color:var(--a-accent)} .H-log .ok,.H-plog .ok{color:var(--s-done)}
+.H-log .last::after,.H-plog .last::after{content:"▍";color:var(--a-fg);animation:blink 1s steps(2) infinite;margin-left:2px}
+.H-plog{font-family:var(--f-mono);font-size:11.5px;line-height:1.9;color:var(--a-muted);background:var(--a-col);border:1px solid var(--a-line);border-radius:8px;padding:8px 12px}
+.H-empty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;border:1px dashed var(--a-line);border-radius:8px;padding:14px;color:var(--a-muted);text-align:center;font-size:12px}
+.H-empty b{color:var(--a-fg);font-weight:500}
+.H-lanes{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.H-lane{background:var(--a-surface);border:1px solid var(--a-line);border-radius:10px;padding:8px 12px;min-width:0}
+.H-lane-h{display:flex;align-items:center;gap:7px;font-size:12.5px;font-weight:500;padding:2px 0 6px}
+.H-lane-h .n{color:var(--a-muted);font-weight:400}
+.H-row{display:flex;align-items:center;gap:8px;padding:6px 0;border-top:1px solid var(--a-line);font-size:12.5px;min-width:0;width:100%;background:none;border-left:0;border-right:0;border-bottom:0;text-align:left;color:var(--a-fg)}
+.H-row:hover .tt{color:var(--a-accent)}
+.H-row .id{font-family:var(--f-mono);font-size:11px;color:var(--a-muted)}
+.H-row .tt{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;min-width:0}
+.H-row .r{font-size:11px;color:var(--a-muted);white-space:nowrap}
+.H-list{width:340px;flex-shrink:0;border-right:1px solid var(--a-line);overflow:auto;background:var(--a-surface)}
+.H-gh{position:sticky;top:0;z-index:1;background:var(--a-side);padding:6px 14px;font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--a-muted);display:flex;gap:6px;align-items:center;border-bottom:1px solid var(--a-line)}
+.H-item{display:grid;grid-template-columns:16px minmax(0,1fr) auto;gap:2px 10px;padding:9px 14px;border:0;border-bottom:1px solid var(--a-line);border-left:3px solid transparent;width:100%;text-align:left;background:none;color:var(--a-fg)}
+.H-item:hover{background:var(--a-bg)}
+.H-item.on{background:color-mix(in srgb,var(--a-accent) 9%,var(--a-surface));border-left-color:var(--a-accent)}
+.H-item .g{margin-top:3px}
+.H-item .tt{font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.H-item .tm{font-size:11px;color:var(--a-muted);white-space:nowrap;font-variant-numeric:tabular-nums}
+.H-item .sb{grid-column:2/4;font-size:11.5px;color:var(--a-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center;gap:5px}
+.H-panel{width:470px;flex-shrink:0;border-left:1px solid var(--a-line);background:var(--a-surface);display:flex;flex-direction:column;min-width:0}
+.H-panel.float{position:absolute;top:0;right:0;bottom:0;box-shadow:-18px 0 40px -18px rgba(0,0,0,.4);z-index:3;animation:slidein .18s ease-out}
+.H-panel.dock{flex:1;width:auto;border-left:0}
+@keyframes slidein{from{transform:translateX(24px);opacity:.4}to{transform:none;opacity:1}}
+.H-ph{padding:12px 18px 0;border-bottom:1px solid var(--a-line);display:flex;flex-direction:column;gap:9px}
+.H-ph-top{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--a-muted);flex-wrap:wrap}
+.H-ph-top .tools{margin-left:auto;display:flex;gap:4px;align-items:center}
+.H-ph-top .tools button{border:1px solid var(--a-line);background:var(--a-bg);border-radius:6px;padding:2px 8px;font-size:11.5px;color:var(--a-fg)}
+.H-ph h4{margin:0;font-size:17px;font-weight:600;line-height:1.35;letter-spacing:-.01em}
+.H-acts{display:flex;gap:6px;flex-wrap:wrap}
+.H-acts button{border:1px solid var(--a-line);background:var(--a-surface);border-radius:7px;padding:5px 11px;font-size:12.5px;font-weight:500;color:var(--a-fg)}
+.H-tabs{display:flex;gap:16px}
+.H-tabs span{padding:6px 0 9px;font-size:12.5px;color:var(--a-muted);border-bottom:2px solid transparent}
+.H-tabs span.on{color:var(--a-fg);border-bottom-color:var(--a-accent);font-weight:500}
+.H-pb{flex:1;overflow:auto;padding:14px 18px;display:flex;flex-direction:column;gap:12px}
+.H-pb p{margin:0;line-height:1.6}
+.H-box{border:1px solid var(--a-line);border-radius:9px;padding:12px 14px;display:flex;flex-direction:column;gap:8px;background:var(--a-bg)}
+.H-box.need{border-color:var(--s-need);background:color-mix(in srgb,var(--s-need) 7%,var(--a-surface))}
+.H-box.fail{border-color:color-mix(in srgb,var(--s-fail) 60%,var(--a-line))}
+.H-files{display:flex;gap:6px;flex-wrap:wrap}
+.H-file{font-family:var(--f-mono);font-size:11px;border:1px solid var(--a-line);border-radius:6px;padding:3px 8px;background:var(--a-bg);color:var(--a-muted)}
+.H-file.on{border-color:var(--a-accent);color:var(--a-fg)}
+.H-diff{border:1px solid var(--a-line);border-radius:8px;overflow:hidden;font-family:var(--f-mono);font-size:11.5px;line-height:1.7}
+.H-diff .hunk{background:var(--a-col);color:var(--a-muted);padding:3px 10px;font-size:10.5px}
+.H-diff .ln{display:grid;grid-template-columns:30px 30px minmax(0,1fr);padding-right:8px}
+.H-diff .ln span{color:var(--a-muted);text-align:right;padding-right:8px;font-size:10.5px;user-select:none}
+.H-diff .ln code{white-space:pre-wrap;overflow-wrap:anywhere;font-family:inherit}
+.H-diff .add{background:color-mix(in srgb,var(--s-done) 13%,transparent)}
+.H-diff .del{background:color-mix(in srgb,var(--s-fail) 12%,transparent)}
+.H-cmt{margin:6px 10px 6px 60px;border:1px solid var(--a-line);border-radius:8px;padding:8px 10px;font-family:Inter,var(--f-ui);font-size:12px;background:var(--a-surface);display:flex;flex-direction:column;gap:3px}
+.H-toast{position:absolute;right:20px;bottom:20px;background:var(--a-fg);color:var(--a-bg);border-radius:8px;padding:9px 14px;font-size:12.5px;box-shadow:0 10px 30px rgba(0,0,0,.3);z-index:6;max-width:380px}
+.H-toast[hidden]{display:none!important}
+.H-legend{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:12px;color:var(--muted);margin-bottom:8px}
+.H-legend b{color:var(--fg);font-weight:600}
+
+@media (prefers-reduced-motion: reduce){ .g-run,.pulse,.B-log .last::after,.H-pulse,.H-log .last::after,.H-plog .last::after,.H-panel.float{animation:none} }
+</style>
+
+<header class="topbar">
+  <div class="topbar-in">
+    <div class="brand"><span class="brand-mark">CT</span> Task Board <small>· Redesign</small></div>
+    <nav class="tabs" role="tablist" aria-label="Phương án">
+      <button class="tab" role="tab" data-view="tong-quan" id="tab-tong-quan">Tổng quan &amp; Đề xuất</button>
+      <button class="tab" role="tab" data-view="ket-hop" id="tab-ket-hop"><b>★</b>Kết hợp</button>
+      <button class="tab" role="tab" data-view="a" id="tab-a"><b>A</b>Tinh gọn</button>
+      <button class="tab" role="tab" data-view="b" id="tab-b"><b>B</b>Trạm điều phối</button>
+      <button class="tab" role="tab" data-view="c" id="tab-c"><b>C</b>Phân luồng</button>
+    </nav>
+    <button class="theme-btn" id="themeBtn" type="button">Giao diện: Hệ thống</button>
+  </div>
+</header>
+
+<main class="wrap">
+
+<!-- ================================================================ TỔNG QUAN ================================================================ -->
+<section class="view" id="view-tong-quan">
+  <span class="eyebrow">Claude Task Board · Đánh giá giao diện · 13/11/2026</span>
+  <h1 style="margin-top:6px">Ba hướng thiết kế lại giao diện</h1>
+  <p class="lead">Task Board đã đủ chức năng: 7 trạng thái task, xin quyền, review diff, merge, phụ thuộc, lịch chạy. Giao diện hiện tại là Tailwind mặc định và đang chật dần vì mỗi tính năng mới lại thêm một nhãn, một màu, một nút ẩn. Trang này gồm đánh giá hiện trạng, so sánh ba phương án, phương án nên làm và lộ trình triển khai. Mở các tab A, B, C để xem prototype bấm thử được.</p>
+
+  <div class="section">
+    <h2>1. Hiện trạng: 8 vấn đề chính</h2>
+    <div class="issues">
+      <div class="issue"><span class="sev hi">Cao</span><h3>Việc cần bạn bị chìm giữa 6 cột</h3><p>Needs Input chỉ là một cột cùng cỡ với các cột khác. Muốn cấp quyền phải mở chi tiết task. Đây lại là việc gấp nhất vì Claude đang đứng chờ.</p></div>
+      <div class="issue"><span class="sev hi">Cao</span><h3>Nút hành động chỉ hiện khi rê chuột</h3><p><code>Chạy</code>, <code>Tiếp tục</code>, <code>Chạy lại</code> dùng <code>opacity-0 group-hover:opacity-100</code>. Trên điện thoại (truy cập qua Tailscale) không bấm được, trên desktop thì khó phát hiện.</p></div>
+      <div class="issue"><span class="sev hi">Cao</span><h3>Review phải chuyển trang qua lại</h3><p>Bảng → Chi tiết → Review → quay lại Bảng → task kế. Mỗi lần chuyển mất ngữ cảnh và vị trí cuộn. Review là việc lặp lại nhiều nhất trong ngày.</p></div>
+      <div class="issue"><span class="sev md">Vừa</span><h3>Quá nhiều màu cùng lúc</h3><p>7 màu trạng thái (viền cột, badge, chấm) cộng 4 màu ưu tiên, nhãn Fail, nhãn Tạm dừng, nhãn phụ thuộc. Không màu nào còn nổi bật, kể cả màu cảnh báo.</p></div>
+      <div class="issue"><span class="sev md">Vừa</span><h3>Bảng tràn ngang ở laptop</h3><p>6 cột × <code>w-72</code> (288px) + panel lọc + sidebar ≈ 2.050px. Màn 1440px phải cuộn ngang mới thấy Review và Done.</p></div>
+      <div class="issue"><span class="sev md">Vừa</span><h3>Header gần như trống</h3><p>Thanh trên cùng chỉ có “2 đang chạy · slot 2/3” và nút Giao việc. Chưa có tìm kiếm, chưa có vị trí hiện tại, chưa có lối tắt bàn phím ngoài N và [.</p></div>
+      <div class="issue"><span class="sev lo">Thấp</span><h3>Ngôn ngữ trộn lẫn</h3><p>Cột “Backlog, Queued, Running, Needs Input” tiếng Anh, còn menu, gợi ý, nút tiếng Việt. Nên thống nhất một bộ thuật ngữ.</p></div>
+      <div class="issue"><span class="sev lo">Thấp</span><h3>Chữ quá nhỏ, thứ bậc yếu</h3><p>Nhiều chỗ dùng <code>text-[11px]</code> và <code>text-xs</code> màu slate-500. Tiêu đề thẻ và metadata chênh nhau quá ít nên mắt không biết đọc gì trước.</p></div>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>2. So sánh ba phương án</h2>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>Tiêu chí</th><th>A · Tinh gọn</th><th>B · Trạm điều phối</th><th>C · Phân luồng</th></tr></thead>
+        <tbody>
+          <tr><td>Ý tưởng</td><td>Giữ Kanban, làm lại hệ thống thiết kế: ít màu, glyph trạng thái, bảng lệnh Ctrl K.</td><td>Trang chủ là phòng điều khiển: hàng “Cần bạn”, các slot agent chạy trực tiếp, pipeline thu gọn.</td><td>Ba khung như hộp thư: danh sách theo trạng thái bên trái, chi tiết và diff bên phải.</td></tr>
+          <tr><td>Giải quyết tốt nhất</td><td>Nhiễu màu, chữ nhỏ, tràn ngang, nút ẩn</td><td>Việc cần bạn bị chìm, theo dõi agent đang chạy</td><td>Review chuyển trang, xử lý hàng loạt bằng bàn phím</td></tr>
+          <tr><td>Quen thuộc với bạn</td><td><span class="dots"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i></span></td><td><span class="dots"><i class="on"></i><i class="on"></i><i></i><i></i><i></i></span></td><td><span class="dots"><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i></span></td></tr>
+          <tr><td>Tốc độ xử lý việc</td><td><span class="dots"><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i></span></td><td><span class="dots"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i></span></td><td><span class="dots"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i></span></td></tr>
+          <tr><td>Dùng trên điện thoại</td><td><span class="dots"><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i></span></td><td><span class="dots"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i></span></td><td><span class="dots"><i class="on"></i><i class="on"></i><i></i><i></i><i></i></span></td></tr>
+          <tr><td>Công sức ước tính</td><td>3–4 ngày</td><td>6–8 ngày (cần stream log tóm tắt)</td><td>7–9 ngày (gộp Board + TaskDetail)</td></tr>
+          <tr><td>Rủi ro</td><td>Thấp. Đổi giao diện, giữ luồng</td><td>Vừa. Thêm một trang chủ mới, Kanban thành tab phụ</td><td>Vừa–cao. Đổi điều hướng, kéo thả Kanban thành chế độ phụ</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>3. Đề xuất của tôi</h2>
+    <div class="reco">
+      <div style="display:flex;flex-direction:column;gap:14px;min-width:0">
+        <span class="reco-tag">Nên làm: A làm nền, lấy “Cần bạn” của B, lấy khung xem nhanh của C</span>
+        <p style="margin:0"><a href="#ket-hop" style="color:var(--accent);font-weight:600">Xem prototype bản kết hợp cả 3 view →</a></p>
+        <p style="margin:0">Không nên chọn trọn một phương án. A sửa phần nền (màu, chữ, thành phần) mà mọi màn hình đều hưởng lợi, rủi ro thấp, làm trước được ngay. Trên nền đó ghép hai ý mạnh nhất của hai phương án còn lại:</p>
+        <ul>
+          <li><b>Từ B: dải “Cần bạn” trên đầu Bảng công việc.</b> Cấp quyền, Duyệt, Chạy lại ngay trên thẻ, không mở trang chi tiết. Đây là thay đổi tiết kiệm thời gian nhất, vì task chờ quyền đang giữ một slot chạy.</li>
+          <li><b>Từ C: mở task trong khung bên phải thay vì sang trang mới.</b> Bấm thẻ thì panel trượt ra với Tóm tắt / Diff / Log; phím J/K chuyển task kế. Trang <code class="mono">/tasks/:id</code> giữ lại cho link chia sẻ.</li>
+          <li><b>Giữ Kanban và kéo thả.</b> Bạn đã quen, và luồng kéo thẻ để Chạy / Tạm dừng đã có kiểm thử. Chỉ thu gọn cột Done thành dải dọc để bảng vừa màn 1440px.</li>
+          <li><b>Mọi hành động chính luôn hiện</b>, không phụ thuộc rê chuột. Trên điện thoại, dải “Cần bạn” trở thành màn hình chính (xem bên phải).</li>
+          <li><b>Thống nhất thuật ngữ tiếng Việt:</b> Chờ chạy · Hàng đợi · Đang chạy · Cần bạn · Chờ duyệt · Xong. Mã trạng thái trong code giữ nguyên.</li>
+        </ul>
+      </div>
+      <div class="phone-row" style="grid-template-columns:1fr">
+        <div class="phone" aria-label="Mô phỏng điện thoại">
+          <div class="phone-top"><span>Cần bạn · 3</span><span class="A-live" style="padding:2px 8px"><span class="slotbar"><i class="on"></i><i class="on"></i><i></i></span>2/3</span></div>
+          <div class="phone-sec">
+            <span class="lbl">Xin quyền</span>
+            <div class="p-card need">
+              <div class="A-meta"><span class="sq" style="background:#0ea5e9"></span>expense-api · #56</div>
+              <b style="font-weight:600">Viết unit test cho ExpenseService</b>
+              <div class="A-cmd">npm install -D vitest</div>
+              <div class="p-btns"><button>Từ chối</button><button class="pri">Cho phép</button></div>
+            </div>
+            <span class="lbl">Chờ duyệt</span>
+            <div class="p-card">
+              <div class="A-meta"><span class="sq" style="background:#6366f1"></span>shop-web · #55<span class="r">3 file · +42 −8</span></div>
+              <b style="font-weight:600">Sửa lỗi tính tổng giỏ hàng khi số lượng = 0</b>
+              <div class="p-btns"><button>Xem diff</button><button class="pri">Duyệt &amp; merge</button></div>
+            </div>
+          </div>
+          <div class="phone-nav"><span class="on">● <span>Cần bạn</span></span><span>▦ <span>Bảng</span></span><span>＋ <span>Giao việc</span></span><span>⚙ <span>Cài đặt</span></span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>4. Lộ trình triển khai</h2>
+    <div class="phases">
+      <div class="phase">
+        <div class="phase-head"><span class="eyebrow">Giai đoạn 1</span><h3>Nền thiết kế</h3></div>
+        <ul>
+          <li>Token màu, chữ, bo góc trong <code>tailwind.config.js</code> và <code>index.css</code> (CSS variables cho sáng/tối)</li>
+          <li>Glyph trạng thái thay chấm màu + viền cột; gom vào <code>STATUS_META</code> ở <code>lib/format.ts</code></li>
+          <li>Làm lại <code>Button</code>, <code>StatusBadge</code>, <code>Modal</code> trong <code>components/ui.tsx</code></li>
+          <li><code>TaskCard</code>: tiêu đề lên đầu, metadata một dòng, bỏ <code>opacity-0</code> ở nút</li>
+          <li>Đổi nhãn cột sang tiếng Việt</li>
+        </ul>
+        <div class="eff">~3 ngày · không đổi luồng, ít rủi ro</div>
+      </div>
+      <div class="phase">
+        <div class="phase-head"><span class="eyebrow">Giai đoạn 2</span><h3>Cần bạn và thanh trên</h3></div>
+        <ul>
+          <li>Dải “Cần bạn” trên <code>pages/Board.tsx</code>, dùng lại <code>PermissionCard</code> và <code>attentionCounts</code></li>
+          <li>Header mới trong <code>Layout.tsx</code>: breadcrumb, ô tìm kiếm, chỉ báo slot dạng thanh</li>
+          <li>Bảng lệnh Ctrl K: tìm task, chuyển project, Giao việc, Duyệt</li>
+          <li>Thu gọn cột Xong thành dải dọc, cột 252px</li>
+          <li>Màn hình chính trên điện thoại là “Cần bạn”, thanh điều hướng dưới</li>
+        </ul>
+        <div class="eff">~3 ngày · Inbox.tsx có thể gộp vào dải này</div>
+      </div>
+      <div class="phase">
+        <div class="phase-head"><span class="eyebrow">Giai đoạn 3</span><h3>Khung xem nhanh</h3></div>
+        <ul>
+          <li>Tách nội dung <code>TaskDetail.tsx</code> (735 dòng) thành <code>TaskPanel</code> dùng được ở cả trang lẫn khung bên</li>
+          <li>Mở task bằng <code>?task=55</code> trên Bảng, giữ vị trí cuộn và bộ lọc</li>
+          <li>Phím J/K chuyển task, A duyệt, R yêu cầu sửa</li>
+          <li>Tab Tóm tắt mới: kết quả Claude + số file + cảnh báo trên một màn</li>
+        </ul>
+        <div class="eff">~4 ngày · cần kiểm thử lại luồng Duyệt / Yêu cầu sửa</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>5. Hệ thống thiết kế đề xuất</h2>
+    <div class="tokens">
+      <div class="tok">
+        <h3>Glyph trạng thái</h3>
+        <p class="lead" style="margin-top:4px;font-size:13px">Hình dạng nói trạng thái, màu chỉ để nhấn. Người mù màu và màn hình đen trắng vẫn phân biệt được.</p>
+        <div class="glyph-list" id="glyphList"></div>
+      </div>
+      <div class="tok">
+        <h3>Thang chữ</h3>
+        <p class="lead" style="margin-top:4px;font-size:13px">Inter cho giao diện (hỗ trợ tiếng Việt tốt), JetBrains Mono cho mã task, lệnh, nhánh git. Cỡ nhỏ nhất 11.5px.</p>
+        <div class="scale" style="font-family:Inter,var(--f-ui)">
+          <div><span>20 / 600</span><span style="font-size:20px;font-weight:600">Sửa lỗi tính tổng giỏ hàng</span></div>
+          <div><span>15 / 600</span><span style="font-size:15px;font-weight:600">Chờ duyệt · 2</span></div>
+          <div><span>13 / 500</span><span style="font-size:13px;font-weight:500">Tiêu đề thẻ task</span></div>
+          <div><span>12.5 / 400</span><span style="font-size:12.5px">Nội dung, mô tả, nút</span></div>
+          <div><span>11.5 / 400</span><span style="font-size:11.5px;color:var(--muted)">shop-web · 4 phút trước</span></div>
+          <div><span>mono 11.5</span><span class="mono" style="font-size:11.5px">#55 · task/55-gio-hang</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================================================================ KẾT HỢP ================================================================ -->
+<section class="view" id="view-ket-hop" hidden>
+  <span class="eyebrow">Phương án kết hợp · Đề xuất</span>
+  <h1 style="margin-top:6px">Một nền, ba cách xem</h1>
+  <p class="lead">Ba phương án không loại trừ nhau. Chúng là ba cách sắp xếp cùng một danh sách task. Bản kết hợp dùng hệ thống thiết kế của A cho toàn app, rồi cho bạn chuyển giữa Bảng (A), Điều phối (B) và Phân luồng (C) bằng một nút hoặc phím 1 2 3. Dải “Cần bạn” và khung chi tiết task dùng chung ở cả ba view.</p>
+  <div class="brief">
+    <div><span class="eyebrow">Nguyên tắc</span><p>Một nguồn dữ liệu. Cho phép, duyệt hay tạm dừng ở view nào thì hai view còn lại cập nhật theo ngay.</p></div>
+    <div><span class="eyebrow">Dùng chung</span><p>Sidebar, thanh trên (Ctrl K, slot), dải Cần bạn, khung chi tiết task, glyph trạng thái, phím tắt, bộ lọc.</p></div>
+    <div><span class="eyebrow">Khi nào dùng view nào</span><p><b>Bảng</b>: lên kế hoạch, kéo thả. <b>Điều phối</b>: khi nhiều agent đang chạy. <b>Phân luồng</b>: khi cần duyệt nhiều task liền.</p></div>
+    <div><span class="eyebrow">Thử</span><p>Ở Bảng, bấm Cho phép #56 rồi sang Điều phối xem slot 3. Bấm thẻ để mở khung chi tiết. Esc đóng, J/K chuyển task.</p></div>
+  </div>
+  <p class="scroll-hint">Khung mô phỏng rộng 1180px, cuộn ngang để xem hết.</p>
+  <div class="mock-scroll"><div class="mock A H" id="mockH">
+    <aside class="A-side">
+      <div class="A-logo"><span class="brand-mark">CT</span>Claude Task Board</div>
+      <button class="A-nav on">▦ Công việc</button>
+      <button class="A-nav" data-hv="ops">◉ Cần bạn <span class="cnt need" id="hNavCnt">0</span></button>
+      <button class="A-nav">▤ Lịch chạy</button>
+      <button class="A-nav">◔ Thống kê</button>
+      <button class="A-nav">⚙ Cài đặt</button>
+      <div class="A-group"><span>Projects</span><span>＋</span></div>
+      <button class="A-nav"><span class="sq" style="background:#6366f1"></span>shop-web<span class="cnt">5</span></button>
+      <button class="A-nav"><span class="sq" style="background:#0ea5e9"></span>expense-api<span class="cnt">4</span></button>
+      <button class="A-nav"><span class="sq" style="background:#f59e0b"></span>internal-docs<span class="cnt">2</span></button>
+      <div style="margin-top:auto" class="A-nav">◐ Giao diện tối</div>
+    </aside>
+    <div class="A-main">
+      <div class="A-top">
+        <span class="A-crumb"><b>Công việc</b></span>
+        <div class="H-switch" role="tablist" aria-label="Cách xem">
+          <button data-hv="board" type="button">▦ Bảng <span class="kbd">1</span></button>
+          <button data-hv="ops" type="button">◉ Điều phối <span class="kbd">2</span></button>
+          <button data-hv="triage" type="button">☰ Phân luồng <span class="kbd">3</span></button>
+        </div>
+        <button class="A-search" type="button" style="width:150px">⌕ Tìm… <span class="kbd">Ctrl K</span></button>
+        <span class="A-live" id="hLive"></span>
+        <button class="A-btn pri" type="button">＋ Giao việc</button>
+      </div>
+      <div class="H-body" id="hBody"></div>
+    </div>
+    <div class="H-toast" id="hToast" hidden></div>
+  </div></div>
+
+  <div class="section">
+    <h2>Mỗi phương án đóng góp gì</h2>
+    <div class="phases">
+      <div class="phase">
+        <div class="phase-head"><span class="eyebrow">Từ A</span><h3>Nền và view Bảng</h3></div>
+        <ul>
+          <li>Token màu, thang chữ, glyph trạng thái cho toàn app</li>
+          <li>Sidebar, thanh trên có Ctrl K và chỉ báo slot</li>
+          <li>View <b>Bảng</b>: Kanban kéo thả, cột Xong thu thành dải dọc</li>
+          <li>Cột “Cần bạn” bỏ khỏi Kanban, chuyển thành dải phía trên để bảng vừa màn hình</li>
+        </ul>
+      </div>
+      <div class="phase">
+        <div class="phase-head"><span class="eyebrow">Từ B</span><h3>Cần bạn và view Điều phối</h3></div>
+        <ul>
+          <li>Thẻ “Cần bạn” có nút Cho phép, Duyệt, Tiếp tục. Dùng ở cả 3 view</li>
+          <li>View <b>Điều phối</b>: slot agent có log trực tiếp, thời gian chạy, pipeline thu gọn</li>
+          <li>Slot bị giữ vì task chờ quyền được nêu rõ</li>
+          <li>Bỏ giao diện tối cố định, theo sáng/tối chung của app</li>
+        </ul>
+      </div>
+      <div class="phase">
+        <div class="phase-head"><span class="eyebrow">Từ C</span><h3>Khung chi tiết và view Phân luồng</h3></div>
+        <ul>
+          <li>Khung chi tiết task: Tóm tắt, Diff có nhận xét theo dòng, Log</li>
+          <li>Ở Bảng và Điều phối: khung trượt ra bên phải, Esc để đóng</li>
+          <li>View <b>Phân luồng</b>: cùng khung đó, gắn cố định cạnh danh sách</li>
+          <li>Phím J/K chuyển task ở mọi view</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>Cách làm trong code</h2>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>Thành phần</th><th>Dùng ở</th><th>Ghi chú triển khai</th></tr></thead>
+        <tbody>
+          <tr><td>URL state</td><td>Cả 3 view</td><td><span class="mono">/?view=board|ops|triage&amp;task=55</span>. Nhớ view cuối trong localStorage giống trạng thái panel lọc hiện có. Bộ lọc project/tag áp dụng chung.</td></tr>
+          <tr><td>TaskPanel</td><td>Khung nổi (Bảng, Điều phối), khung cố định (Phân luồng), trang <span class="mono">/tasks/:id</span></td><td>Tách từ <span class="mono">TaskDetail.tsx</span> (735 dòng), một component với <span class="mono">mode="float|dock|page"</span>.</td></tr>
+          <tr><td>AttentionCard</td><td>Dải trên Bảng, hàng đầu Điều phối, nhóm đầu Phân luồng</td><td>Dùng lại <span class="mono">PermissionCard</span> và <span class="mono">attentionCounts</span>. Trang Inbox gộp vào đây.</td></tr>
+          <tr><td>TaskCard</td><td>Bảng</td><td>Bỏ <span class="mono">opacity-0 group-hover</span>, bấm thẻ mở TaskPanel thay vì chuyển trang.</td></tr>
+          <tr><td>AgentSlot</td><td>Điều phối</td><td>Cần backend gửi dòng log tóm tắt (tên tool, file) qua WebSocket sẵn có. Phần còn lại dùng dữ liệu task hiện có.</td></tr>
+          <tr><td>Trên điện thoại</td><td>Mặc định Điều phối</td><td>Màn hình nhỏ: Điều phối xếp một cột, TaskPanel mở toàn màn. Bảng và Phân luồng vẫn chọn được.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>Lộ trình cho bản kết hợp</h2>
+    <div class="phases">
+      <div class="phase"><div class="phase-head"><span class="eyebrow">Giai đoạn 1</span><h3>Nền A + view Bảng</h3></div><ul><li>Token, glyph, <span class="mono">ui.tsx</span>, <span class="mono">TaskCard</span></li><li>Thanh trên mới, nút chuyển view (mới có Bảng)</li><li>Thuật ngữ tiếng Việt</li></ul><div class="eff">~3 ngày</div></div>
+      <div class="phase"><div class="phase-head"><span class="eyebrow">Giai đoạn 2</span><h3>TaskPanel + Cần bạn</h3></div><ul><li>Tách TaskPanel, mở bằng <span class="mono">?task=</span></li><li>Dải Cần bạn trên Bảng, bỏ cột Needs Input</li><li>View Phân luồng (chỉ cần danh sách + TaskPanel dạng dock)</li></ul><div class="eff">~4 ngày</div></div>
+      <div class="phase"><div class="phase-head"><span class="eyebrow">Giai đoạn 3</span><h3>View Điều phối</h3></div><ul><li>Luồng log tóm tắt từ backend</li><li>AgentSlot, pipeline thu gọn</li><li>Bố cục điện thoại mặc định Điều phối</li></ul><div class="eff">~4–5 ngày · tổng ~11–12 ngày</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ================================================================ A ================================================================ -->
+<section class="view" id="view-a" hidden>
+  <span class="eyebrow">Phương án A</span>
+  <h1 style="margin-top:6px">Tinh gọn: giữ Kanban, làm lại phần nền</h1>
+  <div class="brief">
+    <div><span class="eyebrow">Ý tưởng</span><p>Cách làm của các công cụ như Linear: nền trung tính, một màu nhấn, trạng thái bằng hình dạng glyph.</p></div>
+    <div><span class="eyebrow">Thay đổi chính</span><p>Thẻ gọn, nút luôn hiện, cột Cần bạn được tô nền, cột Xong thu thành dải dọc, Ctrl K.</p></div>
+    <div><span class="eyebrow">Đánh đổi</span><p>Vẫn phải nhìn qua 6 cột để biết việc gì cần làm. Review vẫn sang trang khác.</p></div>
+    <div><span class="eyebrow">Thử</span><p>Bấm ô tìm kiếm hoặc nhấn <span class="mono">Ctrl K</span>. Bấm dải “Xong” để mở cột.</p></div>
+  </div>
+  <p class="scroll-hint">Khung mô phỏng rộng 1180px, cuộn ngang để xem hết.</p>
+  <div class="mock-scroll"><div class="mock A" id="mockA">
+    <aside class="A-side">
+      <div class="A-logo"><span class="brand-mark">CT</span>Claude Task Board</div>
+      <button class="A-nav on">▦ Bảng công việc</button>
+      <button class="A-nav">◉ Cần bạn <span class="cnt need">3</span></button>
+      <button class="A-nav">▤ Lịch chạy</button>
+      <button class="A-nav">◔ Thống kê</button>
+      <button class="A-nav">⚙ Cài đặt</button>
+      <div class="A-group"><span>Projects</span><span>＋</span></div>
+      <button class="A-nav"><span class="sq" style="background:#6366f1"></span>shop-web<span class="cnt">5</span></button>
+      <button class="A-nav"><span class="sq" style="background:#0ea5e9"></span>expense-api<span class="cnt">4</span></button>
+      <button class="A-nav"><span class="sq" style="background:#f59e0b"></span>internal-docs<span class="cnt">2</span></button>
+      <div style="margin-top:auto" class="A-nav">◐ Giao diện tối</div>
+    </aside>
+    <div class="A-main">
+      <div class="A-top">
+        <span class="A-crumb">Bảng công việc / <b>Tất cả project</b></span>
+        <button class="A-search" id="aSearch" type="button">⌕ Tìm task, project, lệnh… <span class="kbd">Ctrl K</span></button>
+        <span class="A-live"><span class="slotbar"><i class="on"></i><i class="on"></i><i></i></span>2/3 slot · 2 trong hàng đợi</span>
+        <button class="A-btn pri" type="button">＋ Giao việc <span class="kbd">N</span></button>
+      </div>
+      <div class="A-filters">
+        <span class="chip set">Project: Tất cả</span>
+        <span class="chip">＋ Ưu tiên</span>
+        <span class="chip">＋ Tag</span>
+        <span class="chip set">Ẩn task Xong &gt; 24 giờ <span class="x">×</span></span>
+        <div class="seg"><button class="on">Bảng</button><button>Danh sách</button></div>
+      </div>
+      <div class="A-board" id="aBoard"></div>
+    </div>
+    <div class="overlay" id="aPal" hidden>
+      <div class="palette" role="dialog" aria-label="Bảng lệnh">
+        <input id="aPalInput" placeholder="Gõ để tìm task hoặc lệnh…" autocomplete="off">
+        <div class="pal-g">Hành động</div>
+        <div class="pal-i on">＋ Giao việc mới <span class="kbd">N</span></div>
+        <div class="pal-i">✓ Duyệt &amp; merge #55 <span class="kbd">A</span></div>
+        <div class="pal-i">◉ Mở hàng Cần bạn <span class="kbd">G I</span></div>
+        <div class="pal-g">Task</div>
+        <div class="pal-i"><span id="pg1"></span> #56 Viết unit test cho ExpenseService</div>
+        <div class="pal-i"><span id="pg2"></span> #58 Hiển thị lỗi khi đăng nhập thất bại</div>
+        <div class="pal-g">Project</div>
+        <div class="pal-i"><span class="sq" style="background:#6366f1"></span> Chuyển sang shop-web</div>
+      </div>
+    </div>
+  </div></div>
+</section>
+
+<!-- ================================================================ B ================================================================ -->
+<section class="view" id="view-b" hidden>
+  <span class="eyebrow">Phương án B</span>
+  <h1 style="margin-top:6px">Trạm điều phối: việc cần bạn lên đầu, agent chạy trực tiếp</h1>
+  <div class="brief">
+    <div><span class="eyebrow">Ý tưởng</span><p>Bạn là người điều phối nhiều agent chạy song song. Trang chủ trả lời ba câu: ai đang chờ tôi, agent đang làm gì, tiếp theo là gì.</p></div>
+    <div><span class="eyebrow">Thay đổi chính</span><p>Cấp quyền và duyệt ngay trên thẻ. Mỗi slot hiện log trực tiếp, thời gian, token, chi phí. Kanban thành tab “Bảng”.</p></div>
+    <div><span class="eyebrow">Đánh đổi</span><p>Giao diện tối cố định, khác hẳn hiện tại. Cần backend đẩy dòng log tóm tắt qua WebSocket.</p></div>
+    <div><span class="eyebrow">Thử</span><p>Bấm “Cho phép” hoặc “Duyệt &amp; merge”: thẻ biến mất và slot trống nhận task kế.</p></div>
+  </div>
+  <p class="scroll-hint">Khung mô phỏng rộng 1180px, cuộn ngang để xem hết.</p>
+  <div class="mock-scroll"><div class="mock B" id="mockB">
+    <div class="B-top">
+      <div class="B-logo"><span class="brand-mark">CT</span>Task Board</div>
+      <nav class="B-nav"><button class="on">Điều phối <span class="c" id="bNavCount">3</span></button><button>Bảng</button><button>Lịch chạy</button><button>Thống kê</button><button>Cài đặt</button></nav>
+      <div class="B-stat"><span>hôm nay <b>9</b> xong</span><span>chi phí <b>$2.84</b></span><span>giới hạn <b>62%</b></span></div>
+      <button class="B-new" type="button">＋ Giao việc</button>
+    </div>
+    <div class="B-body">
+      <div>
+        <div class="B-h">Cần bạn <b id="bAttnCount">3</b><span class="rule"></span><span class="hint">Claude đang đứng chờ, mỗi thẻ giữ một slot hoặc một nhánh</span></div>
+        <div class="B-attn" id="bAttn">
+          <div class="B-card need" data-k="perm">
+            <div class="B-kind need">● Xin quyền <span class="id">#56 · expense-api</span></div>
+            <div class="B-title">Viết unit test cho ExpenseService</div>
+            <div class="B-cmd"><span class="p">$</span> npm install --save-dev vitest @vitest/coverage-v8</div>
+            <div class="B-sub">Chờ 2 phút 14 giây · giữ slot 3</div>
+            <div class="B-btns"><button class="warn" data-act="allow">Cho phép</button><button data-act="allow">Luôn cho phép npm install</button><button data-act="deny">Từ chối</button></div>
+          </div>
+          <div class="B-card" data-k="rev">
+            <div class="B-kind rev">◆ Chờ duyệt <span class="id">#55 · shop-web</span></div>
+            <div class="B-title">Sửa lỗi tính tổng giỏ hàng khi số lượng = 0</div>
+            <div class="diffbar"><i style="flex:42;background:var(--b-green)"></i><i style="flex:8;background:var(--b-red)"></i></div>
+            <div class="B-sub mono">3 file · +42 −8 · test 18/18 qua · không conflict</div>
+            <div class="B-btns"><button class="rv" data-act="merge">Duyệt &amp; merge</button><button>Xem diff</button><button>Yêu cầu sửa</button></div>
+          </div>
+          <div class="B-card" data-k="fail">
+            <div class="B-kind fail">▲ Dừng do giới hạn <span class="id">#50 · internal-docs</span></div>
+            <div class="B-title">Bổ sung hướng dẫn cài đặt vào README</div>
+            <div class="B-sub">Hết giới hạn sử dụng lúc 14:02. Giới hạn reset lúc 19:00. Thay đổi đang dở vẫn còn trong worktree.</div>
+            <div class="B-btns"><button data-act="resume">Tiếp tục ngay</button><button>Tự chạy lúc 19:00</button></div>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div class="B-h">Agent đang chạy <b id="bSlotCount">2/3</b><span class="rule"></span><span class="hint">Cài đặt: tối đa 3 task song song</span></div>
+        <div class="B-slots" id="bSlots">
+          <div class="B-slot">
+            <div class="B-slot-h"><span class="pulse"></span><span class="lbl">SLOT 1 · #58 · shop-web</span><span class="tm" data-start="252">4:12</span></div>
+            <div class="B-slot-b"><div class="B-title">Hiển thị lỗi khi đăng nhập thất bại</div><div class="B-kpis"><span>file <b>2</b></span><span>token <b>48k</b></span><span>chi phí <b>$0.31</b></span></div></div>
+            <div class="B-log" data-log="0"></div>
+          </div>
+          <div class="B-slot">
+            <div class="B-slot-h"><span class="pulse"></span><span class="lbl">SLOT 2 · #57 · expense-api</span><span class="tm" data-start="100">1:40</span></div>
+            <div class="B-slot-b"><div class="B-title">Validate dữ liệu API tạo chi phí</div><div class="B-kpis"><span>file <b>4</b></span><span>token <b>22k</b></span><span>chi phí <b>$0.12</b></span></div></div>
+            <div class="B-log" data-log="1"></div>
+          </div>
+          <div class="B-slot" id="bSlot3">
+            <div class="B-slot-h"><span class="lbl">SLOT 3 · đang giữ cho #56</span></div>
+            <div class="B-slot-b" style="flex:1"><div class="B-empty"><b>Slot bị giữ vì #56 chờ quyền</b>Cấp quyền ở trên để #56 chạy tiếp. Hàng đợi kế tiếp: #53 Định dạng giá tiền theo VND.</div></div>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div class="B-h">Pipeline<span class="rule"></span><span class="hint">Xem đầy đủ ở tab Bảng</span></div>
+        <div class="B-pipe" id="bPipe"></div>
+      </div>
+    </div>
+    <div class="B-toast" id="bToast" hidden></div>
+  </div></div>
+</section>
+
+<!-- ================================================================ C ================================================================ -->
+<section class="view" id="view-c" hidden>
+  <span class="eyebrow">Phương án C</span>
+  <h1 style="margin-top:6px">Phân luồng: danh sách và chi tiết trên cùng một màn</h1>
+  <div class="brief">
+    <div><span class="eyebrow">Ý tưởng</span><p>Xử lý task như xử lý thư: chọn bên trái, đọc và quyết định bên phải, J/K sang cái kế tiếp. Không bao giờ rời trang.</p></div>
+    <div><span class="eyebrow">Thay đổi chính</span><p>Gộp Board, Inbox và TaskDetail. Diff có nhận xét theo dòng ngay trong khung. Kanban thành một chế độ xem.</p></div>
+    <div><span class="eyebrow">Đánh đổi</span><p>Mất cái nhìn toàn cảnh của Kanban. Màn hình nhỏ phải chuyển thành hai bước. Công sức lớn nhất.</p></div>
+    <div><span class="eyebrow">Thử</span><p>Bấm các task bên trái, hoặc bấm vào danh sách rồi dùng phím J / K.</p></div>
+  </div>
+  <p class="scroll-hint">Khung mô phỏng rộng 1180px, cuộn ngang để xem hết.</p>
+  <div class="mock-scroll"><div class="mock C" id="mockC">
+    <nav class="C-rail">
+      <span class="brand-mark">CT</span>
+      <button class="C-ri on" title="Task" aria-label="Task">☰<span class="b">3</span></button>
+      <button class="C-ri" title="Bảng Kanban" aria-label="Bảng Kanban">▦</button>
+      <button class="C-ri" title="Lịch chạy" aria-label="Lịch chạy">◷</button>
+      <button class="C-ri" title="Thống kê" aria-label="Thống kê">◔</button>
+      <button class="C-ri" title="Cài đặt" aria-label="Cài đặt" style="margin-top:auto">⚙</button>
+    </nav>
+    <div class="C-list">
+      <div class="C-lh">
+        <div class="C-lh-row"><h4>Task</h4><button class="C-new" type="button">＋ Giao việc</button></div>
+        <div class="C-search">⌕ Lọc theo tên, #id, tag…</div>
+        <div class="C-seg"><button class="on">Tất cả 10</button><button>Cần bạn 3</button><button>Đang chạy 2</button><button>shop-web</button></div>
+      </div>
+      <div class="C-items" id="cItems" tabindex="0" aria-label="Danh sách task, dùng J và K để chuyển"></div>
+      <div class="C-lf"><span><span class="kbd">J</span> <span class="kbd">K</span> chuyển</span><span><span class="kbd">A</span> duyệt</span><span><span class="kbd">R</span> yêu cầu sửa</span></div>
+    </div>
+    <div class="C-detail" id="cDetail"></div>
+  </div></div>
+</section>
+
+</main>
+
+<script>
+(function(){
+  /* ---------- theme ---------- */
+  var root=document.documentElement, modes=['system','light','dark'], names={system:'Hệ thống',light:'Sáng',dark:'Tối'}, mode='system';
+  try{ var sv=localStorage.getItem('ui-redesign-theme'); if(modes.indexOf(sv)>=0) mode=sv; }catch(e){}
+  function applyTheme(){ if(mode==='system') root.removeAttribute('data-theme'); else root.setAttribute('data-theme',mode); document.getElementById('themeBtn').textContent='Giao diện: '+names[mode]; }
+  document.getElementById('themeBtn').addEventListener('click',function(){ mode=modes[(modes.indexOf(mode)+1)%3]; try{localStorage.setItem('ui-redesign-theme',mode)}catch(e){} applyTheme(); });
+  applyTheme();
+
+  /* ---------- glyph ---------- */
+  var SC={backlog:'var(--s-backlog)',queued:'var(--s-queued)',running:'var(--s-run)',needs_input:'var(--s-need)',review:'var(--s-review)',done:'var(--s-done)',failed:'var(--s-fail)'};
+  function glyph(st){
+    var c=SC[st], s='<svg class="g'+(st==='running'?' g-run':'')+'" viewBox="0 0 14 14" aria-hidden="true">';
+    if(st==='backlog') s+='<circle cx="7" cy="7" r="5.5" fill="none" stroke="'+c+'" stroke-width="1.6" stroke-dasharray="2.2 2"/>';
+    else if(st==='queued') s+='<circle cx="7" cy="7" r="5.5" fill="none" stroke="'+c+'" stroke-width="1.6"/><circle cx="7" cy="7" r="1.8" fill="'+c+'"/>';
+    else if(st==='running') s+='<circle cx="7" cy="7" r="5.5" fill="none" stroke="'+c+'" stroke-width="1.6"/><path d="M7 3.2A3.8 3.8 0 0 1 7 10.8Z" fill="'+c+'"/>';
+    else if(st==='needs_input') s+='<circle cx="7" cy="7" r="6.3" fill="'+c+'"/><rect x="6.2" y="3.4" width="1.6" height="4.6" rx=".8" fill="#fff"/><circle cx="7" cy="10" r=".95" fill="#fff"/>';
+    else if(st==='review') s+='<circle cx="7" cy="7" r="5.5" fill="none" stroke="'+c+'" stroke-width="1.6"/><path d="M7 3.2A3.8 3.8 0 1 1 3.2 7L7 7Z" fill="'+c+'"/>';
+    else if(st==='done') s+='<circle cx="7" cy="7" r="6.3" fill="'+c+'"/><path d="M4.3 7.2l1.8 1.8 3.6-3.8" fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>';
+    else s+='<circle cx="7" cy="7" r="6.3" fill="'+c+'"/><path d="M4.9 4.9l4.2 4.2M9.1 4.9l-4.2 4.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/>';
+    return s+'</svg>';
+  }
+  var LABEL={backlog:'Chờ chạy',queued:'Hàng đợi',running:'Đang chạy',needs_input:'Cần bạn',review:'Chờ duyệt',done:'Xong',failed:'Lỗi'};
+  var HINTS={backlog:'Chưa chạy hoặc đã dừng',queued:'Tới lượt sẽ tự chạy',running:'Claude đang làm',needs_input:'Claude đang chờ bạn',review:'Duyệt để merge',done:'Đã merge vào nhánh chính',failed:'Hiện trong Chờ chạy kèm cờ'};
+  document.getElementById('glyphList').innerHTML=['backlog','queued','running','needs_input','review','done','failed'].map(function(s){return '<div class="glyph-row">'+glyph(s)+'<span>'+LABEL[s]+'<small>'+HINTS[s]+'</small></span></div>'}).join('');
+  document.getElementById('pg1').innerHTML=glyph('needs_input'); document.getElementById('pg2').innerHTML=glyph('running');
+
+  /* ---------- dữ liệu mẫu ---------- */
+  var P={'shop-web':'#6366f1','expense-api':'#0ea5e9','internal-docs':'#f59e0b'};
+  var T=[
+    {id:58,p:'shop-web',t:'Hiển thị lỗi khi đăng nhập thất bại',s:'running',m:'4:12',step:'Sửa src/pages/Login.tsx',pg:55},
+    {id:57,p:'expense-api',t:'Validate dữ liệu API tạo chi phí',s:'running',m:'1:40',step:'Chạy npm test',pg:30},
+    {id:56,p:'expense-api',t:'Viết unit test cho ExpenseService',s:'needs_input',m:'2 phút',cmd:'npm install --save-dev vitest'},
+    {id:55,p:'shop-web',t:'Sửa lỗi tính tổng giỏ hàng khi số lượng = 0',s:'review',m:'12 phút',files:3,add:42,del:8,pri:'Cao'},
+    {id:54,p:'internal-docs',t:'Chuẩn hoá tiêu đề các trang tài liệu',s:'review',m:'38 phút',files:12,add:96,del:91,warn:true},
+    {id:53,p:'shop-web',t:'Định dạng giá tiền theo VND',s:'queued',m:'kế tiếp'},
+    {id:52,p:'expense-api',t:'Migrate database sang PostgreSQL',s:'queued',m:'chờ #57',dep:57,pri:'Khẩn'},
+    {id:51,p:'shop-web',t:'Thêm dark mode cho trang quản trị',s:'backlog',m:'1 ngày'},
+    {id:50,p:'internal-docs',t:'Bổ sung hướng dẫn cài đặt vào README',s:'backlog',m:'14:02',fail:'Hết giới hạn sử dụng'},
+    {id:49,p:'shop-web',t:'Nâng cấp thư viện định dạng ngày',s:'done',m:'2 giờ'},
+    {id:48,p:'expense-api',t:'Thêm endpoint xuất báo cáo CSV',s:'done',m:'3 giờ'},
+    {id:47,p:'shop-web',t:'Tối ưu ảnh sản phẩm bằng lazy load',s:'done',m:'5 giờ'}
+  ];
+  function esc(x){return String(x).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
+
+  /* ================= A ================= */
+  var aDoneOpen=false;
+  function aCard(x){
+    var flags='';
+    if(x.fail) flags+='<span class="flag fail">Lỗi</span>';
+    if(x.pri) flags+='<span class="flag pri">↑ '+x.pri+'</span>';
+    var body='';
+    if(x.s==='running') body='<div class="prog"><i style="width:'+x.pg+'%"></i></div><div class="A-meta">'+esc(x.step)+'<span class="r">'+x.m+'</span></div>';
+    if(x.s==='needs_input') body='<div class="A-cmd">$ '+esc(x.cmd)+'</div><div class="A-act"><button class="go">Cho phép</button><button>Từ chối</button><button>Chi tiết</button></div>';
+    if(x.s==='review') body='<div class="A-meta"><span>'+x.files+' file</span><span style="color:var(--s-done)">+'+x.add+'</span><span style="color:var(--s-fail)">−'+x.del+'</span>'+(x.warn?'<span class="flag fail">Cảnh báo</span>':'')+'</div><div class="A-act"><button>Xem diff</button><button>Duyệt &amp; merge</button></div>';
+    if(x.s==='backlog') body='<div class="A-act">'+(x.fail?'<button>Tiếp tục</button><button>Chạy lại</button>':'<button>▶ Chạy</button>')+'</div>';
+    if(x.dep) flags+='<span class="flag dep">Chờ #'+x.dep+'</span>';
+    return '<div class="A-card" tabindex="0"><div class="A-meta"><span class="sq" style="background:'+P[x.p]+'"></span>'+x.p+' <span class="mono">#'+x.id+'</span>'+flags+'<span class="r">'+(x.s==='running'?'':x.m)+'</span></div><div class="t">'+esc(x.t)+'</div>'+body+'</div>';
+  }
+  function renderA(){
+    var cols=['backlog','queued','running','needs_input','review'], h='';
+    cols.forEach(function(c){
+      var l=T.filter(function(x){return x.s===c});
+      h+='<div class="A-col'+(c==='needs_input'&&l.length?' need':'')+'"><div class="A-colh">'+glyph(c)+LABEL[c]+'<span class="n">'+l.length+'</span>'+(c==='backlog'?'<button class="add" aria-label="Thêm task">＋</button>':'')+'</div>'+l.map(aCard).join('')+'</div>';
+    });
+    var d=T.filter(function(x){return x.s==='done'});
+    if(aDoneOpen) h+='<div class="A-col"><div class="A-colh">'+glyph('done')+'Xong<span class="n">'+d.length+'</span><button class="add" id="aDoneClose" aria-label="Thu gọn">‹</button></div>'+d.map(aCard).join('')+'</div>';
+    else h+='<button class="A-done" id="aDoneBtn" type="button">'+glyph('done')+'<span>Xong · '+d.length+' hôm nay</span></button>';
+    document.getElementById('aBoard').innerHTML=h;
+    var b=document.getElementById(aDoneOpen?'aDoneClose':'aDoneBtn'); b.addEventListener('click',function(){aDoneOpen=!aDoneOpen;renderA()});
+  }
+  renderA();
+  var pal=document.getElementById('aPal');
+  function openPal(){pal.hidden=false;document.getElementById('aPalInput').focus()}
+  document.getElementById('aSearch').addEventListener('click',openPal);
+  pal.addEventListener('click',function(e){if(e.target===pal)pal.hidden=true});
+
+  /* ================= B ================= */
+  var LOGS=[
+    ['Đọc src/pages/Login.tsx','<span class="tool">Grep</span> "loginError" trong src/','<span class="tool">Edit</span> src/api/auth.ts (+12 −3)','<span class="tool">Edit</span> src/pages/Login.tsx (+28 −4)','<span class="tool">Bash</span> npm run typecheck','<span class="ok">✓ typecheck không lỗi</span>','Thêm thông báo khi sai mật khẩu','<span class="tool">Edit</span> src/i18n/vi.json (+3)'],
+    ['<span class="tool">Read</span> src/routes/expense.ts','Thêm schema zod cho body','<span class="tool">Edit</span> src/schemas/expense.ts (+34)','<span class="tool">Bash</span> npm test -- expense','<span class="ok">✓ 24/24 test qua</span>','Kiểm tra số tiền âm','<span class="tool">Edit</span> src/routes/expense.ts (+9 −2)','<span class="tool">Bash</span> npm test']
+  ];
+  var logPos=[3,3];
+  function renderLog(i){
+    var el=document.querySelector('.B-log[data-log="'+i+'"]'); if(!el) return;
+    var L=LOGS[i], out=[];
+    for(var k=Math.max(0,logPos[i]-5);k<logPos[i];k++){ out.push('<div'+(k===logPos[i]-1?' class="last"':'')+'>'+L[k%L.length]+'</div>'); }
+    el.innerHTML=out.join('');
+  }
+  renderLog(0);renderLog(1);
+  var reduce=window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var sec=0;
+  setInterval(function(){
+    sec++;
+    document.querySelectorAll('#mockB .tm[data-start]').forEach(function(el){var t=+el.dataset.start+sec;el.textContent=Math.floor(t/60)+':'+String(t%60).padStart(2,'0')});
+    if(!reduce && sec%2===0){var i=sec%4===0?0:1;logPos[i]++;renderLog(i)}
+  },1000);
+  function pipe(){
+    var lanes=[['queued','Hàng đợi'],['backlog','Chờ chạy'],['done','Xong hôm nay']];
+    var h='';
+    lanes.forEach(function(l){
+      var list=T.filter(function(x){return x.s===l[0]});
+      h+='<div class="B-lane"><div class="B-lane-h">'+glyph(l[0])+l[1]+' <span class="n">'+list.length+'</span></div>'+list.map(function(x){return '<div class="B-row"><span class="id">#'+x.id+'</span><span class="tt">'+esc(x.t)+'</span><span class="r">'+(x.fail?'<span style="color:var(--b-red)">lỗi</span>':x.m)+'</span></div>'}).join('')+'</div>';
+    });
+    h+='<div class="B-lane"><div class="B-lane-h">Lịch chạy</div><div class="B-row"><span class="id">02:00</span><span class="tt">Cập nhật dependency hằng tuần</span><span class="r">T2</span></div><div class="B-row"><span class="id">19:00</span><span class="tt">Chạy tiếp #50 sau khi reset</span><span class="r">hôm nay</span></div></div>';
+    document.getElementById('bPipe').innerHTML=h;
+  }
+  pipe();
+  var toast=document.getElementById('bToast'), tt;
+  function showToast(m){toast.innerHTML=m;toast.hidden=false;clearTimeout(tt);tt=setTimeout(function(){toast.hidden=true},2600)}
+  document.getElementById('bAttn').addEventListener('click',function(e){
+    var b=e.target.closest('button[data-act]'); if(!b) return;
+    var card=b.closest('.B-card'), act=b.dataset.act;
+    card.classList.add('gone');
+    setTimeout(function(){card.remove();var n=document.querySelectorAll('#bAttn .B-card').length;document.getElementById('bAttnCount').textContent=n;document.getElementById('bNavCount').textContent=n;
+      if(n===0) document.getElementById('bAttn').innerHTML='<div class="B-empty" style="grid-column:1/-1"><b>Không có gì chờ bạn</b>Các agent đang tự chạy. Thẻ mới sẽ hiện ở đây kèm thông báo trình duyệt.</div>';
+    },250);
+    if(act==='allow'){
+      var s3=document.getElementById('bSlot3');
+      s3.innerHTML='<div class="B-slot-h"><span class="pulse"></span><span class="lbl">SLOT 3 · #56 · expense-api</span><span class="tm" data-start="'+(-sec)+'">0:00</span></div><div class="B-slot-b"><div class="B-title">Viết unit test cho ExpenseService</div><div class="B-kpis"><span>file <b>1</b></span><span>token <b>9k</b></span><span>chi phí <b>$0.05</b></span></div></div><div class="B-log"><div><span class="tool">Bash</span> npm install --save-dev vitest</div><div class="ok">✓ đã cài 2 gói</div><div class="last">Tạo tests/expense.service.test.ts</div></div>';
+      document.getElementById('bSlotCount').textContent='3/3';
+      showToast('<span style="color:var(--b-green)">✓</span> Đã cho phép. #56 chạy tiếp ở slot 3');
+    } else if(act==='merge') showToast('<span style="color:var(--b-violet)">◆</span> Đã merge #55 vào main');
+    else if(act==='resume') showToast('#50 vào hàng đợi, chạy khi có slot trống');
+    else showToast('Đã từ chối. #56 quay về Chờ chạy');
+  });
+
+  /* ================= C ================= */
+  var order=['needs_input','review','running','queued','backlog','done'];
+  var CT=[]; order.forEach(function(s){T.forEach(function(x){if(x.s===s)CT.push(x)})});
+  var sel=CT.findIndex(function(x){return x.id===55});
+  function sub(x){
+    if(x.s==='running') return x.step+' · '+x.m;
+    if(x.s==='needs_input') return 'Xin chạy: '+x.cmd;
+    if(x.s==='review') return x.files+' file · +'+x.add+' −'+x.del+(x.warn?' · có cảnh báo':'');
+    if(x.fail) return 'Lỗi: '+x.fail;
+    if(x.dep) return 'Chờ #'+x.dep+' xong';
+    return x.p;
+  }
+  function renderCList(){
+    var h='', last='';
+    CT.forEach(function(x,i){
+      if(x.s!==last){last=x.s;var n=CT.filter(function(y){return y.s===x.s}).length;h+='<div class="C-gh">'+glyph(x.s)+LABEL[x.s]+' · '+n+'</div>';}
+      h+='<button class="C-item'+(i===sel?' on':'')+'" data-i="'+i+'" type="button">'+glyph(x.s)+'<span class="tt">'+esc(x.t)+'</span><span class="tm">'+(x.s==='running'?x.m:x.m)+'</span><span class="sb"><span class="sq" style="display:inline-block;background:'+P[x.p]+';margin-right:5px;vertical-align:0"></span><span class="mono">#'+x.id+'</span> · '+esc(sub(x))+'</span></button>';
+    });
+    document.getElementById('cItems').innerHTML=h;
+  }
+  function pillFor(s){return '<span class="pill" style="background:color-mix(in srgb,'+SC[s]+' 14%,transparent);color:'+SC[s]+'">'+glyph(s)+LABEL[s]+'</span>'}
+  function renderCDetail(){
+    var x=CT[sel], acts='', tabs='', body='';
+    if(x.s==='review'){
+      acts='<button>Yêu cầu sửa</button><button class="pri">Duyệt &amp; merge</button>';
+      tabs='<button>Tóm tắt</button><button class="on">Diff<span class="n">'+x.files+'</span></button><button>Log</button><button>Prompt</button><button>Lịch sử</button>';
+      body='<div class="C-dbody"><div class="C-files">'+
+        '<div class="C-file on"><span>src/lib/cart.ts</span><small class="add-fg">+18</small><small class="del-fg">−5</small></div>'+
+        '<div class="C-file"><span>src/lib/cart.test.ts</span><small class="add-fg">+22</small></div>'+
+        '<div class="C-file"><span>src/pages/Cart.tsx</span><small class="add-fg">+2</small><small class="del-fg">−3</small></div></div>'+
+        '<div class="C-diff"><div class="fh"><b style="color:var(--c-fg)">src/lib/cart.ts</b><span>sửa · +18 −5</span></div>'+
+        '<div class="hunk">@@ -12,9 +12,14 @@ export function cartTotal(items: CartItem[])</div>'+
+        ln(12,12,'','export function cartTotal(items: CartItem[]): number {')+
+        ln(13,'','del','  return items.reduce((sum, i) => sum + i.price * i.qty, 0) / items.length')+
+        ln('',13,'add','  const valid = items.filter((i) => i.qty > 0)')+
+        ln('',14,'add','  if (valid.length === 0) return 0')+
+        ln('',15,'add','  return valid.reduce((sum, i) => sum + i.price * i.qty, 0)')+
+        '<div class="C-comment"><span><b>Bạn</b> · dòng 14</span><span>Trả về 0 là đúng, nhưng thêm test cho trường hợp tất cả qty = 0 nhé.</span><span style="color:var(--c-muted);font-size:11.5px">Sẽ gửi kèm khi bấm Yêu cầu sửa</span></div>'+
+        ln(14,16,'','}')+
+        ln(15,17,'','')+
+        ln(16,18,'','export function formatQty(qty: number) {')+
+        ln(17,'','del','  return qty || 1')+
+        ln('',19,'add','  return Math.max(0, Math.floor(qty))')+
+        ln(18,20,'','}')+
+        '</div></div>';
+    } else if(x.s==='needs_input'){
+      acts='<button>Từ chối</button><button class="amb">Cho phép</button>';
+      tabs='<button class="on">Tóm tắt</button><button>Log</button><button>Prompt</button>';
+      body='<div class="C-dbody single"><div class="C-sum"><div class="C-box need"><b>Claude xin chạy lệnh</b><div class="A-cmd" style="background:var(--c-pane);border-color:var(--c-line);color:var(--c-fg);font-size:12px">$ '+esc(x.cmd)+' @vitest/coverage-v8</div><span style="color:var(--c-muted)">Lý do Claude đưa ra: repo chưa có test runner, cần vitest để viết test cho ExpenseService. Lệnh chỉ thêm devDependencies.</span><label style="display:flex;gap:8px;align-items:center;font-size:12.5px"><input type="checkbox" id="cAlways"> Luôn cho phép <span class="mono">npm install</span> trong expense-api</label></div><p style="color:var(--c-muted)">Task đang giữ slot 3 trong lúc chờ. Đã chạy 3 phút 02 giây, 9.1k token.</p></div></div>';
+    } else if(x.s==='running'){
+      acts='<button>Tạm dừng</button>';
+      tabs='<button>Tóm tắt</button><button class="on">Log</button><button>Prompt</button>';
+      body='<div class="C-dbody single"><div class="C-log">'+
+        [['14:21:03','Read','src/pages/Login.tsx'],['14:21:09','Grep','"loginError" trong src/'],['14:21:30','Edit','src/api/auth.ts (+12 −3)'],['14:22:12','Edit','src/pages/Login.tsx (+28 −4)'],['14:23:40','Bash','npm run typecheck'],['14:24:02','Kết quả','typecheck không lỗi'],['14:24:15','Suy nghĩ','Thêm thông báo khi sai mật khẩu vào file ngôn ngữ']].map(function(r){return '<div class="row"><span class="tm">'+r[0]+'</span><span class="k">'+r[1]+'</span><span>'+r[2]+'</span></div>'}).join('')+'</div></div>';
+    } else {
+      acts=x.s==='backlog'?(x.fail?'<button>Chạy lại từ đầu</button><button class="pri">Tiếp tục</button>':'<button>Sửa</button><button class="pri">Chạy</button>'):x.s==='queued'?'<button>Sửa</button><button class="pri">Chạy ngay</button>':'<button>Mở nhánh</button>';
+      tabs='<button class="on">Tóm tắt</button><button>Prompt</button><button>Lịch sử</button>';
+      body='<div class="C-dbody single"><div class="C-sum">'+(x.fail?'<div class="C-box" style="border-color:var(--s-fail)"><b>'+esc(x.fail)+'</b><span style="color:var(--c-muted)">Dừng lúc '+x.m+'. Thay đổi đang dở vẫn còn trong worktree, bấm Tiếp tục để chạy tiếp phiên cũ.</span></div>':'')+(x.dep?'<div class="C-box"><b>Chờ #'+x.dep+' xong</b><span style="color:var(--c-muted)">Task chỉ chạy khi #'+x.dep+' đã merge. Chạy ngay sẽ gỡ phụ thuộc.</span></div>':'')+'<p><b>Prompt:</b> '+esc(x.t)+'. Giữ nguyên API hiện có, viết test cho phần thay đổi, chạy typecheck trước khi kết thúc.</p><p style="color:var(--c-muted)">Project '+x.p+' · cập nhật '+x.m+(x.s==='done'?' trước':'')+'</p></div></div>';
+    }
+    document.getElementById('cDetail').innerHTML='<div class="C-dh"><div class="C-dmeta">'+pillFor(x.s)+'<span class="sq" style="background:'+P[x.p]+'"></span>'+x.p+'<span class="mono">#'+x.id+'</span><span class="mono">task/'+x.id+'-'+x.p.split('-')[0]+'</span>'+(x.pri?'<span style="color:var(--s-fail);font-weight:600">↑ '+x.pri+'</span>':'')+'</div><div class="C-dtitle"><h4>'+esc(x.t)+'</h4><div class="C-acts">'+acts+'</div></div><div class="C-tabs">'+tabs+'</div></div>'+body;
+  }
+  function ln(a,b,k,code){return '<div class="ln '+k+'"><span>'+a+'</span><span>'+b+'</span><code>'+(k==='add'?'+ ':k==='del'?'− ':'  ')+esc(code)+'</code></div>'}
+  function selectC(i){sel=Math.max(0,Math.min(CT.length-1,i));renderCList();renderCDetail();var el=document.querySelector('.C-item.on');if(el&&el.scrollIntoView)el.scrollIntoView({block:'nearest'})}
+  renderCList();renderCDetail();
+  var items=document.getElementById('cItems');
+  items.addEventListener('click',function(e){var b=e.target.closest('.C-item');if(b)selectC(+b.dataset.i)});
+  items.addEventListener('keydown',function(e){if(e.key==='j'||e.key==='ArrowDown'){e.preventDefault();selectC(sel+1)}if(e.key==='k'||e.key==='ArrowUp'){e.preventDefault();selectC(sel-1)}});
+
+  /* ================= KẾT HỢP ================= */
+  var H=JSON.parse(JSON.stringify(T));
+  H.forEach(function(x){ if(x.id===58) x.st=-252; if(x.id===57) x.st=-100; });
+  var HLOG={58:LOGS[0],57:LOGS[1],56:['<span class="tool">Bash</span> npm install --save-dev vitest','<span class="ok">✓ đã cài 2 gói</span>','Tạo tests/expense.service.test.ts','<span class="tool">Edit</span> tests/expense.service.test.ts (+64)','<span class="tool">Bash</span> npx vitest run','<span class="ok">✓ 12/12 test qua</span>','Bổ sung test cho số tiền âm']};
+  var GEN=['<span class="tool">Read</span> package.json','Lập kế hoạch thay đổi','<span class="tool">Grep</span> các chỗ dùng liên quan','<span class="tool">Edit</span> 1 file (+14 −2)','<span class="tool">Bash</span> npm test','<span class="ok">✓ test qua</span>','<span class="tool">Bash</span> npm run typecheck'];
+  var hPos={58:4,57:4}, hView='board', hSel=null, hStrip=true, hDone=false;
+  try{var hv=localStorage.getItem('ui-redesign-hview'); if(['board','ops','triage'].indexOf(hv)>=0) hView=hv;}catch(e){}
+  var hOrder=['needs_input','review','running','queued','backlog','done'];
+  function hGet(id){for(var i=0;i<H.length;i++) if(H[i].id===id) return H[i]}
+  function hEl(x){var t=Math.max(0,sec-x.st);return Math.floor(t/60)+':'+String(t%60).padStart(2,'0')}
+  function hLog(x,n){var L=HLOG[x.id]||GEN,p=hPos[x.id]||1,o=[];for(var k=Math.max(0,p-n);k<p;k++)o.push('<div'+(k===p-1?' class="last"':'')+'>'+L[k%L.length]+'</div>');return o.join('')}
+  function proj(x){return '<span class="sq" style="background:'+P[x.p]+'"></span>'+x.p+' <span class="mono">#'+x.id+'</span>'}
+  function blocked(x){return x.s==='backlog'&&x.fail&&!x.paused}
+  function hBtn(act,id,label,cls){return '<button type="button" data-act="'+act+'" data-id="'+id+'"'+(cls?' class="'+cls+'"':'')+'>'+label+'</button>'}
+  function hOpen(id,label){return '<button type="button" data-open="'+id+'">'+label+'</button>'}
+  function hSorted(){var o=[];hOrder.forEach(function(s){H.forEach(function(x){if(x.s===s)o.push(x)})});return o}
+  function attn(withReview){var r={needs_input:0,review:1};return H.filter(function(x){return x.s==='needs_input'||blocked(x)||(withReview&&x.s==='review')}).sort(function(a,b){return (r[a.s]!=null?r[a.s]:2)-(r[b.s]!=null?r[b.s]:2)})}
+  function holders(){return H.filter(function(x){return x.s==='running'||x.s==='needs_input'}).sort(function(a,b){return a.st-b.st})}
+
+  function hAtt(x){
+    var k,body,btns;
+    if(x.s==='needs_input'){k='<span style="color:var(--s-need)">'+glyph('needs_input')+' Xin quyền</span>';body='<div class="A-cmd">$ '+esc(x.cmd)+'</div>';btns=hBtn('allow',x.id,'Cho phép','go')+hBtn('deny',x.id,'Từ chối')+hOpen(x.id,'Chi tiết');}
+    else if(x.s==='review'){k='<span style="color:var(--s-review)">'+glyph('review')+' Chờ duyệt</span>';body='<div class="A-meta">'+x.files+' file <span style="color:var(--s-done)">+'+x.add+'</span><span style="color:var(--s-fail)">−'+x.del+'</span>'+(x.warn?'<span class="flag fail">Cảnh báo</span>':'')+'</div>';btns=hBtn('merge',x.id,'Duyệt &amp; merge','pri')+hOpen(x.id,'Xem diff');}
+    else {k='<span style="color:var(--s-fail)">'+glyph('failed')+' Bị dừng</span>';body='<div class="A-meta">'+esc(x.fail)+' · '+x.m+'</div>';btns=hBtn('resume',x.id,'Tiếp tục','pri')+hBtn('run',x.id,'Chạy lại từ đầu');}
+    return '<div class="H-att'+(x.s==='needs_input'?' need':'')+'"><div class="H-att-k">'+k+'<span class="r">'+proj(x)+'</span></div><button type="button" class="H-tt" data-open="'+x.id+'">'+esc(x.t)+'</button>'+body+'<div class="A-act">'+btns+'</div></div>';
+  }
+  function hCard(x){
+    var dep=x.dep&&hGet(x.dep).s!=='done';
+    var flags=(x.fail?'<span class="flag fail">'+(x.paused?'Tạm dừng':'Lỗi')+'</span>':'')+(x.pri?'<span class="flag pri">↑ '+x.pri+'</span>':'')+(dep?'<span class="flag dep">Chờ #'+x.dep+'</span>':'');
+    var body='';
+    if(x.s==='running') body='<div class="prog"><i style="width:'+(x.pg||10)+'%"></i></div><div class="A-meta">'+esc(x.step)+'</div>';
+    if(x.s==='review') body='<div class="A-meta">'+x.files+' file <span style="color:var(--s-done)">+'+x.add+'</span><span style="color:var(--s-fail)">−'+x.del+'</span></div><div class="A-act">'+hBtn('merge',x.id,'Duyệt &amp; merge','pri')+hOpen(x.id,'Xem diff')+'</div>';
+    if(x.s==='backlog') body='<div class="A-act">'+(x.fail?hBtn('resume',x.id,'Tiếp tục')+hBtn('run',x.id,'Chạy lại'):hBtn('run',x.id,'▶ Chạy'))+'</div>';
+    if(x.s==='queued'&&!dep) body='<div class="A-act">'+hBtn('start',x.id,'Chạy ngay')+'</div>';
+    return '<div class="A-card'+(hSel===x.id?' sel':'')+'" data-open="'+x.id+'" tabindex="0"><div class="A-meta">'+proj(x)+flags+'<span class="r">'+(x.s==='running'?'<span class="h-tm" data-id="'+x.id+'">'+hEl(x)+'</span>':x.m)+'</span></div><div class="t">'+esc(x.t)+'</div>'+body+'</div>';
+  }
+  function hBoard(){
+    var l=attn(false), strip;
+    if(!l.length) strip='<div class="H-strip calm">'+glyph('done')+' Không có việc nào chờ bạn. Các agent đang tự chạy.</div>';
+    else strip='<div class="H-strip"><div class="H-strip-h">'+glyph('needs_input')+' Cần bạn · '+l.length+'<span class="sub">Claude đang đứng chờ, xử lý ngay tại đây</span><button type="button" data-strip>'+(hStrip?'Thu gọn':'Mở ra')+'</button></div>'+(hStrip?'<div class="H-strip-row">'+l.map(hAtt).join('')+'</div>':'')+'</div>';
+    var cols='';
+    ['backlog','queued','running','review'].forEach(function(c){
+      var list=H.filter(function(x){return x.s===c&&!blocked(x)});
+      cols+='<div class="A-col"><div class="A-colh">'+glyph(c)+LABEL[c]+'<span class="n">'+list.length+'</span>'+(c==='backlog'?'<button class="add" type="button" aria-label="Thêm task">＋</button>':'')+'</div>'+list.map(hCard).join('')+(list.length?'':'<p style="text-align:center;color:var(--a-muted);font-size:12px;padding:16px 0;margin:0">Trống</p>')+'</div>';
+    });
+    var d=H.filter(function(x){return x.s==='done'});
+    cols+=hDone?'<div class="A-col"><div class="A-colh">'+glyph('done')+'Xong<span class="n">'+d.length+'</span><button class="add" type="button" data-done aria-label="Thu gọn">‹</button></div>'+d.map(hCard).join('')+'</div>':'<button class="A-done" type="button" data-done>'+glyph('done')+'<span>Xong · '+d.length+' hôm nay</span></button>';
+    return '<div class="H-scroll">'+strip+'<div class="H-cols">'+cols+'</div></div>';
+  }
+  function hSlot(x,i){
+    if(!x){var nq=H.filter(function(y){return y.s==='queued'&&!(y.dep&&hGet(y.dep).s!=='done')})[0];
+      return '<div class="H-slot"><div class="H-slot-h">SLOT '+(i+1)+' · trống</div><div class="H-slot-b" style="flex:1"><div class="H-empty"><b>Slot trống</b>'+(nq?'Kế tiếp: #'+nq.id+' '+esc(nq.t)+'<button type="button" class="A-btn" data-act="start" data-id="'+nq.id+'">Chạy ngay</button>':'Hàng đợi trống')+'</div></div></div>';}
+    if(x.s==='needs_input') return '<div class="H-slot hold"><div class="H-slot-h">'+glyph('needs_input')+' SLOT '+(i+1)+' · giữ cho #'+x.id+'</div><div class="H-slot-b" style="flex:1"><div class="H-empty"><b>Đang chờ bạn cấp quyền</b>'+esc(x.t)+'<button type="button" class="A-btn go" data-act="allow" data-id="'+x.id+'">Cho phép</button></div></div></div>';
+    return '<div class="H-slot"><div class="H-slot-h"><span class="H-pulse"></span>SLOT '+(i+1)+' · #'+x.id+' · '+x.p+'<span class="tm h-tm" data-id="'+x.id+'">'+hEl(x)+'</span></div><div class="H-slot-b"><button type="button" class="H-tt" data-open="'+x.id+'">'+esc(x.t)+'</button><div class="A-meta">'+esc(x.step)+'</div><div class="A-act">'+hBtn('pause',x.id,'Tạm dừng')+hOpen(x.id,'Xem log')+'</div></div><div class="H-log" data-log="'+x.id+'">'+hLog(x,5)+'</div></div>';
+  }
+  function hOps(){
+    var l=attn(true), hs=holders(), slots='';
+    for(var i=0;i<3;i++) slots+=hSlot(hs[i],i);
+    var lanes='';
+    [['queued','Hàng đợi'],['backlog','Chờ chạy'],['done','Xong hôm nay']].forEach(function(z){
+      var list=H.filter(function(x){return x.s===z[0]});
+      lanes+='<div class="H-lane"><div class="H-lane-h">'+glyph(z[0])+z[1]+' <span class="n">'+list.length+'</span></div>'+list.map(function(x){return '<button type="button" class="H-row" data-open="'+x.id+'"><span class="id">#'+x.id+'</span><span class="tt">'+esc(x.t)+'</span><span class="r">'+(x.fail?'<span style="color:var(--s-fail)">'+(x.paused?'tạm dừng':'lỗi')+'</span>':x.m)+'</span></button>'}).join('')+'</div>';
+    });
+    return '<div class="H-scroll"><div><div class="H-sec-h">Cần bạn <b>'+l.length+'</b><span class="rule"></span><span class="hint">Xin quyền, chờ duyệt, bị dừng</span></div>'+(l.length?'<div class="H-grid">'+l.map(hAtt).join('')+'</div>':'<div class="H-strip calm">'+glyph('done')+' Không có việc nào chờ bạn.</div>')+'</div>'+
+      '<div><div class="H-sec-h">Agent đang chạy <b>'+hs.length+'/3</b><span class="rule"></span><span class="hint">Task chờ quyền vẫn giữ slot</span></div><div class="H-grid">'+slots+'</div></div>'+
+      '<div><div class="H-sec-h">Pipeline<span class="rule"></span><span class="hint">Kéo thả đầy đủ ở view Bảng</span></div><div class="H-lanes">'+lanes+'</div></div></div>';
+  }
+  function hSub(x){
+    if(x.s==='running') return x.step;
+    if(x.s==='needs_input') return 'Xin chạy: '+x.cmd;
+    if(x.s==='review') return x.files+' file · +'+x.add+' −'+x.del;
+    if(x.fail) return x.fail;
+    if(x.dep&&hGet(x.dep).s!=='done') return 'Chờ #'+x.dep+' xong';
+    return x.p;
+  }
+  function hTriage(){
+    var o=hSorted(); if(!hGet(hSel)) hSel=o[0]&&o[0].id;
+    var h='',last='';
+    o.forEach(function(x){
+      if(x.s!==last){last=x.s;h+='<div class="H-gh">'+glyph(x.s)+LABEL[x.s]+' · '+o.filter(function(y){return y.s===x.s}).length+'</div>'}
+      h+='<button type="button" class="H-item'+(x.id===hSel?' on':'')+'" data-open="'+x.id+'">'+glyph(x.fail?'failed':x.s)+'<span class="tt">'+esc(x.t)+'</span><span class="tm">'+(x.s==='running'?'<span class="h-tm" data-id="'+x.id+'">'+hEl(x)+'</span>':x.m)+'</span><span class="sb"><span class="sq" style="background:'+P[x.p]+'"></span><span class="mono">#'+x.id+'</span> · '+esc(hSub(x))+'</span></button>';
+    });
+    return '<div class="H-list" id="hList">'+h+'</div>'+hPanel(true);
+  }
+  function hln(a,b,k,code){return '<div class="ln '+k+'"><span>'+a+'</span><span>'+b+'</span><code>'+(k==='add'?'+ ':k==='del'?'− ':'  ')+esc(code)+'</code></div>'}
+  function hPanel(dock){
+    var x=hGet(hSel); if(!x) return '';
+    var acts='',tabs='',body='', tb=function(a,on){return a.map(function(t){return '<span'+(t===on?' class="on"':'')+'>'+t+'</span>'}).join('')};
+    if(x.s==='needs_input'){acts=hBtn('allow',x.id,'Cho phép','amb')+hBtn('deny',x.id,'Từ chối');tabs=tb(['Tóm tắt','Log','Prompt'],'Tóm tắt');
+      body='<div class="H-box need"><b>Claude xin chạy lệnh</b><div class="A-cmd">$ '+esc(x.cmd)+' @vitest/coverage-v8</div><span style="color:var(--a-muted)">Lý do: repo chưa có test runner, cần vitest để viết test cho ExpenseService. Lệnh chỉ thêm devDependencies.</span><label style="display:flex;gap:8px;align-items:center;font-size:12.5px"><input type="checkbox" id="hAlways"> Luôn cho phép <span class="mono">npm install</span> trong '+x.p+'</label></div><p style="color:var(--a-muted)">Task đang giữ một slot trong lúc chờ.</p>';}
+    else if(x.s==='review'){acts=hBtn('changes',x.id,'Yêu cầu sửa')+hBtn('merge',x.id,'Duyệt &amp; merge','pri');tabs=tb(['Tóm tắt','Diff ('+x.files+')','Log','Lịch sử'],'Diff ('+x.files+')');
+      if(x.id===55) body='<p>Claude: tổng giỏ hàng chia nhầm cho số dòng và tính cả dòng số lượng 0. Đã lọc dòng qty ≤ 0 và thêm 6 test. <span style="color:var(--s-done)">18/18 test qua.</span></p><div class="H-files"><span class="H-file on">src/lib/cart.ts +18 −5</span><span class="H-file">cart.test.ts +22</span><span class="H-file">Cart.tsx +2 −3</span></div><div class="H-diff"><div class="hunk">@@ -12,9 +12,14 @@ export function cartTotal(items)</div>'+
+        hln(12,12,'','export function cartTotal(items: CartItem[]): number {')+hln(13,'','del','  return items.reduce((s, i) => s + i.price * i.qty, 0) / items.length')+hln('',13,'add','  const valid = items.filter((i) => i.qty > 0)')+hln('',14,'add','  if (valid.length === 0) return 0')+
+        '<div class="H-cmt"><span><b>Bạn</b> · dòng 14</span><span>Thêm test cho trường hợp tất cả qty = 0 nhé.</span></div>'+hln('',15,'add','  return valid.reduce((s, i) => s + i.price * i.qty, 0)')+hln(14,16,'','}')+'</div>';
+      else body='<p>Claude đổi tiêu đề H1 của '+x.files+' trang tài liệu về một định dạng chung.</p><div class="H-box fail"><b>Cảnh báo</b><span style="color:var(--a-muted)">Thay đổi chạm tới '+x.files+' file, nhiều hơn ngưỡng 10 file trong Cài đặt. Nên xem kỹ trước khi merge.</span></div>';}
+    else if(x.s==='running'){acts=hBtn('pause',x.id,'Tạm dừng');tabs=tb(['Tóm tắt','Log','Prompt'],'Log');
+      body='<div class="A-meta">Đã chạy <span class="h-tm" data-id="'+x.id+'" style="color:var(--a-fg)">'+hEl(x)+'</span> · '+esc(x.step)+'</div><div class="H-plog" data-plog="'+x.id+'">'+hLog(x,12)+'</div>';}
+    else {
+      acts=x.s==='backlog'?(x.fail?hBtn('run',x.id,'Chạy lại từ đầu')+hBtn('resume',x.id,'Tiếp tục','pri'):hBtn('run',x.id,'Chạy','pri')):x.s==='queued'?hBtn('start',x.id,'Chạy ngay','pri'):'<button type="button">Mở nhánh</button>';
+      tabs=tb(['Tóm tắt','Prompt','Lịch sử'],'Tóm tắt');
+      body=(x.fail?'<div class="H-box fail"><b>'+esc(x.fail)+'</b><span style="color:var(--a-muted)">Thay đổi đang dở vẫn còn trong worktree. Tiếp tục sẽ chạy tiếp phiên Claude cũ.</span></div>':'')+(x.dep&&hGet(x.dep).s!=='done'?'<div class="H-box"><b>Chờ #'+x.dep+' xong</b><span style="color:var(--a-muted)">Chỉ chạy khi #'+x.dep+' đã merge. Chạy ngay sẽ gỡ phụ thuộc.</span></div>':'')+'<p><b>Prompt:</b> '+esc(x.t)+'. Giữ nguyên API hiện có, viết test cho phần thay đổi, chạy typecheck trước khi kết thúc.</p>';
+    }
+    var tools=dock?'<span>J / K chuyển task</span>':'<button type="button">Mở toàn trang ↗</button><button type="button" data-close aria-label="Đóng">✕</button>';
+    return '<aside class="H-panel '+(dock?'dock':'float')+'" aria-label="Chi tiết task"><div class="H-ph"><div class="H-ph-top">'+pillFor(x.fail?'failed':x.s)+proj(x)+'<span class="tools">'+tools+'</span></div><h4>'+esc(x.t)+'</h4><div class="H-acts">'+acts+'</div><div class="H-tabs">'+tabs+'</div></div><div class="H-pb">'+body+'</div></aside>';
+  }
+  function hRender(){
+    var listScroll=document.getElementById('hList'), ls=listScroll?listScroll.scrollTop:0;
+    document.querySelectorAll('#mockH .H-switch [data-hv]').forEach(function(b){b.classList.toggle('on',b.dataset.hv===hView)});
+    document.getElementById('hNavCnt').textContent=attn(true).length;
+    var hs=holders().length, q=H.filter(function(x){return x.s==='queued'}).length;
+    document.getElementById('hLive').innerHTML='<span class="slotbar">'+[0,1,2].map(function(i){return '<i'+(i<hs?' class="on"':'')+'></i>'}).join('')+'</span>'+hs+'/3 slot · '+q+' chờ';
+    var html=hView==='board'?hBoard():hView==='ops'?hOps():hTriage();
+    if(hView!=='triage') html+=hPanel(false);
+    hBody.innerHTML=html;
+    var nl=document.getElementById('hList'); if(nl){nl.scrollTop=ls;var on=nl.querySelector('.on');if(on&&on.scrollIntoView)on.scrollIntoView({block:'nearest'})}
+  }
+  var hBody=document.getElementById('hBody'), hToastEl=document.getElementById('hToast'), hTT;
+  function hToast(m){hToastEl.textContent=m;hToastEl.hidden=false;clearTimeout(hTT);hTT=setTimeout(function(){hToastEl.hidden=true},2800)}
+  function hAct(id,a){
+    var x=hGet(id); if(!x) return; var m='';
+    if(a==='allow'){x.s='running';x.st=sec;x.step='Cài vitest, viết test';x.pg=8;hPos[id]=1;m='Đã cho phép. #'+id+' chạy tiếp, xem ở view Điều phối.';}
+    else if(a==='deny'){x.s='backlog';x.fail='Bạn đã từ chối quyền';x.m='vừa xong';m='Đã từ chối. #'+id+' về Chờ chạy.';}
+    else if(a==='merge'){x.s='done';x.m='vừa xong';m='Đã merge #'+id+' vào main.';}
+    else if(a==='changes'){x.s='queued';x.m='kế tiếp';m='Đã gửi nhận xét. #'+id+' vào hàng đợi để sửa.';}
+    else if(a==='resume'||a==='run'){delete x.fail;delete x.paused;x.s='queued';x.m='kế tiếp';m='#'+id+' vào hàng đợi.';}
+    else if(a==='start'){ if(holders().length>=3) m='Hết slot (3/3). #'+id+' sẽ chạy khi có slot trống.'; else {delete x.dep;x.s='running';x.st=sec;x.step='Đọc mã nguồn';x.pg=5;hPos[id]=1;m='#'+id+' bắt đầu chạy.';} }
+    else if(a==='pause'){x.s='backlog';x.fail='Bạn đã tạm dừng';x.paused=true;x.m='vừa xong';m='Đã tạm dừng #'+id+'. Slot được giải phóng.';}
+    hToast(m); hRender();
+  }
+  document.getElementById('mockH').addEventListener('click',function(e){
+    var t=e.target, v=t.closest('[data-hv]');
+    if(v){hView=v.dataset.hv;if(hView!=='triage')hSel=null;try{localStorage.setItem('ui-redesign-hview',hView)}catch(er){}hRender();return}
+    var a=t.closest('[data-act]'); if(a){hAct(+a.dataset.id,a.dataset.act);return}
+    if(t.closest('[data-close]')){hSel=null;hRender();return}
+    if(t.closest('[data-strip]')){hStrip=!hStrip;hRender();return}
+    if(t.closest('[data-done]')){hDone=!hDone;hRender();return}
+    var o=t.closest('[data-open]'); if(o){hSel=+o.dataset.open;hRender();return}
+  });
+  hRender();
+  setInterval(function(){
+    if(document.getElementById('view-ket-hop').hidden) return;
+    document.querySelectorAll('#mockH .h-tm').forEach(function(el){var x=hGet(+el.dataset.id);if(x&&x.s==='running')el.textContent=hEl(x)});
+    if(!reduce&&sec%3===0) H.forEach(function(x){ if(x.s!=='running') return; hPos[x.id]=(hPos[x.id]||1)+1; x.pg=Math.min(95,(x.pg||10)+3);
+      document.querySelectorAll('#mockH [data-log="'+x.id+'"]').forEach(function(el){el.innerHTML=hLog(x,5)});
+      document.querySelectorAll('#mockH [data-plog="'+x.id+'"]').forEach(function(el){el.innerHTML=hLog(x,12)});
+    });
+  },1000);
+  document.addEventListener('keydown',function(e){
+    if(document.getElementById('view-ket-hop').hidden) return;
+    var tg=e.target.tagName; if(tg==='INPUT'||tg==='TEXTAREA'||e.ctrlKey||e.metaKey||e.altKey) return;
+    var m={'1':'board','2':'ops','3':'triage'}[e.key];
+    if(m){hView=m;if(m!=='triage')hSel=null;try{localStorage.setItem('ui-redesign-hview',hView)}catch(er){}hRender();return}
+    if(e.key==='Escape'&&hView!=='triage'&&hSel!=null){hSel=null;hRender();return}
+    if((e.key==='j'||e.key==='k')&&(hSel!=null||hView==='triage')){
+      var o=hSorted(), i=o.findIndex(function(x){return x.id===hSel});
+      i=Math.max(0,Math.min(o.length-1,i+(e.key==='j'?1:-1)));
+      hSel=o[i].id; e.preventDefault(); hRender();
+    }
+  });
+
+  /* ---------- routing ---------- */
+  var views=['tong-quan','ket-hop','a','b','c'];
+  function route(){
+    var v=(location.hash||'').slice(1); if(views.indexOf(v)<0) v='tong-quan';
+    views.forEach(function(n){document.getElementById('view-'+n).hidden=(n!==v);document.getElementById('tab-'+n).setAttribute('aria-selected',n===v?'true':'false')});
+    window.scrollTo(0,0);
+  }
+  document.querySelectorAll('.tab').forEach(function(t){t.addEventListener('click',function(){location.hash=t.dataset.view})});
+  window.addEventListener('hashchange',route); route();
+
+  document.addEventListener('keydown',function(e){
+    var onA=!document.getElementById('view-a').hidden;
+    if(onA&&(e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){e.preventDefault();pal.hidden?openPal():(pal.hidden=true)}
+    if(e.key==='Escape') pal.hidden=true;
+  });
+})();
+</script>

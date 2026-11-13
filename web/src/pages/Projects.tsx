@@ -17,7 +17,8 @@ import { mergeRules } from '../lib/rules'
 import { PERMISSION_MODES } from '../lib/permissionMode'
 import type { PermissionMode, PermissionPreset, Project, RuleSuggestion } from '../types'
 
-const blank: Project = {
+/** Project trống cho form "Thêm project" (dùng cả ở Bảng công việc) */
+export const BLANK_PROJECT: Project = {
   id: '',
   name: '',
   repoPath: '',
@@ -37,7 +38,7 @@ export function Projects() {
     <div className="mx-auto max-w-5xl">
       <div className="mb-4 flex items-center">
         <h1 className="text-lg font-semibold">Projects</h1>
-        <Button variant="primary" className="ml-auto" onClick={() => setEditing(blank)}>
+        <Button variant="primary" className="ml-auto" onClick={() => setEditing(BLANK_PROJECT)}>
           <Plus size={16} /> Thêm project
         </Button>
       </div>
@@ -115,8 +116,8 @@ export function Projects() {
   )
 }
 
-export function ProjectModal({ project, onClose }: { project: Project | null; onClose: () => void }) {
-  const [p, setP] = useState<Project>(blank)
+export function ProjectModal({ project, onClose, onSaved }: { project: Project | null; onClose: () => void; onSaved?: (saved: Project) => void }) {
+  const [p, setP] = useState<Project>(BLANK_PROJECT)
   const [tool, setTool] = useState('')
   const [touched, setTouched] = useState(false)
   const [lastId, setLastId] = useState<string | null>(null)
@@ -160,7 +161,7 @@ export function ProjectModal({ project, onClose }: { project: Project | null; on
               setTouched(true)
               if ((pathError && pathError !== serverError) || nameError) return
               setSaving(true)
-              const err = await saveProject({ ...p, id: p.id || '' })
+              const err = await saveProject({ ...p, id: p.id || '' }, onSaved)
               setSaving(false)
               setServerError(err)
               if (!err) onClose()

@@ -9,6 +9,7 @@ import {
   columnTasks,
   dropAction,
   isFailed,
+  isStale,
   type DropAction,
   type DropHandlers,
 } from '../../web/src/lib/board.ts'
@@ -103,4 +104,11 @@ test('applyDrop gọi đúng action của store với id task, thả không hợ
     ['stop', 4],
     ['retry', 5],
   ])
+})
+
+test('isStale: chỉ Done cũ hơn 24 giờ bị ẩn, và chỉ khi hideOld', () => {
+  assert.equal(isStale(t(1, 'done', 25), true, NOW), true)
+  assert.equal(isStale(t(1, 'done', 25), false, NOW), false)
+  assert.equal(isStale(t(1, 'done', 1), true, NOW), false)
+  assert.equal(isStale(t(1, 'failed', 48), true, NOW), false, 'task Fail luôn hiện ở Backlog')
 })

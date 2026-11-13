@@ -34,10 +34,94 @@ export function StatusBadge({ status }: { status: TaskStatus }) {
   const m = STATUS_META[status]
   return (
     <span className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium ${m.badge}`}>
-      <span className={`h-1.5 w-1.5 rounded-full ${m.dot} ${status === 'running' ? 'animate-pulse' : ''}`} />
+      <StatusGlyph status={status} size={12} />
       {m.label}
     </span>
   )
+}
+
+/**
+ * Glyph trạng thái: hình dạng nói trạng thái, màu chỉ để nhấn (phân biệt được cả khi mù màu).
+ * Chờ chạy: vòng nét đứt · Hàng đợi: vòng có chấm · Đang chạy: nửa vòng (xoay) · Cần bạn: chấm than ·
+ * Chờ duyệt: ba phần tư · Xong: dấu tích · Lỗi: dấu nhân.
+ */
+export function StatusGlyph({ status, size = 14, className = '' }: { status: TaskStatus; size?: number; className?: string }) {
+  const cls = `inline-block shrink-0 ${STATUS_META[status].text} ${status === 'running' ? 'animate-spin [animation-duration:2.4s] motion-reduce:animate-none' : ''} ${className}`
+  const ring = <circle cx="7" cy="7" r="5.5" fill="none" stroke="currentColor" strokeWidth="1.6" />
+  let body: ReactNode
+  switch (status) {
+    case 'backlog':
+      body = <circle cx="7" cy="7" r="5.5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeDasharray="2.2 2" />
+      break
+    case 'queued':
+      body = (
+        <>
+          {ring}
+          <circle cx="7" cy="7" r="1.8" fill="currentColor" />
+        </>
+      )
+      break
+    case 'running':
+      body = (
+        <>
+          {ring}
+          <path d="M7 3.2A3.8 3.8 0 0 1 7 10.8Z" fill="currentColor" />
+        </>
+      )
+      break
+    case 'needs_input':
+      body = (
+        <>
+          <circle cx="7" cy="7" r="6.3" fill="currentColor" />
+          <rect x="6.2" y="3.4" width="1.6" height="4.6" rx=".8" fill="#fff" />
+          <circle cx="7" cy="10" r=".95" fill="#fff" />
+        </>
+      )
+      break
+    case 'review':
+      body = (
+        <>
+          {ring}
+          <path d="M7 3.2A3.8 3.8 0 1 1 3.2 7L7 7Z" fill="currentColor" />
+        </>
+      )
+      break
+    case 'done':
+      body = (
+        <>
+          <circle cx="7" cy="7" r="6.3" fill="currentColor" />
+          <path d="M4.3 7.2l1.8 1.8 3.6-3.8" fill="none" stroke="#fff" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+        </>
+      )
+      break
+    default:
+      body = (
+        <>
+          <circle cx="7" cy="7" r="6.3" fill="currentColor" />
+          <path d="M4.9 4.9l4.2 4.2M9.1 4.9l-4.2 4.2" stroke="#fff" strokeWidth="1.6" strokeLinecap="round" />
+        </>
+      )
+  }
+  return (
+    <svg width={size} height={size} viewBox="0 0 14 14" className={cls} aria-hidden="true">
+      {body}
+    </svg>
+  )
+}
+
+/** Theo dõi media query (vd. màn hình ≥ md) để đổi bố cục giữa desktop và điện thoại. */
+export function useMediaQuery(query: string) {
+  const get = () => (typeof window !== 'undefined' && window.matchMedia ? window.matchMedia(query).matches : false)
+  const [match, setMatch] = useState(get)
+  useEffect(() => {
+    if (!window.matchMedia) return
+    const mq = window.matchMedia(query)
+    const h = () => setMatch(mq.matches)
+    h()
+    mq.addEventListener('change', h)
+    return () => mq.removeEventListener('change', h)
+  }, [query])
+  return match
 }
 
 export function Modal({

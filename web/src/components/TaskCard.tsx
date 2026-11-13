@@ -1,5 +1,5 @@
 import type { DragEvent } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, type To } from 'react-router-dom'
 import { AlertTriangle, Clock, GitBranch, Hand, Hourglass, Link2, Loader2, Pause, Play, RotateCcw, StepForward } from 'lucide-react'
 import type { Project, Task } from '../types'
 import { PRIORITY_META, duration, hhmm, timeAgo } from '../lib/format'
@@ -11,6 +11,8 @@ import { useNow } from './ui'
 
 export function TaskCard({
   task,
+  to,
+  selected = false,
   project,
   fileCount,
   draggable = false,
@@ -19,6 +21,10 @@ export function TaskCard({
   onDragEnd,
 }: {
   task: Task
+  /** Mở task ở đâu: mặc định trang /tasks/:id; trang Công việc truyền link mở khung chi tiết. */
+  to?: To
+  /** Task đang mở trong khung chi tiết */
+  selected?: boolean
   project?: Project
   fileCount?: number
   /** Cho kéo thả thẻ sang cột khác trên Bảng công việc. */
@@ -42,7 +48,8 @@ export function TaskCard({
   const depFailed = waitingOn.some((id) => statusOf(id) === 'failed')
   return (
     <Link
-      to={`/tasks/${task.id}`}
+      to={to ?? `/tasks/${task.id}`}
+      aria-current={selected ? 'true' : undefined}
       // Thẻ không kéo được thì tắt kéo link mặc định của trình duyệt (tránh thả URL vào cột).
       draggable={draggable}
       onDragStart={draggable ? onDragStart : undefined}
@@ -50,7 +57,7 @@ export function TaskCard({
       aria-grabbed={draggable ? dragging : undefined}
       className={`group block rounded-lg border bg-white p-3 shadow-sm transition hover:border-indigo-400 hover:shadow dark:bg-slate-900 ${
         draggable ? 'cursor-grab active:cursor-grabbing' : ''
-      } ${dragging ? 'opacity-50' : ''} ${
+      } ${dragging ? 'opacity-50' : ''} ${selected ? 'outline outline-2 outline-offset-1 outline-indigo-500' : ''} ${
         task.status === 'needs_input'
           ? 'border-amber-400 ring-2 ring-amber-400/30 dark:border-amber-500'
           : failed
@@ -106,6 +113,12 @@ export function TaskCard({
         </div>
       )}
 
+      {failed && !paused && task.failReason && (
+        <p className="mt-2 line-clamp-2 break-words text-xs text-rose-600 dark:text-rose-400" title={task.failReason}>
+          {task.failReason}
+        </p>
+      )}
+
       <div className="mt-2 flex items-center gap-3 text-xs text-slate-500 dark:text-slate-400">
         {task.status === 'running' && task.startedAt && (
           <span className="inline-flex items-center gap-1 text-indigo-600 dark:text-indigo-400">
@@ -128,8 +141,8 @@ export function TaskCard({
           </span>
         )}
         {failed && (
-          <span className="line-clamp-1 inline-flex items-center gap-1 text-rose-600 dark:text-rose-400">
-            <AlertTriangle size={12} className="shrink-0" /> {task.failReason}
+          <span className="inline-flex shrink-0 items-center gap-1 text-rose-600 dark:text-rose-400">
+            <AlertTriangle size={12} className="shrink-0" /> {paused ? 'Đã dừng' : 'Lỗi'}
           </span>
         )}
         {failed && resumable && (
@@ -138,7 +151,7 @@ export function TaskCard({
               e.preventDefault()
               resumeTask(task.id)
             }}
-            className="ml-auto inline-flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-indigo-600 opacity-0 hover:bg-indigo-50 group-hover:opacity-100 dark:text-indigo-400 dark:hover:bg-indigo-950"
+            className="ml-auto inline-flex shrink-0 items-center gap-1 rounded bg-indigo-50 px-1.5 py-0.5 font-medium text-indigo-700 hover:bg-indigo-100 dark:bg-indigo-950/60 dark:text-indigo-300 dark:hover:bg-indigo-900"
             title="Giữ thay đổi đang dở, chạy tiếp phiên Claude cũ (Chạy lại từ đầu: mở chi tiết task)"
           >
             <StepForward size={12} /> Tiếp tục
@@ -150,7 +163,7 @@ export function TaskCard({
               e.preventDefault()
               retryTask(task.id)
             }}
-            className="ml-auto inline-flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-indigo-600 opacity-0 hover:bg-indigo-50 group-hover:opacity-100 dark:text-indigo-400 dark:hover:bg-indigo-950"
+            className="ml-auto inline-flex shrink-0 items-center gap-1 rounded bg-indigo-50 px-1.5 py-0.5 font-medium text-indigo-700 hover:bg-indigo-100 dark:bg-indigo-950/60 dark:text-indigo-300 dark:hover:bg-indigo-900"
             title="Chạy lại"
           >
             <RotateCcw size={12} /> Chạy lại
@@ -167,7 +180,7 @@ export function TaskCard({
               e.preventDefault()
               resumeTask(task.id)
             }}
-            className="ml-auto inline-flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-indigo-600 opacity-0 hover:bg-indigo-50 group-hover:opacity-100 dark:text-indigo-400 dark:hover:bg-indigo-950"
+            className="ml-auto inline-flex shrink-0 items-center gap-1 rounded bg-indigo-50 px-1.5 py-0.5 font-medium text-indigo-700 hover:bg-indigo-100 dark:bg-indigo-950/60 dark:text-indigo-300 dark:hover:bg-indigo-900"
             title="Không chờ tới giờ reset, chạy tiếp ngay"
           >
             <StepForward size={12} /> Tiếp tục ngay
@@ -184,7 +197,7 @@ export function TaskCard({
               e.preventDefault()
               queueTask(task.id)
             }}
-            className="ml-auto inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-indigo-600 opacity-0 hover:bg-indigo-50 group-hover:opacity-100 dark:text-indigo-400 dark:hover:bg-indigo-950"
+            className="ml-auto inline-flex items-center gap-1 rounded bg-indigo-50 px-1.5 py-0.5 font-medium text-indigo-700 hover:bg-indigo-100 dark:bg-indigo-950/60 dark:text-indigo-300 dark:hover:bg-indigo-900"
             title="Đưa vào hàng đợi"
           >
             <Play size={12} /> Chạy

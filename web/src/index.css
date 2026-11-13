@@ -5,3 +5,11 @@
 html { color-scheme: light; }
 html.dark { color-scheme: dark; }
 body { @apply bg-slate-50 dark:bg-slate-950 antialiased; }
+
+/* Khung chi tiết task trượt ra từ bên phải */
+@keyframes panel-in { from { transform: translateX(24px); opacity: .5 } to { transform: none; opacity: 1 } }
+
+/* Log của agent: con trỏ nhấp nháy ở dòng cuối */
+@keyframes caret-blink { 50% { opacity: 0 } }
+.log-caret::after { content: "▍"; margin-left: 2px; animation: caret-blink 1s steps(2) infinite; }
+@media (prefers-reduced-motion: reduce) { .log-caret::after { animation: none; } }
