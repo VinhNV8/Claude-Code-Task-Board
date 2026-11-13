@@ -60,33 +60,33 @@ test('ensureWorktree: repo không hợp lệ thì throw lỗi rõ ràng', async 
   )
 })
 
-test('captureChanges: có thay đổi → review, 1 commit trên nhánh task, repo chính không đổi', async () => {
+test('captureChanges: có thay đổi → hasChanges, 1 commit trên nhánh task, repo chính không đổi', async () => {
   const wt = await c.ensureWorktree({ id: 2, branch: undefined, worktreePath: undefined }, project)
   writeFileSync(join(wt.path, 'hello.txt'), 'hello\n')
-  const status = await c.captureChanges({ id: 2, title: 'Tạo file hello.txt', worktreePath: wt.path }, project, 1)
-  assert.equal(status, 'review')
+  assert.deepEqual(await c.captureChanges({ id: 2, title: 'Tạo file hello.txt', worktreePath: wt.path }, project, 1), { hasChanges: true })
   assert.equal(await ok(repo, ['rev-list', '--count', 'main..claude/task-2']), '1')
   assert.equal(await ok(repo, ['log', '-1', '--format=%s', 'claude/task-2']), 'task #2: Tạo file hello.txt (run 1)')
   assert.ok(!existsSync(join(repo, 'hello.txt')))
   assert.equal(await ok(repo, ['status', '--porcelain']), '')
 
   // Run sau (Request changes) không sửa gì nhưng nhánh đã có commit → vẫn review, worktree giữ nguyên.
-  assert.equal(await c.captureChanges({ id: 2, title: 'x', worktreePath: wt.path }, project, 2), 'review')
+  assert.deepEqual(await c.captureChanges({ id: 2, title: 'x', worktreePath: wt.path }, project, 2), { hasChanges: true })
   assert.ok(existsSync(wt.path))
   await g.removeWorktree(project, 2)
 })
 
-test('captureChanges: Claude tự commit → review', async () => {
+test('captureChanges: Claude tự commit → hasChanges', async () => {
   const wt = await c.ensureWorktree({ id: 3, branch: undefined, worktreePath: undefined }, project)
   writeFileSync(join(wt.path, 'self.txt'), 'x\n')
   assert.equal(await g.commitAll(wt.path, 'claude tự commit'), true)
-  assert.equal(await c.captureChanges({ id: 3, title: 't', worktreePath: wt.path }, project, 1), 'review')
+  assert.deepEqual(await c.captureChanges({ id: 3, title: 't', worktreePath: wt.path }, project, 1), { hasChanges: true })
   await g.removeWorktree(project, 3)
 })
 
-test('captureChanges: không có thay đổi → done, xoá worktree + nhánh', async () => {
+test('captureChanges: không có thay đổi → hasChanges false, vẫn giữ worktree để duyệt output / Request changes', async () => {
   const wt = await c.ensureWorktree({ id: 4, branch: undefined, worktreePath: undefined }, project)
-  assert.equal(await c.captureChanges({ id: 4, title: 't', worktreePath: wt.path }, project, 1), 'done')
-  assert.ok(!existsSync(wt.path))
-  assert.equal((await g.git(repo, ['rev-parse', '--verify', '--quiet', 'refs/heads/claude/task-4'])).code, 1)
+  assert.deepEqual(await c.captureChanges({ id: 4, title: 't', worktreePath: wt.path }, project, 1), { hasChanges: false })
+  assert.ok(existsSync(wt.path))
+  assert.equal((await g.git(repo, ['rev-parse', '--verify', '--quiet', 'refs/heads/claude/task-4'])).code, 0)
+  await g.removeWorktree(project, 4)
 })

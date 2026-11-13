@@ -29,25 +29,29 @@ import {
   deleteTask,
   ensureDiff,
   ensureEvents,
+  fetchTaskFile,
   queueTask,
   rejectTask,
   requestChanges,
   resumeTask,
   retryTask,
+  saveTaskFile,
   stopTask,
   unqueueTask,
   useStore,
 } from '../store/store'
 import { Button, ConfirmDialog, EmptyState, StatusBadge, inputCls, useNow } from '../components/ui'
 import { LogView } from '../components/LogView'
-import { DiffView } from '../components/DiffView'
+import { DiffView, type DiffReview } from '../components/DiffView'
 import { TestPanel } from '../components/TestPanel'
 import { PermissionCard } from '../components/PermissionCard'
 import { TaskFormModal } from '../components/TaskFormModal'
 import { PRIORITY_META, clock, duration, hhmm, timeAgo, usd } from '../lib/format'
 import { MIN_FEEDBACK, buildHistory, needsDiffFetch } from '../lib/review'
+import { commentLocation, sortComments } from '../lib/reviewComments'
+import { useReviewDraft } from '../lib/reviewDraft'
 import { STOP_REASON, canResume, isWaitingRateLimit } from '../lib/resume'
-import type { Run } from '../types'
+import type { ReviewComment, Run, Task } from '../types'
 
 type Tab = 'log' | 'review' | 'result' | 'history' | 'prompt'
 
@@ -75,13 +79,15 @@ export function TaskDetail() {
 
   const [runId, setRunId] = useState<string | undefined>()
   const [edit, setEdit] = useState(false)
-  const [confirm, setConfirm] = useState<null | 'delete' | 'reject' | 'stop' | 'retry'>(null)
+  const [confirm, setConfirm] = useState<null | 'delete' | 'reject' | 'stop' | 'retry' | 'approve'>(null)
   const [feedbackOpen, setFeedbackOpen] = useState(false)
   const [feedback, setFeedback] = useState('')
   // Đang gửi approve/request changes/reject: khoá cả thanh hành động để không bấm hai lần
   const [busy, setBusy] = useState<null | 'approve' | 'request_changes' | 'reject'>(null)
   const [diffLoading, setDiffLoading] = useState(false)
   const [diffError, setDiffError] = useState<string | null>(null)
+  // Nhận xét theo file/dòng chưa gửi + file đã đánh dấu "Đã xem" (G3)
+  const draft = useReviewDraft(task?.id)
 
   // Diff có sẵn trong state (task Review hoặc broadcast); chưa có thì tải khi mở task (PLAN 2.9)
   const wantDiff = !!task && needsDiffFetch(task, s.diffs)
@@ -109,11 +115,14 @@ export function TaskDetail() {
     if (!task || busy) return
     setBusy(action)
     try {
-      if (action === 'approve') await approveTask(task.id)
-      else if (action === 'reject') await rejectTask(task.id)
-      else if (await requestChanges(task.id, feedback.trim())) {
+      if (action === 'approve') {
+        if (await approveTask(task.id)) draft.clear()
+      } else if (action === 'reject') {
+        if (await rejectTask(task.id)) draft.clear()
+      } else if (await requestChanges(task.id, feedback.trim(), draft.comments)) {
         setFeedback('')
         setFeedbackOpen(false)
+        draft.clear()
         setTab('log')
       }
     } finally {
@@ -156,11 +165,19 @@ export function TaskDetail() {
   const resumable = canResume(task, now)
   const paused = task.status === 'failed' && task.failReason === STOP_REASON
 
+  const feedbackValid = feedback.trim().length >= MIN_FEEDBACK || (draft.comments.length > 0 && !feedback.trim())
+  const diffReview: DiffReview = {
+    draft,
+    canEdit: task.status === 'review',
+    loadFile: (path) => fetchTaskFile(task.id, path),
+    saveFile: (path, content) => saveTaskFile(task.id, path, content),
+  }
+
   const tabs: { id: Tab; label: string; icon: JSX.Element; count?: number; hidden?: boolean }[] = [
     { id: 'log', label: 'Log', icon: <ListTree size={15} /> },
     {
       id: 'review',
-      label: 'Thay đổi / Review',
+      label: 'Output / Review',
       icon: <GitBranch size={15} />,
       count: diffs.length,
       hidden: diffs.length === 0 && task.status !== 'review' && !diffLoading,
@@ -265,6 +282,8 @@ export function TaskDetail() {
           </div>
         </div>
       )}
+      <DepsInfo task={task} tasks={s.tasks} />
+
       {task.status === 'failed' && !paused && task.failReason && (
         <div className="mb-4 flex gap-2 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-300">
           <XCircle size={18} className="shrink-0" />
@@ -340,12 +359,22 @@ export function TaskDetail() {
               <span>{task.reviewWarning}</span>
             </div>
           )}
-          {task.status === 'review' && latestRun?.summary && (
+          {task.status === 'review' && (
             <div className="rounded-lg border border-slate-200 bg-white p-3 text-sm dark:border-slate-800 dark:bg-slate-900">
-              <span className="mb-2 block text-xs font-medium uppercase tracking-wide text-slate-400">Claude tóm tắt</span>
-              <div className="max-h-72 overflow-y-auto pr-1">
-                <Markdown text={latestRun.summary} />
-              </div>
+              <span className="mb-2 block text-xs font-medium uppercase tracking-wide text-slate-400">Output của Claude</span>
+              {latestRun?.summary ? (
+                <div className="max-h-[28rem] overflow-y-auto pr-1">
+                  <Markdown text={latestRun.summary} />
+                </div>
+              ) : (
+                <p className="text-slate-500 dark:text-slate-400">
+                  Claude không trả về nội dung kết quả. Xem chi tiết ở tab{' '}
+                  <Link to="?tab=log" className="text-indigo-600 underline">
+                    Log
+                  </Link>
+                  .
+                </p>
+              )}
             </div>
           )}
           <TestPanel task={task} project={project} now={now} />
@@ -360,15 +389,22 @@ export function TaskDetail() {
                 <RotateCcw size={14} /> Thử lại
               </Button>
             </div>
+          ) : diffs.length === 0 ? (
+            <p className="rounded-lg border border-dashed border-slate-300 p-3 text-center text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
+              Task này không thay đổi code. Duyệt output ở trên: đạt thì <b>Approve</b> (chuyển Done), chưa đạt thì <b>Request changes</b>.
+            </p>
           ) : (
-            <DiffView key={diffs.map((d) => d.path + d.additions).join()} files={diffs} />
+            <DiffView files={diffs} review={diffReview} />
           )}
 
           {task.status === 'review' && (
             <div className="sticky bottom-0 -mx-1 rounded-lg border border-slate-200 bg-white/95 p-3 shadow-lg backdrop-blur dark:border-slate-800 dark:bg-slate-900/95">
               {feedbackOpen ? (
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">Feedback cho Claude (Claude sẽ tiếp tục trong cùng phiên)</label>
+                  <label className="text-sm font-medium">
+                    Feedback chung cho Claude (Claude sẽ tiếp tục trong cùng phiên)
+                    {draft.comments.length > 0 && <span className="font-normal text-slate-500">, không bắt buộc khi đã có nhận xét theo dòng</span>}
+                  </label>
                   <textarea
                     autoFocus
                     className={`${inputCls} min-h-[90px]`}
@@ -376,14 +412,32 @@ export function TaskDetail() {
                     onChange={(e) => setFeedback(e.target.value)}
                     placeholder="VD: Thông báo lỗi cần có role=&quot;alert&quot;; đổi tên biến cho rõ nghĩa…"
                   />
+                  {draft.comments.length > 0 && (
+                    <div className="rounded-md border border-slate-200 p-2 text-xs dark:border-slate-800">
+                      <p className="mb-1 font-medium text-slate-600 dark:text-slate-300">Gửi kèm {draft.comments.length} nhận xét theo file/dòng:</p>
+                      <ul className="max-h-40 space-y-1 overflow-y-auto">
+                        {sortComments(draft.comments).map((c) => (
+                          <li key={c.id} className="flex gap-2">
+                            <span className="shrink-0 font-mono text-indigo-600 dark:text-indigo-400">{commentLocation(c)}</span>
+                            <span className="min-w-0 flex-1 truncate text-slate-600 dark:text-slate-300" title={c.text}>
+                              {c.text}
+                            </span>
+                            <button title="Bỏ nhận xét này" className="shrink-0 text-slate-400 hover:text-rose-600" onClick={() => draft.removeComment(c.id)}>
+                              <X size={13} />
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
                   <div className="flex justify-end gap-2">
                     <Button variant="ghost" disabled={!!busy} onClick={() => setFeedbackOpen(false)}>
                       Huỷ
                     </Button>
                     <Button
                       variant="primary"
-                      disabled={!!busy || feedback.trim().length < MIN_FEEDBACK}
-                      title={feedback.trim().length < MIN_FEEDBACK ? `Nhập ít nhất ${MIN_FEEDBACK} ký tự` : undefined}
+                      disabled={!!busy || !feedbackValid}
+                      title={!feedbackValid ? `Nhập ít nhất ${MIN_FEEDBACK} ký tự hoặc thêm nhận xét theo dòng` : undefined}
                       onClick={() => submitReview('request_changes')}
                     >
                       {busy === 'request_changes' ? <Loader2 size={16} className="animate-spin" /> : <MessageSquareReply size={16} />} Gửi feedback
@@ -393,16 +447,29 @@ export function TaskDetail() {
               ) : (
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="mr-auto text-sm text-slate-500 dark:text-slate-400">
-                    Merge <span className="font-mono">{task.branch}</span> → <span className="font-mono">{project?.mainBranch}</span>
+                    {diffs.length > 0 ? (
+                      <>
+                        Merge <span className="font-mono">{task.branch}</span> → <span className="font-mono">{project?.mainBranch}</span>
+                      </>
+                    ) : (
+                      'Không có thay đổi code: Approve sẽ chuyển task sang Done'
+                    )}
                   </span>
                   <Button variant="ghost" className="text-rose-600" disabled={!!busy} onClick={() => setConfirm('reject')}>
                     {busy === 'reject' ? <Loader2 size={16} className="animate-spin" /> : <X size={16} />} Reject
                   </Button>
                   <Button disabled={!!busy} onClick={() => setFeedbackOpen(true)}>
-                    <MessageSquareReply size={16} /> Request changes
+                    <MessageSquareReply size={16} /> Request changes{draft.comments.length > 0 && ` (${draft.comments.length} nhận xét)`}
                   </Button>
-                  <Button variant="success" disabled={!!busy} onClick={() => submitReview('approve')}>
-                    {busy === 'approve' ? <Loader2 size={16} className="animate-spin" /> : <GitMerge size={16} />} Approve &amp; Merge
+                  <Button variant="success" disabled={!!busy} onClick={() => (draft.comments.length ? setConfirm('approve') : submitReview('approve'))}>
+                    {busy === 'approve' ? (
+                      <Loader2 size={16} className="animate-spin" />
+                    ) : diffs.length > 0 ? (
+                      <GitMerge size={16} />
+                    ) : (
+                      <Check size={16} />
+                    )}{' '}
+                    {diffs.length > 0 ? <>Approve &amp; Merge</> : 'Approve'}
                   </Button>
                 </div>
               )}
@@ -462,6 +529,7 @@ export function TaskDetail() {
                       <MessageSquareReply size={13} className="mr-1 inline" />
                       Feedback ({timeAgo(rv.createdAt, now)}){task.pendingFeedback && task.status === 'queued' ? ', đang chờ slot chạy' : ''}: {rv.feedback}
                     </p>
+                    <CommentList comments={rv.comments} />
                   </li>
                 )
               return (
@@ -495,9 +563,10 @@ export function TaskDetail() {
                   {r.feedback && (
                     <p className="mt-2 rounded-md bg-violet-50 p-2 text-sm text-violet-900 dark:bg-violet-950/40 dark:text-violet-200">
                       <MessageSquareReply size={13} className="mr-1 inline" />
-                      Feedback{rv ? ` (${timeAgo(rv.createdAt, now)})` : ''}: {r.feedback}
+                      Feedback{rv ? ` (${timeAgo(rv.createdAt, now)})` : ''}: {rv?.comments?.length ? (rv.feedback ?? '') : r.feedback}
                     </p>
                   )}
+                  {r.feedback && <CommentList comments={rv?.comments} />}
                   {r.summary && (
                     <details className="group mt-2">
                       <summary className="cursor-pointer list-none text-sm text-slate-600 dark:text-slate-300">
@@ -557,6 +626,14 @@ export function TaskDetail() {
         }}
       />
       <ConfirmDialog
+        open={confirm === 'approve'}
+        onClose={() => setConfirm(null)}
+        title={`Approve task #${task.id}?`}
+        message={`Bạn còn ${draft.comments.length} nhận xét chưa gửi cho Claude. Approve sẽ bỏ các nhận xét này. Muốn Claude sửa theo nhận xét thì chọn Request changes.`}
+        confirmLabel="Vẫn Approve"
+        onConfirm={() => void submitReview('approve')}
+      />
+      <ConfirmDialog
         open={confirm === 'reject'}
         onClose={() => setConfirm(null)}
         title={`Reject task #${task.id}?`}
@@ -588,5 +665,56 @@ export function TaskDetail() {
         onConfirm={() => retryTask(task.id)}
       />
     </div>
+  )
+}
+
+/** FR-08: task này đang chờ ai, và ai đang chờ task này. */
+function DepsInfo({ task, tasks }: { task: Task; tasks: Task[] }) {
+  const deps = (task.dependsOn ?? []).map((id) => tasks.find((t) => t.id === id)).filter((t): t is Task => !!t)
+  const dependents = tasks.filter((t) => t.dependsOn?.includes(task.id))
+  if (!deps.length && !dependents.length) return null
+  const item = (t: Task) => (
+    <Link key={t.id} to={`/tasks/${t.id}`} className="inline-flex items-center gap-1 rounded bg-slate-100 px-1.5 py-0.5 hover:bg-indigo-50 dark:bg-slate-800 dark:hover:bg-indigo-950">
+      <span className="font-mono">#{t.id}</span>
+      <span className="max-w-[16rem] truncate">{t.title}</span>
+      <StatusBadge status={t.status} />
+    </Link>
+  )
+  const waiting = deps.some((t) => t.status !== 'done') && (task.status === 'queued' || task.status === 'backlog')
+  return (
+    <div
+      className={`mb-4 space-y-1.5 rounded-lg border p-3 text-sm ${
+        waiting ? 'border-amber-300 bg-amber-50 dark:border-amber-900 dark:bg-amber-950/40' : 'border-slate-200 dark:border-slate-800'
+      }`}
+    >
+      {deps.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="text-slate-500">{waiting ? 'Đang chờ (chạy khi tất cả Done):' : 'Chờ task:'}</span>
+          {deps.map(item)}
+        </div>
+      )}
+      {dependents.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="text-slate-500">Task đang chờ task này:</span>
+          {dependents.map(item)}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** Nhận xét theo file/dòng của một lần Request changes (tab Lịch sử). */
+function CommentList({ comments }: { comments?: ReviewComment[] }) {
+  if (!comments?.length) return null
+  return (
+    <ul className="mt-1 space-y-1 rounded-md border border-violet-100 p-2 text-xs dark:border-violet-900/50">
+      {sortComments(comments).map((c) => (
+        <li key={c.id}>
+          <span className="font-mono text-indigo-600 dark:text-indigo-400">{commentLocation(c)}</span>
+          {c.snippet?.trim() && <code className="ml-1 rounded bg-slate-100 px-1 text-slate-600 dark:bg-slate-800 dark:text-slate-300">{c.snippet.trim()}</code>}
+          <p className="whitespace-pre-wrap text-slate-700 dark:text-slate-300">{c.text}</p>
+        </li>
+      ))}
+    </ul>
   )
 }

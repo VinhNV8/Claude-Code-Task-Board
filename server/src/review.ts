@@ -5,7 +5,8 @@ import { projects, reviews, tasks } from './db.ts'
 import { git, mainRepoStatus, mergeBranch, removeWorktree, taskBranch } from './git.ts'
 import { isTesting, stopTests } from './testRunner.ts'
 import { MIN_FEEDBACK } from '../../web/src/lib/review.ts'
-import type { Project, ReviewAction, Task } from './types.ts'
+import { formatReviewFeedback, parseComments } from '../../web/src/lib/reviewComments.ts'
+import type { Project, ReviewAction, ReviewComment, Task } from './types.ts'
 
 /** Lỗi có mã HTTP (Fastify dùng `statusCode`). */
 export class ReviewError extends Error {
@@ -81,7 +82,7 @@ function blocked(taskId: number, warning: string): never {
   throw new ReviewError(409, warning)
 }
 
-function recordReview(r: Pick<ReviewAction, 'taskId' | 'action' | 'feedback'>) {
+function recordReview(r: Pick<ReviewAction, 'taskId' | 'action' | 'feedback' | 'comments'>) {
   const review = reviews.add(r)
   broadcast({ type: 'review', review })
   return review
@@ -108,6 +109,9 @@ async function approveLocked(taskId: number) {
   const branch = taskBranch(taskId)
   const repo = project.repoPath
 
+  // Output không kèm thay đổi code (hoặc nhánh đã mất): duyệt là xong, không có gì để merge.
+  if (!(await branchHasChanges(repo, branch, project.mainBranch))) return finishApproved(task, project)
+
   let st: Awaited<ReturnType<typeof mainRepoStatus>>
   try {
     st = await mainRepoStatus(project)
@@ -117,9 +121,6 @@ async function approveLocked(taskId: number) {
   const notReady = repoNotReadyWarning(st, project.mainBranch)
   if (notReady) blocked(taskId, notReady)
 
-  if ((await git(repo, ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}`])).code !== 0)
-    blocked(taskId, `Không tìm thấy nhánh "${branch}" trong repo chính, không có gì để merge.`)
-
   const m = await mergeBranch(repo, branch, mergeMessage(task))
   if (!m.ok) {
     if (m.conflicts.length) blocked(taskId, conflictWarning(m.conflicts, project.mainBranch))
@@ -127,13 +128,23 @@ async function approveLocked(taskId: number) {
     patchTask(taskId, { reviewWarning: warning })
     throw new ReviewError(500, warning)
   }
+  return finishApproved(task, project)
+}
 
-  // Đã merge: dừng test đang chạy trong worktree (nếu có) rồi dọn worktree + nhánh
-  if (isTesting(taskId)) await stopTests(taskId, 'Task đã được merge.')
-  await removeWorktree(project, taskId)
+/** Nhánh task còn tồn tại và có commit chưa vào mainBranch. */
+export async function branchHasChanges(repo: string, branch: string, mainBranch: string): Promise<boolean> {
+  if ((await git(repo, ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}`])).code !== 0) return false
+  const r = await git(repo, ['rev-list', '--count', `${mainBranch}..${branch}`])
+  if (r.code !== 0) throw new ReviewError(500, `Không đếm được commit của nhánh "${branch}": ${r.stderr.trim()}`)
+  return Number(r.stdout.trim()) > 0
+}
 
-  const review = recordReview({ taskId, action: 'approve' })
-  const done = patchTask(taskId, { status: 'done', reviewWarning: null, branch: null, worktreePath: null })!
+/** Đã duyệt (đã merge, hoặc không có gì để merge): dừng test đang chạy, dọn worktree + nhánh, task Done. */
+async function finishApproved(task: Task, project: Project) {
+  if (isTesting(task.id)) await stopTests(task.id, 'Task đã được duyệt.')
+  await removeWorktree(project, task.id)
+  const review = recordReview({ taskId: task.id, action: 'approve' })
+  const done = patchTask(task.id, { status: 'done', reviewWarning: null, branch: null, worktreePath: null })!
   return { task: done, review }
 }
 
@@ -141,6 +152,19 @@ async function approveLocked(taskId: number) {
 
 // Dùng chung với giao diện (nút "Gửi feedback" bị vô hiệu khi chưa đủ độ dài)
 export { MIN_FEEDBACK }
+
+/**
+ * Feedback + nhận xét theo file/dòng của "Request changes". Có ít nhất một nhận xét thì feedback chung
+ * được bỏ trống; nếu nhập thì vẫn phải đủ MIN_FEEDBACK ký tự.
+ */
+export function validateRequest(rawFeedback: unknown, rawComments: unknown): { feedback?: string; comments: ReviewComment[] } {
+  const parsed = parseComments(rawComments)
+  if (parsed.error !== undefined) throw new ReviewError(400, parsed.error)
+  const { comments } = parsed
+  const text = typeof rawFeedback === 'string' ? rawFeedback.trim() : ''
+  if (comments.length && !text) return { comments }
+  return { feedback: validateFeedback(text), comments }
+}
 
 /** Kiểm tra feedback "Yêu cầu sửa": bắt buộc, tối thiểu MIN_FEEDBACK ký tự (sau khi bỏ khoảng trắng hai đầu). */
 export function validateFeedback(feedback: unknown): string {
@@ -165,8 +189,11 @@ export async function requestChanges(
   taskId: number,
   rawFeedback: unknown,
   deps: RunnerDeps,
+  rawComments?: unknown,
 ): Promise<{ task: Task; review: ReviewAction; queued: boolean }> {
-  const feedback = validateFeedback(rawFeedback)
+  const { feedback, comments } = validateRequest(rawFeedback, rawComments)
+  // Nội dung Claude nhận: feedback chung + từng nhận xét kèm file:dòng và nội dung dòng
+  const prompt = formatReviewFeedback(feedback, comments)
   const first = tasks.get(taskId)
   if (!first) throw new ReviewError(404, `Không tìm thấy task #${taskId}`)
   // Cùng khoá với approve: không thể vừa merge vừa yêu cầu sửa một task.
@@ -177,13 +204,13 @@ export async function requestChanges(
     const project = projects.get(task.projectId)
     if (!project) throw new ReviewError(404, `Không tìm thấy project của task #${taskId}`)
 
-    const review = recordReview({ taskId, action: 'request_changes', feedback })
+    const review = recordReview({ taskId, action: 'request_changes', feedback, comments })
     const queued = !deps.hasSlot(project)
     if (queued) {
       if (isTesting(taskId)) await stopTests(taskId, 'Đã dừng vì task được yêu cầu sửa.')
-      patchTask(taskId, { status: 'queued', pendingFeedback: feedback, reviewWarning: null })
+      patchTask(taskId, { status: 'queued', pendingFeedback: prompt, reviewWarning: null })
     } else {
-      deps.startRun(task, 'resume', feedback) // tự dừng test, chuyển Running và xoá pendingFeedback
+      deps.startRun(task, 'resume', prompt) // tự dừng test, chuyển Running và xoá pendingFeedback
     }
     return { task: tasks.get(taskId)!, review, queued }
   })

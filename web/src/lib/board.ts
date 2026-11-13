@@ -1,4 +1,5 @@
 import type { Task, TaskStatus } from '../types.ts'
+import { sortByDeps } from './deps.ts'
 
 /** Các cột hiển thị trên Bảng công việc. Không còn cột Failed: task lỗi quay về Backlog kèm cờ Fail. */
 export type BoardColumn = Exclude<TaskStatus, 'failed'>
@@ -75,8 +76,12 @@ export function applyDrop(task: Pick<Task, 'id' | 'status'>, target: BoardColumn
 /**
  * Danh sách task của một cột, đã sắp xếp.
  * - Backlog: task bị Fail lên đầu (cần xử lý), sau đó mới nhất trước. Task Fail luôn hiện, không bị ẩn theo 24 giờ.
+ * - Queued: theo phụ thuộc rồi thứ tự hàng đợi (sortByDeps).
  * - Done: khi `hideOld` chỉ giữ task cập nhật trong 24 giờ.
  */
+type QueueItem = Pick<Task, 'id' | 'priority' | 'createdAt' | 'dependsOn'>
+const isQueueItem = (t: object): t is QueueItem => 'id' in t && 'priority' in t && 'createdAt' in t
+
 export function columnTasks<T extends Pick<Task, 'status' | 'updatedAt'>>(
   tasks: T[],
   col: BoardColumn,
@@ -85,5 +90,7 @@ export function columnTasks<T extends Pick<Task, 'status' | 'updatedAt'>>(
   const now = opts.now ?? Date.now()
   let list = tasks.filter((t) => boardColumn(t) === col)
   if (opts.hideOld && col === 'done') list = list.filter((t) => now - t.updatedAt < DAY)
+  // Queued (FR-08, R4): task đang chờ đứng sau task nó chờ; còn lại theo đúng thứ tự hàng đợi (ưu tiên → tạo trước).
+  if (col === 'queued' && list.every(isQueueItem)) return sortByDeps(list as (T & QueueItem)[])
   return list.sort((a, b) => Number(isFailed(b)) - Number(isFailed(a)) || b.updatedAt - a.updatedAt)
 }

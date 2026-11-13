@@ -1,5 +1,6 @@
 // Logic thuần cho màn hình review (PLAN 2.9–2.12): không phụ thuộc React/DOM để test được.
 import type { FileDiff, PermissionRequest, ReviewAction, Run, Task } from '../types.ts'
+import { formatReviewFeedback } from './reviewComments.ts'
 
 /** Feedback "Request changes" tối thiểu (khớp kiểm tra ở server/src/review.ts). */
 export const MIN_FEEDBACK = 5
@@ -43,7 +44,7 @@ export function buildHistory(runs: Run[], reviews: ReviewAction[]): HistoryItem[
     let review: ReviewAction | undefined
     if (run.kind === 'resume') {
       const before = sortedReviews.filter((r) => r.action === 'request_changes' && !used.has(r.id) && r.createdAt <= run.startedAt)
-      review = before.find((r) => r.feedback === run.feedback) ?? before[0]
+      review = before.find((r) => formatReviewFeedback(r.feedback, r.comments) === run.feedback) ?? before[0]
       if (review) used.add(review.id)
     }
     items.push({ kind: 'run', at: run.startedAt, run, index, review })

@@ -97,6 +97,8 @@ export interface Task {
   maxCostUsd?: number
   /** Lý do task Queued đang bị giữ lại (ví dụ project vượt budget, P6 B3). Chỉ tính lúc chạy, không lưu DB. */
   blockedReason?: string
+  /** Các task phải Done trước khi task này được chạy (SPEC FR-08). Lưu ở bảng task_deps. */
+  dependsOn?: number[]
 }
 
 /** initial: lần đầu · resume: sửa theo feedback review · retry: chạy lại từ đầu · continue: tiếp tục phiên bị gián đoạn */
@@ -194,7 +196,21 @@ export interface ReviewAction {
   taskId: number
   action: 'approve' | 'request_changes' | 'reject'
   feedback?: string
+  /** Nhận xét theo file/dòng gửi kèm "Request changes" */
+  comments?: ReviewComment[]
   createdAt: number
+}
+
+/** Nhận xét khi review: cho một dòng của diff, hoặc cả file khi không có `line`. */
+export interface ReviewComment {
+  id: string
+  path: string
+  /** Số dòng; `side` cho biết theo bản cũ (dòng bị xoá) hay bản mới */
+  line?: number
+  side?: 'old' | 'new'
+  /** Nội dung dòng được nhận xét, gửi kèm để Claude định vị dù số dòng đã lệch */
+  snippet?: string
+  text: string
 }
 
 export interface Toast {

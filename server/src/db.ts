@@ -9,6 +9,7 @@ import type {
   Project,
   PromptTemplate,
   ReviewAction,
+  ReviewComment,
   Run,
   Schedule,
   ScheduleRun,
@@ -126,6 +127,10 @@ if (!taskCols.some((c) => c.name === 'rate_limit_retries'))
 // Resume: task Queued chờ chạy tiếp phiên cũ (Tiếp tục khi hết slot, hoặc tự đưa lại hàng đợi do giới hạn sử dụng).
 if (!taskCols.some((c) => c.name === 'resume_next')) db.exec('ALTER TABLE tasks ADD COLUMN resume_next INTEGER NOT NULL DEFAULT 0')
 
+// G3: nhận xét theo file/dòng gửi kèm "Request changes" (JSON ReviewComment[]).
+const reviewCols = db.prepare('PRAGMA table_info(reviews)').all() as { name: string }[]
+if (!reviewCols.some((c) => c.name === 'comments')) db.exec('ALTER TABLE reviews ADD COLUMN comments TEXT')
+
 // FR-34: lệnh test của project (DB cũ chưa có cột) và lần chạy test gần nhất của mỗi task.
 const projectCols = db.prepare('PRAGMA table_info(projects)').all() as { name: string }[]
 if (!projectCols.some((c) => c.name === 'test_command')) db.exec('ALTER TABLE projects ADD COLUMN test_command TEXT')
@@ -169,6 +174,15 @@ if (!taskCols.some((c) => c.name === 'max_cost_usd')) db.exec('ALTER TABLE tasks
 // P7-05 (FR-46): lý do người dùng nhập khi Từ chối, gửi kèm message deny cho Claude.
 const permCols = db.prepare('PRAGMA table_info(permission_requests)').all() as { name: string }[]
 if (!permCols.some((c) => c.name === 'deny_reason')) db.exec('ALTER TABLE permission_requests ADD COLUMN deny_reason TEXT')
+// C-02 (FR-08): phụ thuộc giữa task. Xoá task nào thì liên kết của nó tự mất.
+db.exec(`
+CREATE TABLE IF NOT EXISTS task_deps (
+  task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  depends_on_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  PRIMARY KEY (task_id, depends_on_id)
+);
+CREATE INDEX IF NOT EXISTS idx_task_deps_on ON task_deps(depends_on_id);
+`)
 
 // PLAN 4.6: lịch tạo task theo cron và lịch sử task đã tạo (task bị xoá thì giữ lịch sử, task_id = NULL).
 db.exec(`
@@ -239,7 +253,37 @@ const toTask = (r: Row): Task => ({
   resumeNext: r.resume_next ? true : undefined,
   model: (r.model as string | null) || undefined,
   maxCostUsd: (r.max_cost_usd as number | null) ?? undefined,
+  dependsOn: optList(depsOf(r.id as number)),
 })
+
+const optList = (l: number[]) => (l.length ? l : undefined)
+
+/** Danh sách task mà task này chờ (FR-08), tăng dần theo id. */
+function depsOf(taskId: number): number[] {
+  return (db.prepare('SELECT depends_on_id FROM task_deps WHERE task_id = ? ORDER BY depends_on_id').all(taskId) as { depends_on_id: number }[]).map(
+    (r) => r.depends_on_id,
+  )
+}
+
+export const taskDeps = {
+  of: depsOf,
+  /** Các task đang chờ task này. */
+  dependents: (taskId: number) =>
+    (db.prepare('SELECT task_id FROM task_deps WHERE depends_on_id = ? ORDER BY task_id').all(taskId) as { task_id: number }[]).map((r) => r.task_id),
+  /** Thay toàn bộ danh sách chờ của task (đã kiểm tra hợp lệ ở tầng trên). */
+  set: (taskId: number, deps: number[]) => {
+    db.exec('BEGIN')
+    try {
+      db.prepare('DELETE FROM task_deps WHERE task_id = ?').run(taskId)
+      const ins = db.prepare('INSERT OR IGNORE INTO task_deps (task_id, depends_on_id) VALUES (?, ?)')
+      for (const d of deps) ins.run(taskId, d)
+      db.exec('COMMIT')
+    } catch (err) {
+      db.exec('ROLLBACK')
+      throw err
+    }
+  },
+}
 
 const toRun = (r: Row): Run => ({
   id: r.id as string,
@@ -482,6 +526,7 @@ const toReview = (r: Row): ReviewAction => ({
   taskId: r.task_id as number,
   action: r.action as ReviewAction['action'],
   feedback: opt(r.feedback),
+  comments: r.comments ? (JSON.parse(r.comments as string) as ReviewComment[]) : undefined,
   createdAt: r.created_at as number,
 })
 
@@ -489,19 +534,21 @@ export const reviews = {
   all: () => (db.prepare('SELECT * FROM reviews ORDER BY created_at, rowid').all() as Row[]).map(toReview),
   byTask: (taskId: number) =>
     (db.prepare('SELECT * FROM reviews WHERE task_id = ? ORDER BY created_at, rowid').all(taskId) as Row[]).map(toReview),
-  add: (r: Pick<ReviewAction, 'taskId' | 'action' | 'feedback'> & { id?: string; createdAt?: number }): ReviewAction => {
+  add: (r: Pick<ReviewAction, 'taskId' | 'action' | 'feedback' | 'comments'> & { id?: string; createdAt?: number }): ReviewAction => {
     const review: ReviewAction = {
       id: r.id ?? randomUUID(),
       taskId: r.taskId,
       action: r.action,
       feedback: r.feedback || undefined,
+      comments: r.comments?.length ? r.comments : undefined,
       createdAt: r.createdAt ?? Date.now(),
     }
-    db.prepare('INSERT INTO reviews (id, task_id, action, feedback, created_at) VALUES (?, ?, ?, ?, ?)').run(
+    db.prepare('INSERT INTO reviews (id, task_id, action, feedback, comments, created_at) VALUES (?, ?, ?, ?, ?, ?)').run(
       review.id,
       review.taskId,
       review.action,
       review.feedback ?? null,
+      review.comments ? JSON.stringify(review.comments) : null,
       review.createdAt,
     )
     return review

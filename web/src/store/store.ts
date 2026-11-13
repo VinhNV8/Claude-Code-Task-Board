@@ -13,6 +13,7 @@ import type {
   ProjectBudget,
   PromptTemplate,
   ReviewAction,
+  ReviewComment,
   RuleSuggestion,
   Run,
   Schedule,
@@ -55,6 +56,8 @@ export interface State {
   /** Trạng thái kết nối tới backend */
   connection: 'connecting' | 'online' | 'offline'
   loaded: boolean
+  /** "Chạy ngay" task còn chờ task khác chưa Done (FR-08, R8): hộp xác nhận gỡ phụ thuộc. */
+  depsConfirm?: { taskId: number; message: string } | null
 }
 
 export const IS_MOCK = false
@@ -124,6 +127,19 @@ export function notify(t: Notice, opts: { force?: boolean } = {}) {
   if (state.settings.browserNotifications) showBrowserNotification(t, opts)
 }
 
+/** FR-08 (R4): task được chờ vừa Failed → báo các task trong hàng đợi đang chờ nó sẽ đứng chờ. */
+function warnBlockedDependents(prev: TaskStatus | undefined, task: Task) {
+  if (task.status !== 'failed' || prev === 'failed') return
+  const waiting = state.tasks.filter((t) => t.status === 'queued' && t.dependsOn?.includes(task.id))
+  if (!waiting.length) return
+  toast({
+    kind: 'error',
+    title: `#${task.id} lỗi: ${waiting.length} task đang chờ nó`,
+    body: `${waiting.map((t) => `#${t.id}`).join(', ')} sẽ đứng chờ tới khi #${task.id} Done (Chạy lại), hoặc gỡ phụ thuộc trong task đó.`,
+    taskId: task.id,
+  })
+}
+
 function notifyTransition(prev: TaskStatus | undefined, task: Task) {
   const n = transitionNotice(prev, task, state.settings.notifyOn)
   if (n) notify(n)
@@ -132,7 +148,15 @@ function notifyTransition(prev: TaskStatus | undefined, task: Task) {
 
 // ------------------------------------------------------------ REST
 
-class ApiError extends Error {}
+class ApiError extends Error {
+  constructor(
+    message: string,
+    /** Mã lỗi máy đọc của backend (ví dụ 'DEPS_PENDING') */
+    public code?: string,
+  ) {
+    super(message)
+  }
+}
 
 async function api<T = unknown>(method: string, path: string, body?: unknown): Promise<T> {
   let res: Response
@@ -147,7 +171,10 @@ async function api<T = unknown>(method: string, path: string, body?: unknown): P
   }
   const data = await res.json().catch(() => ({}))
   if (res.status === 401) onUnauthorized() // phiên đăng nhập hết hạn (PLAN 4.7)
-  if (!res.ok) throw new ApiError((data as { error?: string }).error ?? `Lỗi ${res.status}`)
+  if (!res.ok) {
+    const d = data as { error?: string; code?: string }
+    throw new ApiError(d.error ?? `Lỗi ${res.status}`, d.code)
+  }
   return data as T
 }
 
@@ -279,6 +306,7 @@ function onMessage(m: ServerMessage) {
       const prev = state.tasks.find((t) => t.id === m.task.id)?.status
       set((s) => ({ tasks: upsert(s.tasks, m.task) }))
       notifyTransition(prev, m.task)
+      warnBlockedDependents(prev, m.task)
       break
     }
     case 'task_deleted':
@@ -424,6 +452,8 @@ export interface NewTask {
   tags: string[]
   /** '' = kế thừa project → Settings (P5) */
   model?: string
+  /** Các task phải Done trước (FR-08) */
+  dependsOn?: number[]
   run: boolean
 }
 
@@ -435,7 +465,7 @@ export async function createTask(input: NewTask): Promise<number> {
   return t.id
 }
 
-export function updateTask(id: number, patch: Partial<Pick<Task, 'title' | 'prompt' | 'priority' | 'projectId' | 'tags' | 'permissionMode' | 'model'>>) {
+export function updateTask(id: number, patch: Partial<Pick<Task, 'title' | 'prompt' | 'priority' | 'projectId' | 'tags' | 'permissionMode' | 'model' | 'dependsOn'>>) {
   return act(() => api('PATCH', `/tasks/${id}`, patch), 'Không lưu được task')
 }
 
@@ -448,10 +478,30 @@ export const unqueueTask = (id: number) => act(() => api('POST', `/tasks/${id}/u
 export const stopTask = (id: number) => act(() => api('POST', `/tasks/${id}/stop`), 'Không dừng được task')
 
 /** Chạy ngay (kéo task sang cột Running). Hết slot thì server đưa vào hàng đợi. */
-export async function runTaskNow(id: number) {
-  const r = await act(() => api<{ started: boolean }>('POST', `/tasks/${id}/run`), 'Không chạy được task')
+export async function runTaskNow(id: number, ignoreDeps = false) {
+  let r: { started: boolean } | undefined
+  try {
+    r = await api<{ started: boolean }>('POST', `/tasks/${id}/run`, ignoreDeps ? { ignoreDeps: true } : undefined)
+  } catch (e) {
+    // FR-08 (R8): còn chờ task chưa Done → hỏi xác nhận gỡ phụ thuộc rồi mới chạy.
+    if (e instanceof ApiError && e.code === 'DEPS_PENDING') set(() => ({ depsConfirm: { taskId: id, message: e.message } }))
+    else toast({ kind: 'error', title: 'Không chạy được task', body: (e as Error).message })
+    return
+  }
   if (r && !r.started) toast({ kind: 'info', title: `Đã đưa #${id} vào hàng đợi`, body: 'Đang hết slot chạy, task sẽ chạy khi tới lượt.' })
 }
+
+export const closeDepsConfirm = () => set(() => ({ depsConfirm: null }))
+
+export interface DepSuggestion {
+  id: number
+  title: string
+  status: TaskStatus
+}
+
+/** FR-08 nguồn ③: task được nhắc tới (#id / mã) trong tiêu đề + prompt, chưa Done, chưa nằm trong danh sách chờ. */
+export const fetchDepSuggestions = (input: { projectId: string; title: string; prompt: string; taskId?: number; dependsOn: number[] }) =>
+  api<DepSuggestion[]>('POST', '/tasks/dep-suggest', input)
 
 export async function retryTask(id: number) {
   if (await act(() => api('POST', `/tasks/${id}/retry`))) toast({ kind: 'info', title: `Đã đưa #${id} vào hàng đợi chạy lại` })
@@ -479,19 +529,40 @@ function applyReview(r: ReviewResult) {
 }
 
 export async function approveTask(id: number): Promise<boolean> {
-  const r = await act(() => api<ReviewResult>('POST', `/tasks/${id}/review`, { action: 'approve' }), 'Không merge được')
+  // Task không thay đổi code thì Approve chỉ chuyển Done, không merge
+  const hadChanges = (state.diffs[id]?.length ?? 0) > 0
+  const r = await act(() => api<ReviewResult>('POST', `/tasks/${id}/review`, { action: 'approve' }), hadChanges ? 'Không merge được' : 'Không duyệt được')
   if (!r) return false
   applyReview(r)
   const main = state.projects.find((p) => p.id === r.task.projectId)?.mainBranch
-  toast({ kind: 'success', title: `Đã merge #${id}${main ? ` vào ${main}` : ''}`, body: r.task.title })
+  const title = hadChanges ? `Đã merge #${id}${main ? ` vào ${main}` : ''}` : `Đã duyệt #${id}, chuyển Done`
+  toast({ kind: 'success', title, body: r.task.title })
   return true
 }
 
-export async function requestChanges(id: number, feedback: string): Promise<boolean> {
-  const r = await act(() => api<ReviewResult>('POST', `/tasks/${id}/review`, { action: 'request_changes', feedback }), 'Không gửi được feedback')
+export async function requestChanges(id: number, feedback: string, comments: ReviewComment[] = []): Promise<boolean> {
+  const r = await act(
+    () => api<ReviewResult>('POST', `/tasks/${id}/review`, { action: 'request_changes', feedback, comments }),
+    'Không gửi được feedback',
+  )
   if (!r) return false
   applyReview(r)
   if (r.queued) toast({ kind: 'info', title: `Đã gửi feedback cho #${id}`, body: 'Đang hết slot chạy, Claude sẽ sửa khi tới lượt.' })
+  return true
+}
+
+/** Nội dung hiện tại của file trong worktree (Preview Markdown khi review). `null` nếu lỗi (đã báo toast). */
+export async function fetchTaskFile(id: number, path: string): Promise<string | null> {
+  const r = await act(() => api<{ content: string }>('GET', `/tasks/${id}/file?${new URLSearchParams({ path })}`), `Không đọc được ${path}`)
+  return r ? r.content : null
+}
+
+/** Lưu file Markdown đã sửa khi review: server ghi vào worktree, commit trên nhánh task và trả diff mới. */
+export async function saveTaskFile(id: number, path: string, content: string): Promise<boolean> {
+  const r = await act(() => api<{ committed: boolean; files: FileDiff[] }>('PUT', `/tasks/${id}/file`, { path, content }), `Không lưu được ${path}`)
+  if (!r) return false
+  set((s) => ({ diffs: { ...s.diffs, [id]: r.files } }))
+  toast({ kind: 'success', title: r.committed ? `Đã lưu và commit ${path}` : `${path} không có thay đổi` })
   return true
 }
 

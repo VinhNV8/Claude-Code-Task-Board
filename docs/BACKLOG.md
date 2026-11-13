@@ -41,6 +41,7 @@ npm run seed:backlog                # tạo task ở cột Backlog
 | P3-08 | Kiểm thử P3, cập nhật PLAN | normal | P3-03, 06, 07 | Kiểm thử P3 |
 | **Chung** | | | | |
 | C-01 | Rate limit: tự đưa task lại hàng đợi | normal | — | Rủi ro chung |
+| C-02 | Phụ thuộc giữa task (FR-08 bản 1). ✅ Đã làm trực tiếp, không nạp lên board | high | — | C-02 |
 | **P4: Tùy chọn** | | | | |
 | P4-01 | Template prompt | low | P3-08 | 4.1 |
 | P4-02 | Tag, tìm kiếm, lọc nâng cao | low | P3-08 | 4.2 |

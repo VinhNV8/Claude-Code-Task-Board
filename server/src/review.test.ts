@@ -137,6 +137,44 @@ test('approve: merge sạch → Done, ghi review, xoá worktree + nhánh', async
   assert.ok(messages.some((m) => m.type === 'task' && m.task.id === t.id && m.task.status === 'done'))
 })
 
+test('approve: output không kèm thay đổi code → Done, không merge, không cần repo chính sạch', async () => {
+  const t = db.tasks.create({
+    projectId: project.id,
+    title: 'Phân tích log',
+    prompt: 'prompt đủ dài',
+    status: 'review',
+    priority: 'normal',
+    permissionMode: 'acceptEdits',
+    tags: [],
+  })
+  const wt = await g.createWorktree(project, t.id)
+  db.tasks.patch(t.id, { branch: wt.branch, worktreePath: wt.path })
+  const head = await ok(repo, ['rev-parse', 'HEAD'])
+  writeFileSync(join(repo, 'dang-sua.txt'), 'chưa commit\n') // repo chính bẩn vẫn duyệt được
+
+  const res = await r.approveTask(t.id)
+  assert.equal(res.task.status, 'done')
+  assert.equal(res.review.action, 'approve')
+  assert.equal(await ok(repo, ['rev-parse', 'HEAD']), head)
+  assert.notEqual((await g.git(repo, ['rev-parse', '--verify', '--quiet', `refs/heads/claude/task-${t.id}`])).code, 0)
+  assert.ok(!existsSync(wt.path))
+  rmSync(join(repo, 'dang-sua.txt'))
+})
+
+test('approve: nhánh task đã mất → Done (không có gì để merge)', async () => {
+  const t = db.tasks.create({
+    projectId: project.id,
+    title: 'Mất nhánh',
+    prompt: 'prompt đủ dài',
+    status: 'review',
+    priority: 'normal',
+    permissionMode: 'acceptEdits',
+    tags: [],
+  })
+  const res = await r.approveTask(t.id)
+  assert.equal(res.task.status, 'done')
+})
+
 test('approve: task không ở Review → 409', async () => {
   const t = await reviewTask('Chưa review', { 'x.txt': 'x\n' })
   db.tasks.patch(t.id, { status: 'running' })
@@ -304,7 +342,7 @@ test('AC-03 (phần git): run resume thêm commit mới lên nhánh, diff tính 
   const before = Number(await ok(t.worktreePath!, ['rev-list', '--count', 'main..HEAD']))
   // Giả lập Claude sửa tiếp trong cùng worktree sau Request changes
   writeFileSync(join(t.worktreePath!, 'round2.txt'), 'vòng 2\n')
-  assert.equal(await captureChanges({ id: t.id, title: t.title, worktreePath: t.worktreePath! }, project, 2), 'review')
+  assert.deepEqual(await captureChanges({ id: t.id, title: t.title, worktreePath: t.worktreePath! }, project, 2), { hasChanges: true })
   assert.equal(Number(await ok(t.worktreePath!, ['rev-list', '--count', 'main..HEAD'])), before + 1)
   assert.match(await ok(t.worktreePath!, ['log', '-1', '--format=%s']), /\(run 2\)$/)
   const files = (await g.taskDiff(project, t.id)).map((f) => f.path)
@@ -335,4 +373,51 @@ test('reject: ghi review, xoá worktree + nhánh, task Failed với lý do', asy
 
   await rejects(r.rejectTask(t.id), 409, /không ở trạng thái Review/)
   assert.deepEqual(db.reviews.byTask(t.id).map((x) => x.action), ['reject'])
+})
+
+// ---------------------------------------------------------------- nhận xét theo file/dòng (G3)
+
+test('request changes kèm nhận xét theo dòng: Claude nhận file:dòng + nội dung dòng, review lưu nhận xét', async () => {
+  const t = await reviewTask('Nhận xét dòng', { 'a.ts': 'const x = 1\n', 'b.md': '# Tiêu đề\n' })
+  const fake = fakeRunner(true)
+  const comments = [
+    { id: 'c2', path: 'b.md', text: 'Thêm phần mô tả' },
+    { id: 'c1', path: 'a.ts', line: 1, side: 'new', snippet: 'const x = 1', text: 'Đổi tên x thành count' },
+  ]
+  const res = await r.requestChanges(t.id, '', fake.deps, comments)
+  assert.equal(res.review.feedback, undefined)
+  assert.equal(res.review.comments?.length, 2)
+  assert.equal(db.reviews.byTask(t.id).at(-1)?.comments?.[1].snippet, 'const x = 1')
+  const prompt = (fake.calls[0] as { feedback: string }).feedback
+  assert.match(prompt, /1\. a\.ts:1\n   Dòng: `const x = 1`\n   Đổi tên x thành count/)
+  assert.match(prompt, /2\. b\.md \(cả file\)\n   Thêm phần mô tả/)
+})
+
+test('request changes: không có nhận xét thì feedback vẫn bắt buộc; nhận xét rỗng / sai dòng → 400', async () => {
+  const t = await reviewTask('Kiểm tra nhận xét', { 'c.txt': 'c\n' })
+  const fake = fakeRunner(true)
+  await rejects(r.requestChanges(t.id, '', fake.deps, []), 400, /yêu cầu sửa/)
+  await rejects(r.requestChanges(t.id, '', fake.deps, [{ path: 'c.txt', text: '  ' }]), 400, /chưa có nội dung/)
+  await rejects(r.requestChanges(t.id, '', fake.deps, [{ path: 'c.txt', line: 0, text: 'x' }]), 400, /số dòng/)
+  await rejects(r.requestChanges(t.id, 'abc', fake.deps, [{ path: 'c.txt', text: 'ok' }]), 400, /ít nhất/)
+  assert.equal(fake.calls.length, 0)
+})
+
+test('reviewFiles: đọc file trong worktree, chặn đường dẫn ra ngoài / .git; sửa .md thì commit trên nhánh task', async () => {
+  const rf = await import('./reviewFiles.ts')
+  const t = await reviewTask('Sửa tài liệu', { 'doc.md': '# Cũ\n', 'code.ts': 'x\n' })
+  assert.equal(rf.readTaskFile(t.id, 'doc.md').content, '# Cũ\n')
+  for (const bad of ['../x.md', '/etc/passwd', 'C:/x.md', '.git/config', ''])
+    assert.throws(() => rf.readTaskFile(t.id, bad), (e: Error & { statusCode?: number }) => e.statusCode === 400)
+  assert.throws(() => rf.readTaskFile(t.id, 'khong-co.md'), (e: Error & { statusCode?: number }) => e.statusCode === 404)
+
+  await rejects(rf.saveTaskFile(t.id, 'code.ts', 'y\n'), 400, /Markdown/)
+  const before = await ok(t.worktreePath!, ['rev-list', '--count', 'HEAD'])
+  assert.deepEqual(await rf.saveTaskFile(t.id, 'doc.md', '# Mới\n'), { committed: true })
+  assert.equal(Number(await ok(t.worktreePath!, ['rev-list', '--count', 'HEAD'])), Number(before) + 1)
+  assert.match(await ok(t.worktreePath!, ['log', '-1', '--format=%s']), /sửa tay khi review \(doc\.md\)/)
+  assert.equal(readFileSync(join(t.worktreePath!, 'doc.md'), 'utf8'), '# Mới\n')
+
+  db.tasks.patch(t.id, { status: 'done' })
+  await rejects(rf.saveTaskFile(t.id, 'doc.md', 'z'), 409, /không ở trạng thái Review/)
 })

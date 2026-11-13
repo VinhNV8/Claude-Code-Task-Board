@@ -7,7 +7,7 @@ import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import readline from 'node:readline'
 import { claudeEnv, findClaudeBin } from './claude.ts'
-import { DATA_DIR, events, projects, runs, settings, tasks, testRuns } from './db.ts'
+import { DATA_DIR, events, projects, runs, settings, taskDeps, tasks, testRuns } from './db.ts'
 import { broadcast } from './bus.ts'
 import { StreamParser, type ResultInfo } from './stream.ts'
 import { INTERNAL_TOKEN, PORT } from './config.ts'
@@ -22,6 +22,10 @@ import { applyEscalation, escalationPrompt, maxTierForProject } from './escalati
 import { adjustByHistory } from './modelHistoryService.ts'
 // Nạp budgetService cũng đăng ký nguồn budget cho maxTierForProject (B4) và blockedReason cho task gửi ra web.
 import { budgetWakeAt, isProjectBlocked, refreshBudgets } from './budgetService.ts'
+import { decideBlocked, pendingDeps } from './taskDeps.ts'
+import { prepareRetry } from './retry.ts'
+import { withLock } from './review.ts'
+import { BLOCKED_BY_INSTRUCTION } from '../../web/src/lib/deps.ts'
 import type { Project, Run, RunFailKind, RunKind, Task, TaskStatus } from './types.ts'
 
 interface Proc {
@@ -142,6 +146,8 @@ export function pump() {
         if (activeCount(p.id) >= p.maxParallel) continue
         // P6 B3: project pause + vượt budget → task giữ ở Queued (blockedReason tính lúc gửi ra web).
         if (isProjectBlocked(p.id)) continue
+        // FR-08 (R3): còn chờ task chưa Done → để lại hàng đợi; task được chờ Done thì pump() chạy lại.
+        if (pendingDeps(t).length) continue
         launcher(t)
       }
     } while (pumpAgain)
@@ -183,7 +189,7 @@ export function runNow(taskId: number): boolean {
   if (!t || (t.status !== 'backlog' && t.status !== 'queued')) return false
   const p = projects.get(t.projectId)
   if (p && hasSlot(p)) {
-    launch(t)
+    launcher(t) // = launch, trừ khi test thay bằng hàm giả
     return true
   }
   updateTask(t.id, { status: 'queued', notBefore: null, rateLimitRetries: 0 })
@@ -348,6 +354,7 @@ function spawnClaude(o: {
     model: o.model,
     fallbackModel: fallbackModelFor(o.model),
     maxBudgetUsd: task.maxCostUsd,
+    appendSystemPrompt: BLOCKED_BY_INSTRUCTION,
   })
 
   const prompt = o.prompt ?? resumePrompt({ kind, resume, feedback, taskPrompt: task.prompt })
@@ -423,6 +430,13 @@ function finish(
   if (ok) {
     // Chạy được trọn vẹn: bộ đếm tự thử lại do giới hạn sử dụng về 0 (broadcast cùng lần đổi trạng thái sau).
     if (tasks.get(taskId)?.rateLimitRetries) tasks.patch(taskId, { rateLimitRetries: 0 })
+    // FR-08 nguồn ④ (R6): Claude báo bị chặn bởi task khác → thêm phụ thuộc, đưa về hàng đợi thay vì Review.
+    const current = tasks.get(taskId)
+    const blocked = current && decideBlocked(current, result?.text)
+    if (blocked) {
+      void handleBlocked(taskId, runId, blocked).finally(pump)
+      return
+    }
     // PLAN 2.2: task vẫn Running (giữ slot) trong lúc commit; xong mới chuyển Review/Done rồi pump().
     void completeRun(taskId, runId).finally(pump)
     return
@@ -512,7 +526,50 @@ function handleRateLimit(taskId: number, runId: string, hit: ReturnType<typeof d
   return true
 }
 
-/** Run thành công: commit thay đổi trong worktree. Có commit → Review, không có → Done + dọn worktree/nhánh. */
+/**
+ * Run kết thúc bằng BLOCKED_BY (R6). Task vẫn Running (giữ slot) trong lúc dọn worktree:
+ * - requeue: đưa worktree về nhánh chính như Retry (bỏ thay đổi dở), lưu phụ thuộc, task về Queued với session mới.
+ *   Lần chạy sau là 'retry' trên code đã có phần việc của task được chờ.
+ * - fail: task Failed kèm lý do, giữ worktree để người dùng xem / Chạy lại.
+ */
+export async function handleBlocked(taskId: number, runId: string, d: NonNullable<ReturnType<typeof decideBlocked>>) {
+  const task = tasks.get(taskId)
+  const project = task && projects.get(task.projectId)
+  if (!task || !project || task.status !== 'running') return
+  if (d.action === 'fail') {
+    addEvent(runId, { type: 'system', text: d.reason })
+    updateTask(taskId, { status: 'failed', failReason: d.reason.slice(0, 1000) })
+    return
+  }
+  try {
+    await withLock(project.id, async () => {
+      const patch = await prepareRetry(task, project)
+      if (tasks.get(taskId)?.status !== 'running') return // người dùng đã dừng/xoá trong lúc dọn
+      taskDeps.set(taskId, d.deps)
+      addEvent(runId, { type: 'system', text: d.note })
+      updateTask(taskId, {
+        ...patch,
+        status: 'queued',
+        failReason: null,
+        reviewWarning: null,
+        pendingFeedback: null,
+        resumeNext: null,
+        notBefore: null,
+        rateLimitRetries: 0,
+      })
+    })
+  } catch (err) {
+    const reason = `Claude báo bị chặn bởi task khác nhưng không đưa được worktree về nhánh "${project.mainBranch}": ${(err as Error).message}`
+    setFailKind(runId, 'infra')
+    addEvent(runId, { type: 'result', isError: true, text: reason })
+    updateTask(taskId, { status: 'failed', failReason: reason.slice(0, 1000) })
+  }
+}
+
+/**
+ * Run thành công: commit thay đổi trong worktree rồi chuyển task sang Review để người dùng duyệt output,
+ * dù có thay đổi code hay không (G3). Approve → Done (có commit thì merge), Request changes → Claude chạy tiếp.
+ */
 async function completeRun(taskId: number, runId: string) {
   const task = tasks.get(taskId)
   const project = task && projects.get(task.projectId)
@@ -521,11 +578,10 @@ async function completeRun(taskId: number, runId: string) {
     updateTask(taskId, { status: 'failed', failReason: 'Task không có worktree để ghi nhận thay đổi' })
     return
   }
-  let status: 'review' | 'done' | undefined
   let failReason: string | undefined
   try {
     const n = runNumber(runs.byTask(taskId), runId)
-    status = await captureChanges({ id: task.id, title: task.title, worktreePath: task.worktreePath }, project, n)
+    await captureChanges({ id: task.id, title: task.title, worktreePath: task.worktreePath }, project, n)
   } catch (err) {
     failReason = `Không ghi nhận được thay đổi của Claude: ${(err as Error).message}`
   }
@@ -535,8 +591,7 @@ async function completeRun(taskId: number, runId: string) {
     setFailKind(runId, 'infra') // Claude đã chạy xong, chỉ lỗi commit
     addEvent(runId, { type: 'result', isError: true, text: failReason })
     updateTask(taskId, { status: 'failed', failReason: failReason.slice(0, 1000) })
-  } else if (status === 'done') updateTask(taskId, { status: 'done', branch: null, worktreePath: null })
-  else updateTask(taskId, { status: 'review' })
+  } else updateTask(taskId, { status: 'review' })
 }
 
 // ---------------------------------------------------------------- dừng & phục hồi

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Play, Save } from 'lucide-react'
-import { createTask, updateTask, useStore } from '../store/store'
+import { Link2, Play, Plus, Save, X } from 'lucide-react'
+import { createTask, fetchDepSuggestions, updateTask, useStore, type DepSuggestion } from '../store/store'
 import { collectTags, normalizeTags } from '../lib/taskFilter'
 import { MODEL_OPTIONS, inheritedModelHint, modelLabel } from '../lib/model'
 import type { PermissionMode, Priority, PromptTemplate, Task } from '../types'
@@ -34,6 +34,9 @@ export function TaskFormModal({
   const [mode, setMode] = useState<PermissionMode>('acceptEdits')
   const [tags, setTags] = useState<string[]>([])
   const [model, setModel] = useState('')
+  /** FR-08: các task phải Done trước task này */
+  const [deps, setDeps] = useState<number[]>([])
+  const [depHints, setDepHints] = useState<DepSuggestion[]>([])
   const [touched, setTouched] = useState(false)
   const [saving, setSaving] = useState(false)
 
@@ -48,6 +51,7 @@ export function TaskFormModal({
       setMode(editing.permissionMode)
       setTags(editing.tags)
       setModel(editing.model ?? '')
+      setDeps(editing.dependsOn ?? [])
     } else {
       setTitle('')
       setPrompt('')
@@ -57,8 +61,30 @@ export function TaskFormModal({
       setMode(projects.find((p) => p.id === pid)?.permissionMode ?? 'acceptEdits')
       setTags([])
       setModel('')
+      setDeps([])
     }
   }, [open, editing, defaultProjectId, projects])
+
+  // FR-08 nguồn ③: gợi ý task được nhắc tới (#id / mã [P5-01]) trong tiêu đề + prompt. Chỉ gợi ý, người dùng bấm thêm.
+  useEffect(() => {
+    if (!open || !projectId) return
+    const ctl = { cancelled: false }
+    const timer = setTimeout(() => {
+      fetchDepSuggestions({ projectId, title, prompt, taskId: editing?.id, dependsOn: deps })
+        .then((list) => !ctl.cancelled && setDepHints(list))
+        .catch(() => !ctl.cancelled && setDepHints([]))
+    }, 400)
+    return () => {
+      ctl.cancelled = true
+      clearTimeout(timer)
+    }
+  }, [open, projectId, title, prompt, deps, editing?.id])
+
+  // Task có thể chọn để chờ: cùng project, chưa Done, không phải chính nó
+  const depCandidates = tasks
+    .filter((t) => t.projectId === projectId && t.id !== editing?.id && t.status !== 'done' && !deps.includes(t.id))
+    .sort((a, b) => b.id - a.id)
+  const taskById = (id: number) => tasks.find((t) => t.id === id)
 
   // Gợi ý: tag của task đã có + tag trong template, dùng nhiều lên trước
   const tagSuggestions = useMemo(() => collectTags([...tasks.map((t) => t.tags), ...templates.map((t) => t.tags)]), [tasks, templates])
@@ -87,11 +113,11 @@ export function TaskFormModal({
     setSaving(true)
     try {
       if (editing) {
-        await updateTask(editing.id, { title, prompt, projectId, priority, permissionMode: mode, tags: tagList, model })
+        await updateTask(editing.id, { title, prompt, projectId, priority, permissionMode: mode, tags: tagList, model, dependsOn: deps })
         onClose()
         return
       }
-      const id = await createTask({ title, prompt, projectId, priority, permissionMode: mode, tags: tagList, model, run })
+      const id = await createTask({ title, prompt, projectId, priority, permissionMode: mode, tags: tagList, model, dependsOn: deps, run })
       onClose()
       if (run) navigate(`/tasks/${id}`)
     } catch {
@@ -170,6 +196,7 @@ export function TaskFormModal({
               value={projectId}
               onChange={(e) => {
                 setProjectId(e.target.value)
+                setDeps([]) // phụ thuộc chỉ trong cùng project
                 const p = projects.find((x) => x.id === e.target.value)
                 if (p && !editing) setMode(p.permissionMode)
               }}
@@ -212,6 +239,51 @@ export function TaskFormModal({
               {model && !MODEL_OPTIONS.some((o) => o.value === model) && <option value={model}>{model}</option>}
             </select>
           </Field>
+          <div className="sm:col-span-2">
+            <Field label="Chờ task" hint="Task chỉ chạy khi các task này Done (đã merge). Để trống nếu task chạy độc lập.">
+              <div className="flex flex-wrap items-center gap-1.5">
+                {deps.map((id) => {
+                  const t = taskById(id)
+                  return (
+                    <span key={id} className="inline-flex items-center gap-1 rounded bg-slate-100 px-1.5 py-0.5 text-xs dark:bg-slate-800">
+                      <Link2 size={11} /> #{id} <span className="max-w-[14rem] truncate text-slate-500">{t?.title}</span>
+                      <button type="button" onClick={() => setDeps(deps.filter((d) => d !== id))} className="text-slate-400 hover:text-rose-600" title="Bỏ">
+                        <X size={12} />
+                      </button>
+                    </span>
+                  )
+                })}
+                <select
+                  className={`${inputCls} w-auto min-w-[12rem] py-1 text-xs`}
+                  value=""
+                  onChange={(e) => e.target.value && setDeps([...deps, Number(e.target.value)].sort((a, b) => a - b))}
+                >
+                  <option value="">+ Thêm task cần chờ…</option>
+                  {depCandidates.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      #{t.id} {t.title.slice(0, 70)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              {depHints.length > 0 && (
+                <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs">
+                  <span className="text-amber-600 dark:text-amber-400">Nội dung có nhắc tới:</span>
+                  {depHints.map((h) => (
+                    <button
+                      key={h.id}
+                      type="button"
+                      onClick={() => setDeps([...deps, h.id].sort((a, b) => a - b))}
+                      className="inline-flex items-center gap-1 rounded border border-amber-300 px-1.5 py-0.5 hover:bg-amber-50 dark:border-amber-800 dark:hover:bg-amber-950"
+                      title="Thêm vào danh sách chờ"
+                    >
+                      <Plus size={11} /> #{h.id} <span className="max-w-[14rem] truncate">{h.title}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </Field>
+          </div>
         </div>
       </div>
     </Modal>

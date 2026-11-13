@@ -5,9 +5,10 @@ import { isAbsolute } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { bus, broadcast, type ServerMessage } from './bus.ts'
 import { approveTask, rejectTask, requestChanges } from './review.ts'
+import { readTaskFile, saveTaskFile } from './reviewFiles.ts'
 import { retryTask } from './retry.ts'
 import { resumeTask } from './resume.ts'
-import { events, projects, reviews, runs, scheduleRuns, schedules, settings, tasks, telegramToken, templates, testRuns } from './db.ts'
+import { events, projects, reviews, runs, scheduleRuns, schedules, settings, taskDeps, tasks, telegramToken, templates, testRuns } from './db.ts'
 import { ScheduleError, checkCron, validateSchedule, type ScheduleInput } from './schedules.ts'
 import { nextRuns } from './cron.ts'
 import { TelegramError, mergeTelegram, sendTelegram, validateAppUrl, validateChatId, validateToken } from './telegram.ts'
@@ -28,6 +29,7 @@ import { BudgetError, parseBudgetAction, parseUsd } from './budget.ts'
 import { PERMISSION_PRESETS } from './permissionPresets.ts'
 import { dismissRule, ruleSuggestionsFor, watchRuleSuggestions } from './ruleSuggestions.ts'
 import { getBudgets, isProjectBlocked, refreshBudgets, withBlockedReason } from './budgetService.ts'
+import { DepsError, pendingDeps, suggestDeps, validateDeps } from './taskDeps.ts'
 import type { FileDiff, PermissionMode, Priority, Project, PromptTemplate, Schedule, Settings, TelegramSettingsInput } from './types.ts'
 
 const PRIORITIES: Priority[] = ['urgent', 'high', 'normal', 'low']
@@ -64,7 +66,7 @@ export async function routes(app: FastifyInstance) {
   app.setErrorHandler((err: Error & { status?: number; statusCode?: number }, _req, reply) => {
     const status = err instanceof HttpError ? err.status : err.statusCode ?? 500
     if (status >= 500) app.log.error(err)
-    reply.code(status).send({ error: err.message })
+    reply.code(status).send(err instanceof HttpError && err.code ? { error: err.message, code: err.code } : { error: err.message })
   })
 
   // ------------------------------------------------------------ trạng thái & sức khoẻ
@@ -106,6 +108,21 @@ export async function routes(app: FastifyInstance) {
     } catch (e) {
       throw new HttpError(500, `Không lấy được diff của task #${t.id}: ${(e as Error).message}`)
     }
+  })
+
+  // G3: Preview / Edit file Markdown khi review (đọc từ worktree của task)
+  app.get<{ Params: { id: string }; Querystring: { path?: string } }>('/api/tasks/:id/file', async (req) => {
+    const t = getTask(req.params.id)
+    return readTaskFile(t.id, req.query.path)
+  })
+
+  app.put<{ Params: { id: string }; Body: { path?: string; content?: string } }>('/api/tasks/:id/file', async (req) => {
+    const t = getTask(req.params.id)
+    const { committed } = await saveTaskFile(t.id, req.body?.path, req.body?.content)
+    const project = projects.get(t.projectId)!
+    const files = await taskDiff(project, t.id)
+    broadcast({ type: 'diff', taskId: t.id, files })
+    return { committed, files }
   })
 
   app.get<{ Params: { id: string } }>('/api/runs/:id/events', async (req) => events.byRun(req.params.id))
@@ -245,7 +262,19 @@ export async function routes(app: FastifyInstance) {
     model?: string | null
     /** Giới hạn chi phí mỗi lần chạy (USD, `--max-budget-usd`). null/'': không giới hạn. */
     maxCostUsd?: number | string | null
+    /** Các task phải Done trước (FR-08). Không gửi: giữ nguyên; [] hoặc null: bỏ hết. */
+    dependsOn?: number[] | null
     run?: boolean
+  }
+
+  /** Kiểm tra danh sách chờ (lỗi tiếng Việt 400). */
+  function checkDeps(raw: unknown, o: { taskId?: number; projectId: string }) {
+    try {
+      return validateDeps(raw, o)
+    } catch (e) {
+      if (e instanceof DepsError) throw new HttpError(400, e.message)
+      throw e
+    }
   }
 
   function validateTask(b: TaskBody, partial = false) {
@@ -295,7 +324,8 @@ export async function routes(app: FastifyInstance) {
   app.post<{ Body: TaskBody }>('/api/tasks', async (req) => {
     const v = validateTask(req.body)
     const project = projects.get(v.projectId!)!
-    const t = tasks.create({
+    const deps = checkDeps(req.body.dependsOn, { projectId: project.id })
+    const created = tasks.create({
       projectId: v.projectId!,
       title: v.title!,
       prompt: v.prompt!,
@@ -306,6 +336,8 @@ export async function routes(app: FastifyInstance) {
       maxCostUsd: (v.maxCostUsd as number | null | undefined) ?? undefined,
       status: req.body.run ? 'queued' : 'backlog',
     })
+    if (deps.length) taskDeps.set(created.id, deps)
+    const t = deps.length ? tasks.get(created.id)! : created
     broadcast({ type: 'task', task: t })
     pump()
     return t
@@ -315,9 +347,35 @@ export async function routes(app: FastifyInstance) {
     const t = getTask(req.params.id)
     if (t.status !== 'backlog' && t.status !== 'queued') throw new HttpError(409, 'Chỉ sửa được task ở Backlog hoặc Queued')
     const v = validateTask(req.body, true)
+    const projectId = v.projectId ?? t.projectId
+    // FR-08: phụ thuộc chỉ trong cùng project. Đổi project thì phải gỡ hết liên kết hai chiều trước.
+    const deps = req.body.dependsOn !== undefined ? checkDeps(req.body.dependsOn, { taskId: t.id, projectId }) : undefined
+    if (projectId !== t.projectId) {
+      if ((deps ?? t.dependsOn ?? []).length) throw new HttpError(400, 'Gỡ các task đang chờ trước khi chuyển task sang project khác')
+      if (taskDeps.dependents(t.id).length) throw new HttpError(400, 'Có task khác đang chờ task này, không chuyển sang project khác được')
+    }
+    if (deps) taskDeps.set(t.id, deps)
     // Model rỗng lưu NULL (kế thừa)
-    return updateTask(t.id, { ...v, ...(v.model !== undefined ? { model: v.model || null } : {}) })
+    const updated = updateTask(t.id, { ...v, ...(v.model !== undefined ? { model: v.model || null } : {}) })
+    // Bớt phụ thuộc có thể làm task Queued chạy được ngay.
+    if (deps) pump()
+    return updated
   })
+
+  // FR-08 nguồn ③: gợi ý phụ thuộc từ `#id` / mã task trong tiêu đề + prompt (không tự thêm).
+  app.post<{ Body: { projectId?: string; title?: string; prompt?: string; taskId?: number; dependsOn?: number[] } }>(
+    '/api/tasks/dep-suggest',
+    async (req) => {
+      const b = req.body ?? {}
+      if (!b.projectId || !projects.get(b.projectId)) throw new HttpError(400, 'Project không hợp lệ')
+      return suggestDeps({
+        projectId: b.projectId,
+        text: `${b.title ?? ''}\n${b.prompt ?? ''}`,
+        taskId: b.taskId === undefined ? undefined : Number(b.taskId),
+        current: Array.isArray(b.dependsOn) ? b.dependsOn.map(Number) : [],
+      })
+    },
+  )
 
   app.delete<{ Params: { id: string } }>('/api/tasks/:id', async (req) => {
     const t = getTask(req.params.id)
@@ -348,7 +406,7 @@ export async function routes(app: FastifyInstance) {
   })
 
   // Kéo thả task sang cột Running: chạy ngay nếu còn slot, hết slot thì vào hàng đợi.
-  app.post<{ Params: { id: string } }>('/api/tasks/:id/run', async (req) => {
+  app.post<{ Params: { id: string }; Body: { ignoreDeps?: boolean } }>('/api/tasks/:id/run', async (req) => {
     const t = getTask(req.params.id)
     if (t.status !== 'backlog' && t.status !== 'queued') throw new HttpError(409, 'Chỉ chạy ngay được task ở Backlog hoặc Queued')
     // P6 B3: project đặt "tạm dừng khi vượt budget" và đã vượt → không cho chạy tay.
@@ -357,6 +415,14 @@ export async function routes(app: FastifyInstance) {
         409,
         'Project đã vượt budget tháng (ước tính) và đang đặt chế độ tạm dừng. Tăng budget, đổi sang chỉ cảnh báo, hoặc chờ sang tháng mới để chạy.',
       )
+    // FR-08 (R8): còn chờ task chưa Done → hỏi lại; người dùng xác nhận thì gỡ phụ thuộc rồi chạy.
+    const pending = pendingDeps(t)
+    if (pending.length) {
+      if (!req.body?.ignoreDeps)
+        throw new HttpError(409, `Task #${t.id} đang chờ ${pending.map((id) => `#${id}`).join(', ')} chưa Done.`, 'DEPS_PENDING')
+      taskDeps.set(t.id, [])
+      broadcast({ type: 'task', task: tasks.get(t.id)! })
+    }
     return { ok: true, started: runNow(t.id) }
   })
 
@@ -396,11 +462,15 @@ export async function routes(app: FastifyInstance) {
 
   // ------------------------------------------------------------ review (PLAN 2.4–2.8)
 
-  app.post<{ Params: { id: string }; Body: { action?: string; feedback?: string } }>('/api/tasks/:id/review', async (req) => {
+  app.post<{ Params: { id: string }; Body: { action?: string; feedback?: string; comments?: unknown } }>('/api/tasks/:id/review', async (req) => {
     const t = getTask(req.params.id)
     const action = req.body?.action
-    if (action === 'approve') return approveTask(t.id)
-    if (action === 'request_changes') return requestChanges(t.id, req.body?.feedback, { hasSlot, startRun })
+    if (action === 'approve') {
+      const r = await approveTask(t.id)
+      pump() // FR-08 (R3): task vừa Done có thể là task mà task khác đang chờ
+      return r
+    }
+    if (action === 'request_changes') return requestChanges(t.id, req.body?.feedback, { hasSlot, startRun }, req.body?.comments)
     if (action === 'reject') return rejectTask(t.id, req.body?.feedback)
     throw new HttpError(400, 'Thao tác review không hợp lệ (chỉ chấp nhận approve, request_changes, reject)')
   })

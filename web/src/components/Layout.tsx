@@ -20,7 +20,7 @@ import {
   X,
   XCircle,
 } from 'lucide-react'
-import { IS_MOCK, dismissToast, getState, resetDemo, setDemo, updateSettings, useStore } from '../store/store'
+import { IS_MOCK, closeDepsConfirm, dismissToast, getState, resetDemo, runTaskNow, setDemo, updateSettings, useStore } from '../store/store'
 import { askPermissionOnce } from '../lib/notify'
 import { TaskFormModal } from './TaskFormModal'
 import { fetchAuthStatus, logout } from '../lib/auth'
@@ -34,7 +34,7 @@ const ENV_BADGE: Record<string, { label: string; cls: string } | undefined> = {
 }
 const envBadge = ENV_BADGE[__APP_ENV__]
 const TITLE = envBadge ? `[${envBadge.label}] Claude Task Board` : 'Claude Task Board'
-import { Button } from './ui'
+import { Button, ConfirmDialog } from './ui'
 
 // ------------------------------------------------------------ mở modal tạo task từ bất kỳ đâu
 
@@ -284,6 +284,7 @@ export function Layout() {
 
         <TaskFormModal open={newOpen} onClose={() => setNewOpen(false)} defaultProjectId={newProject} />
         <Toasts />
+        <DepsConfirm />
         {IS_MOCK && <DemoPanel />}
       </div>
     </NewTaskCtx.Provider>
@@ -413,5 +414,26 @@ function DemoPanel() {
         </button>
       )}
     </div>
+  )
+}
+
+/** FR-08 (R8): "Chạy ngay" task còn chờ task chưa Done → hỏi trước khi gỡ phụ thuộc và chạy. */
+function DepsConfirm() {
+  const c = useStore().depsConfirm
+  return (
+    <ConfirmDialog
+      open={!!c}
+      onClose={closeDepsConfirm}
+      title={c ? `Chạy ngay #${c.taskId}?` : ''}
+      message={
+        <>
+          <p>{c?.message}</p>
+          <p className="mt-2">Chạy ngay sẽ gỡ toàn bộ phụ thuộc của task này. Phần việc của các task đang chờ có thể chưa có trên nhánh chính.</p>
+        </>
+      }
+      confirmLabel="Gỡ phụ thuộc và chạy"
+      danger
+      onConfirm={() => c && runTaskNow(c.taskId, true)}
+    />
   )
 }

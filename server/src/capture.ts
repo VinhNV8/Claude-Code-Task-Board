@@ -1,6 +1,6 @@
 // Review flow (PLAN 2.1, 2.2): chuẩn bị worktree trước khi chạy và chụp thay đổi sau khi run thành công.
 import { existsSync } from 'node:fs'
-import { commitAll, commitsAhead, createWorktree, removeWorktree, type Worktree } from './git.ts'
+import { commitAll, commitsAhead, createWorktree, type Worktree } from './git.ts'
 import type { Project, Task } from './types.ts'
 
 type WtProject = Pick<Project, 'id' | 'repoPath' | 'mainBranch'>
@@ -28,16 +28,16 @@ export function runNumber(taskRuns: { id: string }[], runId: string) {
 }
 
 /**
- * Commit mọi thay đổi trong worktree. Nhánh task có commit so với mainBranch (do mình commit hoặc
- * Claude tự commit) → 'review'. Không có gì → 'done' và dọn worktree + nhánh.
+ * Commit mọi thay đổi trong worktree. Mọi run thành công đều lên Review để người dùng duyệt output (G3),
+ * kể cả khi Claude không sửa file nào (task phân tích, trả lời câu hỏi...). Worktree được giữ lại để
+ * "Request changes" chạy tiếp đúng phiên Claude trong cùng thư mục. Trả về nhánh task có thay đổi so với
+ * mainBranch hay không (do mình commit hoặc Claude tự commit).
  */
 export async function captureChanges(
   task: Pick<Task, 'id' | 'title'> & { worktreePath: string },
   project: WtProject,
   runNo: number,
-): Promise<'review' | 'done'> {
+): Promise<{ hasChanges: boolean }> {
   const committed = await commitAll(task.worktreePath, commitMessage(task, runNo))
-  if (committed || (await commitsAhead(task.worktreePath, project.mainBranch)) > 0) return 'review'
-  await removeWorktree(project, task.id)
-  return 'done'
+  return { hasChanges: committed || (await commitsAhead(task.worktreePath, project.mainBranch)) > 0 }
 }

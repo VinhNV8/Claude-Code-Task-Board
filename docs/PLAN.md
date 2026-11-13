@@ -19,6 +19,7 @@
 | P5 | 🟡 Đang làm, **P5-08 bị chặn** | P5-01, 03, 04, 07 đạt. P5-02, 05 chưa làm; P5-06 mới có hàm thuần, runner chưa gọi. Xem “Kết quả kiểm thử P5” |
 | P6 | ⏳ Đã lập kế hoạch, task ở Backlog | Budget theo project (P6-01..02) |
 | P7 | ⏳ Đã lập kế hoạch, task ở Backlog | Cải tiến duyệt quyền (P7-01..05) |
+| C-02 | ✅ Hoàn thành (làm trực tiếp), chờ deploy UAT | Phụ thuộc giữa task, SPEC FR-08 bản 1. Xem mục C-02 |
 
 ### Kết quả kiểm thử P1 (qua API, Claude chạy thật)
 | Kịch bản | Kết quả |
@@ -421,6 +422,35 @@ Nguồn: Ideas Improvement, ý 2. Cơ chế duyệt **đã chạy** từ P3 (MCP
 | P7-03 | Duyệt quyền qua Telegram (nút inline, long polling) | — |
 | P7-04 | Phân loại rủi ro: lệnh nguy hiểm tô đỏ, không cho "Luôn cho phép" | — |
 | P7-05 | Từ chối kèm lý do, duyệt hàng loạt ở Inbox | P7-04 |
+
+## C-02: Phụ thuộc giữa task (SPEC FR-08, bản 1)
+
+Vấn đề: hàng đợi chỉ sắp theo ưu tiên và thời gian tạo, nên task chạy trước khi task nó cần đã xong (ví dụ P6-02 chạy trước P6-01, P5-08 chạy khi P5-06 mới làm được một nửa). Task này được **làm trực tiếp, không giao cho board**, vì chính nó là điều kiện để hàng đợi chạy đúng.
+
+| # | Quyết định |
+|---|---|
+| R1 | Bảng `task_deps(task_id, depends_on_id)`, chỉ cho phụ thuộc trong cùng project. Task trả ra API có thêm `dependsOn: number[]`. |
+| R2 | Phụ thuộc được thoả khi task được chờ ở trạng thái **Done** (đã merge). Review là chưa đủ: code còn trên nhánh riêng, worktree tạo từ main không thấy. |
+| R3 | `pump()` bỏ qua task còn phụ thuộc chưa thoả. Task không chờ ai chạy song song theo `maxParallel`. Approve (Done) thì gọi `pump()`. |
+| R4 | Cột Queued sắp task đang chờ **sau** task nó chờ (sắp topo, cùng mức thì theo ưu tiên → thời gian tạo). Thẻ task có nhãn "⛓ Chờ #id"; task được chờ đang Failed thì nhãn đỏ. Một task được chờ bị Failed/Reject thì hiện toast. |
+| R5 | Nguồn ① seed-backlog.mjs đổi `dependsOn` (mã task) thành id; ② ô "Chờ task" trong form; ③ `POST /api/tasks/dep-suggest`: tìm `#id` và mã `[A-Z]+\d*-\d+[a-z]?` khớp `[MÃ]` ở đầu tiêu đề → gợi ý, người dùng bấm thêm. |
+| R6 | ④ Mỗi run gửi quy ước qua `--append-system-prompt`: nếu không làm được vì thiếu phần việc của task khác thì dừng, kết thúc bằng dòng `BLOCKED_BY: <#id hoặc mã>; <lý do>`. Run thành công có dòng này: tìm task tương ứng (cùng project, chưa Done, không tạo vòng tròn) → thêm phụ thuộc, đưa worktree về main (giống Retry), task về **Queued**, ghi log. Không tìm được task hợp lệ hoặc task đó đã Done → task **Failed** kèm lý do (tránh lặp vô hạn). |
+| R7 | Lưu phụ thuộc thì kiểm tra vòng tròn (lỗi 400). Xoá task thì liên kết tự mất (CASCADE). Sửa phụ thuộc được khi task ở Backlog/Queued (như FR-02). |
+| R8 | "Chạy ngay" khi còn chờ: API trả 409 `{ code: 'DEPS_PENDING' }`, web hỏi xác nhận. Đồng ý thì gọi lại với `ignoreDeps: true`: **gỡ toàn bộ phụ thuộc** của task rồi chạy. Nếu chỉ bỏ qua một lần mà task lại vào hàng đợi vì hết slot, nó sẽ lại bị giữ. |
+
+### Kết quả (2026-11-13)
+- Code:
+  - [web/src/lib/deps.ts](../web/src/lib/deps.ts): hàm thuần dùng chung.
+  - [server/src/taskDeps.ts](../server/src/taskDeps.ts): kiểm tra hợp lệ, gợi ý, `decideBlocked`.
+  - Bảng `task_deps`.
+  - `pump()` bỏ qua task còn chờ; `handleBlocked` trong runner.ts.
+  - API `dependsOn`, `/api/tasks/dep-suggest`, `ignoreDeps`; Approve thì gọi `pump()`.
+  - seed-backlog.mjs đặt phụ thuộc theo mã task.
+  - Giao diện: ô "Chờ task" và gợi ý trong form, nhãn ⛓ trên thẻ, khối phụ thuộc ở trang chi tiết, cột Queued sắp theo phụ thuộc, hộp xác nhận Chạy ngay, toast khi task được chờ bị lỗi.
+- Test: `deps.test.ts` và `taskDeps.test.ts` có 18 test mới. Toàn bộ `npm test -w server` đạt **400/400**; `npm run typecheck` và `npm run build` đạt.
+- Kiểm chứng với CLI thật (Haiku): `--append-system-prompt` có tiếng Việt chạy được trên Windows. Với tình huống P5-08 chờ P5-06, Claude dừng và trả `BLOCKED_BY: P5-06; …`, parser đọc đúng.
+- Chưa làm (bản 2, FR-09): gợi ý khi Approve bị conflict, cảnh báo trùng file.
+- Lưu ý: UAT đang chạy `e00807f` (đã có worktree, chưa có phụ thuộc). Cần commit C-02 rồi `npm run uat:deploy` thì tính năng này mới có hiệu lực trên UAT.
 
 ---
 

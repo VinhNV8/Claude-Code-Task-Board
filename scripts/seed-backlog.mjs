@@ -103,3 +103,31 @@ for (const item of items) {
 }
 
 if (!dryRun) console.log(`\nĐã tạo ${created}, bỏ qua ${skipped}.`)
+
+// FR-08 nguồn ①: đổi `dependsOn` (mã task, ví dụ "P7-04") thành id task trên board và đặt phụ thuộc.
+// Chạy cả cho task đã có sẵn (chỉ thêm, không gỡ phụ thuộc người dùng đã đặt). Task không còn ở Backlog/Queued thì bỏ qua.
+if (!dryRun) {
+  const now = await api(base, 'GET', '/state')
+  const mine = now.tasks.filter((t) => t.projectId === project.id)
+  const codeOf = (title) => title.match(/^\s*\[([A-Za-z]{1,4}\d*-\d{1,3}[A-Za-z]?)\]/)?.[1].toUpperCase()
+  const byCode = new Map(mine.map((t) => [codeOf(t.title), t]))
+  let linked = 0
+  for (const item of items.filter((i) => i.dependsOn?.length)) {
+    const t = mine.find((x) => x.title === item.title)
+    if (!t) continue
+    const want = item.dependsOn.map((c) => byCode.get(c.toUpperCase())).filter(Boolean)
+    const missing = item.dependsOn.filter((c) => !byCode.has(c.toUpperCase()))
+    if (missing.length) console.log(`  ! #${t.id} ${item.code}: không thấy task ${missing.join(', ')} trên board, bỏ qua phụ thuộc này`)
+    const current = t.dependsOn ?? []
+    const add = want.filter((d) => d.status !== 'done' && !current.includes(d.id)).map((d) => d.id)
+    if (!add.length) continue
+    if (t.status !== 'backlog' && t.status !== 'queued') {
+      console.log(`  ! #${t.id} ${item.code}: đang ở ${t.status}, không đặt phụ thuộc được`)
+      continue
+    }
+    await api(base, 'PATCH', `/tasks/${t.id}`, { dependsOn: [...current, ...add] })
+    console.log(`  ⛓ #${t.id} ${item.code} chờ ${add.map((id) => `#${id}`).join(', ')}`)
+    linked++
+  }
+  console.log(`Đặt phụ thuộc cho ${linked} task.`)
+}

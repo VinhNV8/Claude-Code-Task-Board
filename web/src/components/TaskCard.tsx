@@ -1,11 +1,12 @@
 import type { DragEvent } from 'react'
 import { Link } from 'react-router-dom'
-import { AlertTriangle, Clock, GitBranch, Hand, Hourglass, Loader2, Pause, Play, RotateCcw, StepForward } from 'lucide-react'
+import { AlertTriangle, Clock, GitBranch, Hand, Hourglass, Link2, Loader2, Pause, Play, RotateCcw, StepForward } from 'lucide-react'
 import type { Project, Task } from '../types'
 import { PRIORITY_META, duration, hhmm, timeAgo } from '../lib/format'
 import { isFailed } from '../lib/board'
 import { STOP_REASON, canResume } from '../lib/resume'
-import { queueTask, resumeTask, retryTask } from '../store/store'
+import { queueTask, resumeTask, retryTask, useStore } from '../store/store'
+import { unmetDeps } from '../lib/deps'
 import { useNow } from './ui'
 
 export function TaskCard({
@@ -34,6 +35,11 @@ export function TaskCard({
   const waitingUntil = task.status === 'queued' && task.notBefore && task.notBefore > now ? task.notBefore : undefined
   const resumable = failed && canResume(task, now)
   const paused = failed && task.failReason === STOP_REASON
+  // FR-08 (R4): task trong Backlog/Queued còn chờ task chưa Done. Task được chờ đang lỗi thì nhãn đỏ.
+  const all = useStore().tasks
+  const statusOf = (id: number) => all.find((t) => t.id === id)?.status
+  const waitingOn = task.status === 'backlog' || task.status === 'queued' ? unmetDeps(task, statusOf) : []
+  const depFailed = waitingOn.some((id) => statusOf(id) === 'failed')
   return (
     <Link
       to={`/tasks/${task.id}`}
@@ -76,6 +82,19 @@ export function TaskCard({
         {task.priority !== 'normal' && <span className={`ml-auto shrink-0 font-medium ${pr.cls}`}>{pr.label}</span>}
       </div>
       <p className="line-clamp-2 text-sm font-medium text-slate-800 dark:text-slate-100">{task.title}</p>
+
+      {waitingOn.length > 0 && (
+        <div
+          className={`mt-2 inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-medium ${
+            depFailed
+              ? 'bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300'
+              : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'
+          }`}
+          title={depFailed ? 'Có task được chờ đang lỗi: Chạy lại task đó, hoặc gỡ phụ thuộc' : 'Chỉ chạy khi các task này Done (đã merge)'}
+        >
+          <Link2 size={11} /> Chờ {waitingOn.map((id) => `#${id}${statusOf(id) === 'failed' ? ' (lỗi)' : ''}`).join(', ')}
+        </div>
+      )}
 
       {task.tags.length > 0 && (
         <div className="mt-2 flex flex-wrap gap-1">

@@ -111,6 +111,8 @@ export interface ClaudeArgsOptions {
   fallbackModel?: string
   /** Giới hạn chi phí của lần chạy (`--max-budget-usd`, P6). */
   maxBudgetUsd?: number
+  /** Nối thêm vào system prompt (`--append-system-prompt`), dùng cho quy ước BLOCKED_BY (FR-08). */
+  appendSystemPrompt?: string
 }
 
 /**
@@ -149,6 +151,8 @@ export function buildClaudeArgs(o: ClaudeArgsOptions) {
     if (o.fallbackModel && o.fallbackModel !== o.model) args.push('--fallback-model', o.fallbackModel)
   }
   if (o.maxBudgetUsd !== undefined && o.maxBudgetUsd > 0) args.push('--max-budget-usd', String(o.maxBudgetUsd))
+  // FR-08 (R6): quy ước BLOCKED_BY. Một dòng, không có dấu nháy kép, để an toàn khi truyền tham số trên Windows.
+  if (o.appendSystemPrompt) args.push('--append-system-prompt', o.appendSystemPrompt)
   // --allowedTools nhận nhiều giá trị nên để cuối, tránh nuốt các flag phía sau.
   if (o.allowedTools.length) args.push('--allowedTools', ...o.allowedTools)
   return args

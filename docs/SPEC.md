@@ -6,7 +6,7 @@
 | Ngày | 2026-11-12 |
 | Trạng thái | v0.2 ✅ đã duyệt. Phần mới của v0.3 (FR-43..46, FR-70..76, FR-80..83): ⏳ **chờ duyệt** |
 | Thay đổi 0.2 | Cập nhật theo [P0-SPIKE.md](P0-SPIKE.md): dò file `claude.exe` của extension VSCode; mode `default` đổi thành `manual`; prompt truyền qua stdin; P3 dùng `--permission-prompt-tool` (đã kiểm chứng); SQLite dùng `node:sqlite` có sẵn trong Node 24 |
-| Thay đổi 0.3 | Bổ sung yêu cầu từ [Ideas Improvement.md](Ideas%20Improvement.md): **3.8 Chọn model** (tự chọn theo độ khó, hiển thị model đang dùng), **3.9 Chi phí và budget theo project**, cải tiến **3.5 Needs Input** (preset, gợi ý rule, Telegram, rủi ro, lý do từ chối). Cập nhật 5.2, 5.3, 7, 8, 9, 10. Thiết kế chi tiết ở PLAN mục P5–P7 |
+| Thay đổi 0.3 | **FR-08/09 Phụ thuộc giữa task.** Bổ sung yêu cầu từ [Ideas Improvement.md](Ideas%20Improvement.md): **3.8 Chọn model** (tự chọn theo độ khó, hiển thị model đang dùng), **3.9 Chi phí và budget theo project**, cải tiến **3.5 Needs Input** (preset, gợi ý rule, Telegram, rủi ro, lý do từ chối). Cập nhật 5.2, 5.3, 7, 8, 9, 10. Thiết kế chi tiết ở PLAN mục P5–P7 |
 | Thư mục dự án | `d:\Projects\AI Project\AI-Interface` |
 
 ---
@@ -58,7 +58,7 @@ Claude Code có **chế độ headless**: `claude -p "<prompt>"`. Lệnh này d�
    `claude -p --output-format stream-json --verbose --session-id <uuid> [--permission-mode ...] [--allowedTools ...]` (prompt truyền qua **stdin**)
    với thư mục làm việc là worktree của task.
 2. **Theo dõi**: backend đọc output stream-json từng dòng, lưu vào DB và đẩy lên UI qua WebSocket.
-3. **Review**: backend lấy `git diff` của worktree và hiển thị trên UI.
+3. **Review**: mọi task chạy xong đều vào Review. UI hiển thị output của Claude và `git diff` của worktree (nếu có) để người dùng duyệt.
 4. **Yêu cầu sửa**: backend chạy `claude -p --resume <session_id> "<feedback>"` để tiếp tục đúng phiên cũ.
 5. **Sự kiện**: hooks của Claude Code (`Stop`, `Notification`) gọi HTTP về backend để cập nhật trạng thái.
 
@@ -76,6 +76,8 @@ Claude Code có **chế độ headless**: `claude -p "<prompt>"`. Lệnh này d�
 | FR-05 | Chạy lại (Retry) task bị lỗi | Should |
 | FR-06 | Template prompt dùng lại (ví dụ "Fix bug", "Viết test", "Refactor") | Could |
 | FR-07 | Gắn tag và lọc/tìm kiếm task | Could |
+| FR-08 | **Phụ thuộc giữa task (bản 1)**: task khai báo "Chờ task" (một hoặc nhiều task cùng project). Chỉ chạy khi mọi task được chờ đã **Done** (đã merge); task không chờ ai chạy song song như thường. Hàng đợi hiển thị task đang chờ **sau** task nó chờ. Nguồn phụ thuộc: ① backlog.json (seed), ② người dùng chọn, ③ gợi ý khi prompt nhắc `#id` hoặc mã task (người dùng xác nhận), ④ **Claude báo `BLOCKED_BY`** khi đang chạy → tự thêm phụ thuộc, bỏ thay đổi dở, đưa task về Queued để chạy lại từ đầu sau task được chờ. Chặn phụ thuộc vòng tròn; "Chạy ngay" khi còn chờ phải xác nhận | Must |
+| FR-09 | Phụ thuộc (bản 2): gợi ý phụ thuộc khi Approve bị conflict với task vừa merge; cảnh báo khi task sắp chạy nhắc tới file mà task khác đang sửa | Could |
 
 ### 3.2 Bảng Kanban và trạng thái
 | ID | Yêu cầu | Ưu tiên |
@@ -86,7 +88,7 @@ Claude Code có **chế độ headless**: `claude -p "<prompt>"`. Lệnh này d�
 
 **Vòng đời trạng thái:**
 ```
-Backlog ─► Queued ─► Running ─┬─► Review ─┬─► Done (Approve & Merge)
+Backlog ─► Queued ─► Running ─┬─► Review ─┬─► Done (Approve; có thay đổi code thì merge)
                               │           ├─► Running (Request changes → resume)
                               │           └─► Failed/Rejected (Reject)
                               ├─► Needs Input ─► Running (sau khi trả lời / cấp quyền)
@@ -104,11 +106,14 @@ Backlog ─► Queued ─► Running ─┬─► Review ─┬─► Done (Appr
 ### 3.4 Review
 | ID | Yêu cầu | Ưu tiên |
 |---|---|---|
+| FR-29 | Mọi task chạy xong đều chuyển **Review**, kể cả khi không sửa code (task phân tích, trả lời, báo cáo…). Trang Review hiển thị **output của Claude** để duyệt | Must |
 | FR-30 | Xem danh sách file thay đổi và diff từng file (side-by-side hoặc unified) | Must |
-| FR-31 | **Approve & Merge**: commit thay đổi trong worktree và merge vào nhánh chính | Must |
+| FR-31 | **Approve**: task chuyển **Done**. Có thay đổi code thì merge nhánh task vào nhánh chính (Approve & Merge); không có thì chỉ dọn worktree | Must |
 | FR-32 | **Request changes**: nhập feedback, task chạy tiếp bằng `--resume` | Must |
 | FR-33 | **Reject**: hủy thay đổi, xóa worktree/nhánh | Must |
 | FR-34 | Chạy lệnh kiểm tra (ví dụ `npm test`) và hiển thị kết quả trên trang review | Could |
+| FR-35 | Review theo từng file: đánh dấu **Đã xem** từng file (tự bỏ đánh dấu khi file đổi sau lần chạy mới), hiển thị tiến độ x/y và số nhận xét mỗi file. **Nhận xét theo dòng** (hover số dòng, bấm +) hoặc cho cả file; nhận xét lưu nháp trên trình duyệt và được gửi kèm "Request changes" dưới dạng `file:dòng` + nội dung dòng để Claude sửa đúng chỗ. Có nhận xét thì feedback chung không bắt buộc; Approve khi còn nhận xét chưa gửi phải xác nhận | Should |
+| FR-36 | File Markdown trong trang review: chế độ **Preview** (mặc định, render Markdown), **Diff** (nhận xét theo dòng) và **Edit** (sửa trực tiếp, lưu vào worktree và commit trên nhánh task, diff tính lại). Chỉ sửa được khi task ở Review, chỉ file `.md/.markdown/.mdx`, không ra ngoài worktree | Should |
 
 ### 3.5 Needs Input (Claude cần mình)
 | ID | Yêu cầu | Ưu tiên |
@@ -204,7 +209,7 @@ tasks(id, project_id, title, prompt, status, priority, permission_mode, branch, 
 runs(id, task_id, session_id, kind[initial|resume|retry], started_at, ended_at, exit_code,
      num_turns, cost_usd, result_summary)
 events(id, run_id, ts, type, payload_json)      -- log stream-json
-reviews(id, task_id, action[approve|request_changes|reject], feedback, created_at)
+reviews(id, task_id, action[approve|request_changes|reject], feedback, comments JSON, created_at)
 ```
 Bổ sung ở v0.3:
 ```
@@ -214,6 +219,7 @@ runs       + model, requested_model, model_source[auto|manual|default|escalated]
              model_usage (JSON theo model), context_tokens
 templates  + model
 permission_requests + deny_reason
+task_deps(task_id, depends_on_id)                   -- FR-08, cả hai cột ON DELETE CASCADE
 settings   + defaultModel (mặc định 'auto'), autoEscalate (mặc định true)
 ```
 
@@ -227,10 +233,13 @@ settings   + defaultModel (mặc định 'auto'), autoEscalate (mặc định tr
 | POST | `/api/tasks/:id/stop` | Dừng task |
 | POST | `/api/tasks/:id/retry` | Chạy lại |
 | GET | `/api/tasks/:id/diff` | Lấy diff |
-| POST | `/api/tasks/:id/review` | `{action, feedback}` |
+| POST | `/api/tasks/:id/review` | `{action, feedback, comments?}` (comments: `[{path, line?, side?, snippet?, text}]`) |
+| GET | `/api/tasks/:id/file?path=` | Nội dung file trong worktree (Preview Markdown) |
+| PUT | `/api/tasks/:id/file` | `{path, content}`: lưu file Markdown và commit trên nhánh task |
 | POST | `/api/tasks/:id/input` | Trả lời hoặc cấp quyền |
 | POST | `/hooks/:event` | Nhận sự kiện từ hooks của Claude Code |
 | WS | `/ws` | Đẩy sự kiện realtime (task status, log) |
+| POST | `/api/tasks/dep-suggest` | FR-08: gợi ý phụ thuộc từ `#id` / mã task trong tiêu đề, prompt |
 | POST | `/api/model-suggest` | v0.3: model sẽ dùng và lý do (không gọi Claude, < 20ms) |
 | GET | `/api/permission-presets` | v0.3: danh sách preset allowlist |
 | GET | `/api/projects/:id/rule-suggestions` | v0.3: rule gợi ý từ lịch sử (+ `POST .../dismiss`) |
@@ -238,7 +247,7 @@ settings   + defaultModel (mặc định 'auto'), autoEscalate (mặc định tr
 
 ### 5.4 Hooks của Claude Code
 Cấu hình trong `.claude/settings.json` của worktree hoặc project:
-- `Stop`: gọi `POST /hooks/stop`, task chuyển sang **Review** (nếu có thay đổi) hoặc **Done**.
+- `Stop`: gọi `POST /hooks/stop`, task chuyển sang **Review** (có hoặc không có thay đổi code).
 - `Notification`: gọi `POST /hooks/notification`, task chuyển sang **Needs Input**.
 - Duyệt quyền trên web (FR-41): dùng `--permission-prompt-tool` trỏ tới một MCP server nhỏ do backend cung cấp.
 
@@ -272,7 +281,7 @@ Cấu hình trong `.claude/settings.json` của worktree hoặc project:
 ## 8. Tiêu chí nghiệm thu (Acceptance Criteria)
 
 - **AC-01**: Tạo task trên web, task tự chạy và log hiện realtime **mà không mở VSCode**.
-- **AC-02**: Khi Claude xong việc, task tự chuyển sang **Review** và diff hiển thị đúng.
+- **AC-02**: Khi Claude xong việc, task tự chuyển sang **Review**, output và diff (nếu có) hiển thị đúng. Task không sửa code vẫn vào Review; Approve chuyển Done mà không merge.
 - **AC-03**: Approve thì code được merge vào nhánh chính. Request changes thì Claude tiếp tục đúng phiên cũ với feedback.
 - **AC-04**: Chạy song song 2 task trên cùng repo mà không xung đột file.
 - **AC-05**: Không có bất kỳ lời gọi trực tiếp nào tới Claude API, không cần `ANTHROPIC_API_KEY`.
@@ -280,6 +289,7 @@ Cấu hình trong `.claude/settings.json` của worktree hoặc project:
 - **AC-07** (v0.3): Tạo task mà không chọn model: "Sửa typo README" chạy Haiku, task thêm tính năng thông thường chạy Sonnet, "Refactor kiến trúc…" chạy Opus. Thẻ task hiện model và lý do chọn.
 - **AC-08** (v0.3): Request changes giữ nguyên model. Retry sau lỗi tự nâng một bậc, trừ khi model được chọn tay.
 - **AC-09** (v0.3): Project đặt budget ở chế độ "Tạm dừng": khi vượt budget thì task mới không chạy và có lý do hiển thị, cảnh báo 80%/100% chỉ gửi một lần trong tháng.
+- **AC-11** (v0.3): B chờ A: B không chạy khi A chưa Done (kể cả còn slot), A Done thì B tự chạy; C độc lập chạy song song với A. Claude báo `BLOCKED_BY: #A` trong lúc chạy B thì B tự về Queued, chờ A.
 - **AC-10** (v0.3): Lệnh rủi ro cao luôn phải duyệt tay (kể cả khi khớp allowlist) và không có nút "Luôn cho phép".
 
 ---

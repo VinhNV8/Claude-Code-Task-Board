@@ -5,6 +5,8 @@
 import { useSyncExternalStore } from 'react'
 import { buildSeed, defaultSettings, diffPool, feedbackDiff, promptTemplates, seedProjects } from '../mocks/data'
 import { resumeBlocker } from '../lib/resume'
+import { parseRefs, resolveRefs, unmetDeps } from '../lib/deps'
+import { formatReviewFeedback } from '../lib/reviewComments'
 import type {
   DemoFlags,
   FileDiff,
@@ -17,6 +19,7 @@ import type {
   Project,
   PromptTemplate,
   ReviewAction,
+  ReviewComment,
   RuleSuggestion,
   Run,
   RunKind,
@@ -50,6 +53,7 @@ export interface State {
   settings: Settings
   demo: DemoFlags
   nextTaskId: number
+  depsConfirm?: { taskId: number; message: string } | null
 }
 
 const defaultDemo: DemoFlags = {
@@ -430,6 +434,8 @@ function afterChange() {
   })
 }
 
+const pendingOf = (t: Task) => unmetDeps(t, (id) => state.tasks.find((x) => x.id === id)?.status)
+
 function pumpQueue() {
   const queued = state.tasks
     .filter((t) => t.status === 'queued')
@@ -439,6 +445,7 @@ function pumpQueue() {
     const project = state.projects.find((p) => p.id === t.projectId)
     if (project && runningCount(project.id) >= project.maxParallel) continue
     if (t.notBefore && t.notBefore > Date.now()) continue // đang chờ giới hạn sử dụng
+    if (pendingOf(t).length) continue // FR-08: còn chờ task chưa Done
     const isRetry = state.runs.some((r) => r.taskId === t.id)
     startRun(t.id, t.resumeNext ? 'continue' : isRetry ? 'retry' : 'initial')
   }
@@ -463,6 +470,7 @@ export interface NewTask {
   tags: string[]
   /** '' = kế thừa project → Settings (P5) */
   model?: string
+  dependsOn?: number[]
   run: boolean
 }
 
@@ -477,6 +485,7 @@ export async function createTask(input: NewTask): Promise<number> {
     permissionMode: input.permissionMode,
     tags: input.tags,
     model: input.model || undefined,
+    dependsOn: input.dependsOn?.length ? input.dependsOn : undefined,
     status: input.run ? 'queued' : 'backlog',
     createdAt: Date.now(),
     updatedAt: Date.now(),
@@ -486,8 +495,20 @@ export async function createTask(input: NewTask): Promise<number> {
   return id
 }
 
-export function updateTask(id: number, patch: Partial<Pick<Task, 'title' | 'prompt' | 'priority' | 'projectId' | 'tags' | 'permissionMode' | 'model'>>) {
-  patchTask(id, patch)
+export function updateTask(id: number, patch: Partial<Pick<Task, 'title' | 'prompt' | 'priority' | 'projectId' | 'tags' | 'permissionMode' | 'model' | 'dependsOn'>>) {
+  patchTask(id, patch.dependsOn ? { ...patch, dependsOn: patch.dependsOn.length ? patch.dependsOn : undefined } : patch)
+  afterChange()
+}
+
+export const closeDepsConfirm = () => set(() => ({ depsConfirm: null }))
+
+export async function fetchDepSuggestions(input: { projectId: string; title: string; prompt: string; taskId?: number; dependsOn: number[] }) {
+  const ids = resolveRefs(parseRefs(`${input.title}
+${input.prompt}`), state.tasks, input.projectId, input.taskId)
+  return ids
+    .map((id) => state.tasks.find((t) => t.id === id)!)
+    .filter((t) => t.status !== 'done' && !input.dependsOn.includes(t.id))
+    .map((t) => ({ id: t.id, title: t.title, status: t.status }))
 }
 
 export function deleteTask(id: number) {
@@ -504,9 +525,17 @@ export function unqueueTask(id: number) {
 }
 
 /** Chạy ngay (kéo task sang cột Running). Hết slot thì đưa vào hàng đợi. */
-export function runTaskNow(id: number) {
+export function runTaskNow(id: number, ignoreDeps = false) {
   const t = state.tasks.find((x) => x.id === id)
   if (!t || (t.status !== 'backlog' && t.status !== 'queued')) return
+  const pending = pendingOf(t)
+  if (pending.length) {
+    if (!ignoreDeps) {
+      set(() => ({ depsConfirm: { taskId: id, message: `Task #${id} đang chờ ${pending.map((d) => `#${d}`).join(', ')} chưa Done.` } }))
+      return
+    }
+    patchTask(id, { dependsOn: undefined })
+  }
   const project = state.projects.find((p) => p.id === t.projectId)
   if (project && runningCount() < state.settings.maxParallel && runningCount(project.id) < project.maxParallel) {
     startRun(id, state.runs.some((r) => r.taskId === id) ? 'retry' : 'initial')
@@ -566,8 +595,9 @@ export function resumeTask(id: number) {
   toast({ kind: 'info', title: `Đã đưa #${id} vào hàng đợi tiếp tục`, body: 'Đang hết slot chạy, task sẽ chạy tiếp khi tới lượt.' })
 }
 
-function addReview(taskId: number, action: ReviewAction['action'], feedback?: string) {
-  set((s) => ({ reviews: [...s.reviews, { id: uid(), taskId, action, feedback, createdAt: Date.now() }] }))
+function addReview(taskId: number, action: ReviewAction['action'], feedback?: string, comments?: ReviewComment[]) {
+  const c = comments?.length ? comments : undefined
+  set((s) => ({ reviews: [...s.reviews, { id: uid(), taskId, action, feedback: feedback || undefined, comments: c, createdAt: Date.now() }] }))
 }
 
 export function approveTask(id: number): boolean {
@@ -594,10 +624,27 @@ export function approveTask(id: number): boolean {
   return true
 }
 
-export function requestChanges(id: number, feedback: string): boolean {
-  addReview(id, 'request_changes', feedback)
+export function requestChanges(id: number, feedback: string, comments: ReviewComment[] = []): boolean {
+  addReview(id, 'request_changes', feedback, comments)
   patchTask(id, { reviewWarning: undefined })
-  startRun(id, 'resume', feedback)
+  startRun(id, 'resume', formatReviewFeedback(feedback, comments))
+  return true
+}
+
+// Preview/Edit Markdown: dựng nội dung "bản mới" từ diff giả lập (dòng ngữ cảnh + dòng thêm)
+const mockFiles = new Map<string, string>()
+
+export async function fetchTaskFile(id: number, path: string): Promise<string | null> {
+  const saved = mockFiles.get(`${id}:${path}`)
+  if (saved !== undefined) return saved
+  const f = state.diffs[id]?.find((d) => d.path === path)
+  if (!f) return null
+  return f.hunks.flatMap((h) => h.lines.filter((l) => l.type !== 'del').map((l) => l.text)).join('\n') + '\n'
+}
+
+export async function saveTaskFile(id: number, path: string, content: string): Promise<boolean> {
+  mockFiles.set(`${id}:${path}`, content)
+  toast({ kind: 'success', title: `Đã lưu và commit ${path}` })
   return true
 }
 
