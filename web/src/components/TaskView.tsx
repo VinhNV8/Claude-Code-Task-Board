@@ -211,6 +211,20 @@ export function TaskView({
   const waiting = isWaitingRateLimit(task, now)
   const resumable = canResume(task, now)
   const paused = task.status === 'failed' && task.failReason === STOP_REASON
+  // Chọn lần chạy để xem (dùng chung cho tab Log và Kết quả)
+  const runPicker = runs.length > 1 && (
+    <div className="mb-2 flex items-center gap-2 text-sm">
+      <span className="text-slate-500">Lần chạy:</span>
+      <select className={`${inputCls} w-auto py-1`} value={shownRun?.id} onChange={(e) => setRunId(e.target.value)}>
+        {runs.map((r, i) => (
+          <option key={r.id} value={r.id}>
+            #{i + 1} · {RUN_KIND[r.kind]} · {clock(r.startedAt)}
+            {r.id === latestRun?.id ? ' (mới nhất)' : ''}
+          </option>
+        ))}
+      </select>
+    </div>
+  )
 
   // Chỉ khoá nút khi đã kiểm tra xong và chắc chắn bị chặn; chưa kiểm tra được thì để server quyết định
   const mergeBlocked = diffs.length > 0 && !!merge.check && merge.check.hasChanges && !merge.check.ready
@@ -220,6 +234,8 @@ export function TaskView({
     canEdit: task.status === 'review',
     loadFile: (path) => fetchTaskFile(task.id, path),
     saveFile: (path, content) => saveTaskFile(task.id, path, content),
+    // v=: đổi khi task cập nhật (Claude sửa lại ảnh) để trình duyệt không dùng ảnh cũ trong cache
+    imageUrl: (path, side) => `/api/tasks/${task.id}/image?${new URLSearchParams({ path, side, v: String(task.updatedAt) })}`,
   }
 
   const tabs: { id: Tab; label: string; icon: JSX.Element; count?: number; hidden?: boolean }[] = [
@@ -405,18 +421,7 @@ export function TaskView({
 
       {tab === 'log' && (
         <div>
-          {runs.length > 1 && (
-            <div className="mb-2 flex items-center gap-2 text-sm">
-              <span className="text-slate-500">Lần chạy:</span>
-              <select className={`${inputCls} w-auto py-1`} value={shownRun?.id} onChange={(e) => setRunId(e.target.value)}>
-                {runs.map((r, i) => (
-                  <option key={r.id} value={r.id}>
-                    #{i + 1} · {RUN_KIND[r.kind]} · {clock(r.startedAt)}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
+          {runPicker}
           <LogView events={events} live={live} />
         </div>
       )}
@@ -558,14 +563,15 @@ export function TaskView({
 
       {tab === 'result' && (
         <div className="space-y-3">
-          {latestRun ? (
+          {shownRun ? (
             <>
+              {runPicker}
               <div className={`grid grid-cols-2 gap-3 ${panel ? '' : 'sm:grid-cols-4'}`}>
                 {[
-                  ['Thời gian chạy', latestRun.endedAt ? duration(latestRun.endedAt - latestRun.startedAt) : duration(now - latestRun.startedAt)],
-                  ['Số lượt (turns)', latestRun.numTurns ?? '—'],
-                  ['Chi phí ước tính (quy đổi)', usd(latestRun.costUsd)],
-                  ['Exit code', latestRun.exitCode ?? '—'],
+                  ['Thời gian chạy', shownRun.endedAt ? duration(shownRun.endedAt - shownRun.startedAt) : duration(now - shownRun.startedAt)],
+                  ['Số lượt (turns)', shownRun.numTurns ?? '—'],
+                  ['Chi phí ước tính (quy đổi)', usd(shownRun.costUsd)],
+                  ['Exit code', shownRun.exitCode ?? '—'],
                 ].map(([k, v]) => (
                   <div key={k as string} className="rounded-lg border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900">
                     <p className="text-xs text-slate-500">{k}</p>
@@ -578,10 +584,12 @@ export function TaskView({
                   <FileText size={14} /> Tóm tắt của Claude
                 </p>
                 <div className="px-5 py-4">
-                  {latestRun.summary ? (
-                    <Markdown text={latestRun.summary} className="max-w-3xl" />
+                  {shownRun.summary ? (
+                    <Markdown text={shownRun.summary} className="max-w-3xl" />
                   ) : (
-                    <span className="text-sm text-slate-400">Chưa có, Claude vẫn đang làm việc.</span>
+                    <span className="text-sm text-slate-400">
+                      {shownRun.endedAt === undefined ? 'Chưa có, Claude vẫn đang làm việc.' : 'Lần chạy này không có tóm tắt.'}
+                    </span>
                   )}
                 </div>
               </div>
@@ -657,15 +665,26 @@ export function TaskView({
                       <Markdown text={r.summary} className="mt-2" />
                     </details>
                   )}
-                  <button
-                    onClick={() => {
-                      setRunId(r.id)
-                      setTab('log')
-                    }}
-                    className="mt-2 text-xs text-indigo-600 hover:underline dark:text-indigo-400"
-                  >
-                    Xem log lần chạy này →
-                  </button>
+                  <div className="mt-2 flex gap-4 text-xs">
+                    <button
+                      onClick={() => {
+                        setRunId(r.id)
+                        setTab('result')
+                      }}
+                      className="text-indigo-600 hover:underline dark:text-indigo-400"
+                    >
+                      Xem kết quả →
+                    </button>
+                    <button
+                      onClick={() => {
+                        setRunId(r.id)
+                        setTab('log')
+                      }}
+                      className="text-indigo-600 hover:underline dark:text-indigo-400"
+                    >
+                      Xem log →
+                    </button>
+                  </div>
                 </div>
               </li>
             )

@@ -29,6 +29,17 @@ export function git(cwd: string, args: string[]): Promise<GitResult> {
   })
 }
 
+/** Như `git` nhưng stdout giữ nguyên bytes (đọc file nhị phân bằng `git show`). */
+export function gitBuffer(cwd: string, args: string[], maxBuffer = 16 * 1024 * 1024): Promise<{ stdout: Buffer; stderr: string; code: number }> {
+  return new Promise((res) => {
+    execFile('git', ['-C', cwd, ...args], { windowsHide: true, encoding: 'buffer', maxBuffer }, (err, stdout, stderr) => {
+      const errOut = stderr ? stderr.toString('utf8') : ''
+      if (!err) return res({ stdout, stderr: errOut, code: 0 })
+      res({ stdout: stdout ?? Buffer.alloc(0), stderr: errOut || err.message, code: typeof err.code === 'number' ? err.code : -1 })
+    })
+  })
+}
+
 const errText = (r: GitResult) => (r.stderr || r.stdout).trim() || `git thoát với mã ${r.code}`
 
 export const taskBranch = (taskId: number) => `claude/task-${taskId}`

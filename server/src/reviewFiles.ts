@@ -2,9 +2,10 @@
 import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { isAbsolute, relative, resolve, sep } from 'node:path'
 import { projects, tasks } from './db.ts'
-import { commitAll } from './git.ts'
+import { commitAll, git, gitBuffer, taskBranch } from './git.ts'
 import { ReviewError, withLock } from './review.ts'
 import { isMarkdownPath } from '../../web/src/lib/reviewComments.ts'
+import { imageMime } from '../../web/src/lib/diff.ts'
 import type { Task } from './types.ts'
 
 export const MAX_FILE_BYTES = 1024 * 1024
@@ -40,6 +41,57 @@ export function readTaskFile(taskId: number, path: unknown): { path: string; con
   if (!existsSync(abs) || !statSync(abs).isFile()) throw new ReviewError(404, `Không tìm thấy file ${String(path)}`)
   if (statSync(abs).size > MAX_FILE_BYTES) throw new ReviewError(413, 'File lớn hơn 1 MB, không hiển thị được')
   return { path: String(path).trim(), content: readFileSync(abs, 'utf8') }
+}
+
+/** Ảnh xem trước tối đa 10 MB. */
+export const MAX_IMAGE_BYTES = 10 * 1024 * 1024
+
+/**
+ * Đường dẫn tương đối dạng git (dấu `/`) hợp lệ: không tuyệt đối, không `..`, không vào `.git`.
+ * Dùng cho `git show <rev>:<path>` (đọc bản cũ), nơi không có worktree để `resolve` so sánh.
+ */
+export function safeRepoPath(rel: unknown): string {
+  const p = typeof rel === 'string' ? rel.trim().replace(/\\/g, '/') : ''
+  if (!p) throw new ReviewError(400, 'Thiếu đường dẫn file')
+  if (p.startsWith('/') || /^[a-zA-Z]:/.test(p)) throw new ReviewError(400, 'Đường dẫn file phải là đường dẫn tương đối trong repo')
+  const segs = p.split('/')
+  if (segs.some((s) => s === '..')) throw new ReviewError(400, 'Đường dẫn file nằm ngoài thư mục của task')
+  if (segs.some((s) => s.toLowerCase() === '.git')) throw new ReviewError(400, 'Không được truy cập thư mục .git')
+  return segs.filter((s) => s && s !== '.').join('/')
+}
+
+/**
+ * Bytes của một file ảnh để xem trước khi review.
+ * - `new`: bản trên nhánh task (đọc từ worktree; worktree đã dọn thì lấy từ nhánh).
+ * - `old`: bản trên nhánh chính tại điểm rẽ nhánh (`git merge-base`), khớp với diff `main...nhánh`.
+ */
+export async function readTaskImage(taskId: number, path: unknown, side: unknown): Promise<{ mime: string; data: Buffer }> {
+  const task = tasks.get(taskId)
+  if (!task) throw new ReviewError(404, `Không tìm thấy task #${taskId}`)
+  const project = projects.get(task.projectId)
+  if (!project) throw new ReviewError(404, `Không tìm thấy project của task #${taskId}`)
+  const rel = safeRepoPath(path)
+  const mime = imageMime(rel)
+  if (!mime) throw new ReviewError(400, 'Chỉ xem trước được file ảnh')
+  const branch = taskBranch(taskId)
+
+  if (side !== 'old' && task.worktreePath && existsSync(task.worktreePath)) {
+    const abs = resolveInWorktree(task.worktreePath, rel)
+    if (!existsSync(abs) || !statSync(abs).isFile()) throw new ReviewError(404, `Không tìm thấy file ${rel}`)
+    if (statSync(abs).size > MAX_IMAGE_BYTES) throw new ReviewError(413, 'Ảnh lớn hơn 10 MB, không xem trước được')
+    return { mime, data: readFileSync(abs) }
+  }
+
+  let rev = branch
+  if (side === 'old') {
+    const base = await git(project.repoPath, ['merge-base', project.mainBranch, branch])
+    if (base.code !== 0) throw new ReviewError(404, 'Không tìm thấy điểm rẽ nhánh của task')
+    rev = base.stdout.trim()
+  }
+  const r = await gitBuffer(project.repoPath, ['show', `${rev}:${rel}`], MAX_IMAGE_BYTES + 1)
+  if (r.code !== 0) throw new ReviewError(404, `Không tìm thấy file ${rel}${side === 'old' ? ' trên nhánh chính' : ''}`)
+  if (r.stdout.length > MAX_IMAGE_BYTES) throw new ReviewError(413, 'Ảnh lớn hơn 10 MB, không xem trước được')
+  return { mime, data: r.stdout }
 }
 
 /**

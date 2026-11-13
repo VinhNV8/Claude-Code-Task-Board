@@ -1,0 +1,475 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Board Project Sidebar</title>
+<script src="https://cdn.tailwindcss.com/3.4.1"></script>
+<script>tailwind.config = { darkMode: 'class' }</script>
+<style>
+  body { font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  .scroll-thin::-webkit-scrollbar { width: 6px; height: 6px }
+  .scroll-thin::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px }
+  .dark .scroll-thin::-webkit-scrollbar-thumb { background: #334155 }
+</style>
+</head>
+<body class="bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
+
+<!-- Thanh điều khiển prototype (không thuộc UI thật) -->
+<div id="protoBar" class="flex flex-wrap items-center gap-2 border-b border-amber-300 bg-amber-50 px-4 py-2 text-xs text-amber-900 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-200">
+  <b>PROTOTYPE</b>
+  <span class="opacity-70">Phương án:</span>
+  <button data-variant="A" class="variant-btn">A · Panel Project riêng</button>
+  <button data-variant="B" class="variant-btn">B · Lồng trong sidebar chính</button>
+  <button data-variant="C" class="variant-btn">C · Swimlane theo project</button>
+  <button data-variant="D" class="variant-btn">D · Switcher đầu sidebar</button>
+  <button data-variant="E" class="variant-btn">E · Panel lọc đầy đủ (đa chọn)</button>
+  <span class="mx-1 h-4 w-px bg-amber-300"></span>
+  <button id="toggleNav" class="rounded border border-amber-400 px-2 py-0.5">Thu/mở sidebar chính</button>
+  <button id="toggleDark" class="rounded border border-amber-400 px-2 py-0.5">Sáng / Tối</button>
+  <span id="variantNote" class="basis-full opacity-80"></span>
+</div>
+
+<div class="flex min-h-screen flex-col md:flex-row">
+
+  <!-- ===== Sidebar điều hướng chính ===== -->
+  <aside id="mainAside" class="flex shrink-0 items-center gap-1 overflow-x-auto border-b border-slate-200 bg-white px-3 py-2 md:sticky md:top-0 md:h-screen md:flex-col md:items-stretch md:overflow-y-auto md:border-b-0 md:border-r md:py-4 dark:border-slate-800 dark:bg-slate-900 scroll-thin">
+    <a class="mr-2 flex items-center gap-2 px-2 font-semibold md:mb-4 md:mr-0">
+      <span class="grid h-7 w-7 shrink-0 place-items-center rounded-md bg-indigo-600 text-sm text-white">CT</span>
+      <span class="nav-label hidden md:inline">Claude Task Board</span>
+    </a>
+    <div id="switcher" class="relative hidden md:mb-3 md:block"></div>
+    <div id="mainNav" class="flex gap-1 md:flex-col"></div>
+  </aside>
+
+  <!-- ===== Panel trái thứ hai (A, E) ===== -->
+  <aside id="sidePanel" class="hidden shrink-0 border-r border-slate-200 bg-white md:sticky md:top-0 md:flex md:h-screen md:flex-col dark:border-slate-800 dark:bg-slate-900/60"></aside>
+
+  <!-- ===== Nội dung Bảng công việc ===== -->
+  <main class="flex min-w-0 flex-1 flex-col p-4 md:p-6">
+    <div class="mb-3 md:hidden">
+      <label class="mb-1 block text-xs font-semibold text-slate-500">Project</label>
+      <select id="mobileSelect" class="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900"></select>
+    </div>
+
+    <div class="mb-4 flex flex-wrap items-center gap-2">
+      <h1 class="mr-1 text-lg font-semibold">Bảng công việc</h1>
+      <span id="crumb" class="mr-2 text-lg text-slate-400"></span>
+      <div class="relative">
+        <svg class="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+        <input id="q" class="w-56 rounded-md border border-slate-300 bg-white py-1.5 pl-8 pr-3 text-sm outline-none focus:border-indigo-500 dark:border-slate-700 dark:bg-slate-900" placeholder="Tìm theo tiêu đề, prompt, tag, #id" />
+      </div>
+      <div id="filterWrap" class="relative">
+        <button id="filterBtn" class="inline-flex items-center gap-1.5 rounded-md border border-slate-300 px-2.5 py-1.5 text-sm text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M7 12h10M10 18h4"/></svg> Bộ lọc
+        </button>
+        <div id="filterPop" class="absolute left-0 top-full z-30 mt-1 hidden w-80 space-y-4 rounded-lg border border-slate-200 bg-white p-3 shadow-lg dark:border-slate-700 dark:bg-slate-900">
+          <p id="popNote" class="rounded bg-indigo-50 px-2 py-1.5 text-[11px] text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300"></p>
+          <section>
+            <h2 class="mb-1.5 text-xs font-semibold text-slate-500">Độ ưu tiên</h2>
+            <div class="flex flex-wrap gap-1.5 text-xs">
+              <span class="rounded-full border border-slate-300 px-2.5 py-1 dark:border-slate-700">Cao</span>
+              <span class="rounded-full border border-slate-300 px-2.5 py-1 dark:border-slate-700">Trung bình</span>
+              <span class="rounded-full border border-slate-300 px-2.5 py-1 dark:border-slate-700">Thấp</span>
+            </div>
+          </section>
+          <section>
+            <h2 class="mb-1.5 text-xs font-semibold text-slate-500">Tag (cần có đủ)</h2>
+            <div class="flex flex-wrap gap-1.5 text-xs">
+              <span class="rounded-full border border-slate-300 px-2.5 py-1 dark:border-slate-700">ui</span>
+              <span class="rounded-full border border-slate-300 px-2.5 py-1 dark:border-slate-700">bug</span>
+              <span class="rounded-full border border-slate-300 px-2.5 py-1 dark:border-slate-700">api</span>
+            </div>
+          </section>
+          <label class="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300"><input type="checkbox" /> Hiện cả Done/Failed cũ hơn 24 giờ</label>
+        </div>
+      </div>
+      <span id="countInfo" class="text-xs text-slate-500"></span>
+    </div>
+
+    <div id="board" class="-mx-4 flex-1 overflow-x-auto px-4 pb-4 md:-mx-6 md:px-6 scroll-thin"></div>
+  </main>
+</div>
+
+<script>
+const PROJECTS = [
+  { id: 'ai',   name: 'AI-Interface',            repo: 'D:/Projects/AI Project/AI-Interface', color: 'bg-indigo-500' },
+  { id: 'exp',  name: 'Expanse-Declaration-03',  repo: 'D:/Projects/06-Expanse-Declaration',  color: 'bg-emerald-500' },
+  { id: 'crm',  name: 'crm-backend',             repo: 'D:/Work/crm-backend',                 color: 'bg-amber-500' },
+  { id: 'docs', name: 'internal-docs',           repo: 'D:/Work/internal-docs',               color: 'bg-rose-500' },
+  { id: 'mob',  name: 'mobile-app',              repo: 'D:/Work/mobile-app',                  color: 'bg-sky-500' },
+]
+const COLS = [
+  { id: 'backlog', label: 'Backlog', border: 'border-slate-400', hint: 'Việc chưa chạy hoặc đã Fail' },
+  { id: 'queued', label: 'Queued', border: 'border-sky-400', hint: 'Chờ tới lượt chạy' },
+  { id: 'running', label: 'Running', border: 'border-blue-500', hint: 'Claude đang làm' },
+  { id: 'needs_input', label: 'Needs input', border: 'border-amber-500', hint: 'Claude đang chờ bạn' },
+  { id: 'review', label: 'Review', border: 'border-violet-500', hint: 'Chờ bạn duyệt' },
+  { id: 'done', label: 'Done', border: 'border-emerald-500', hint: '' },
+]
+const PRIOS = [['high', 'Cao'], ['medium', 'Trung bình'], ['low', 'Thấp']]
+const TAGS = ['ui', 'bug', 'api', 'ba', 'docs']
+const TASKS = [
+  [51,'ai','backlog','Filter Project dạng sidebar trái','ui','high'],
+  [52,'ai','running','Thêm phím tắt mở nhanh task','ui','medium'],
+  [53,'ai','review','Sửa lỗi kéo thả khi WS reconnect','bug','high'],
+  [48,'ai','done','Merge readiness status','api','medium'],
+  [54,'exp','needs_input','Phân rã chức năng module Khai báo','ba','high'],
+  [55,'exp','queued','Viết SRS phần Tạm ứng','ba','medium'],
+  [56,'exp','review','Review BRD v2','ba','low'],
+  [57,'crm','backlog','Tối ưu query báo cáo doanh thu','api','high',true],
+  [58,'crm','queued','Thêm index cho bảng customers','api','low'],
+  [59,'crm','running','Migrate sang Postgres 17','api','medium'],
+  [60,'crm','done','Fix timezone export CSV','bug','low'],
+  [61,'docs','done','Cập nhật README onboarding','docs','low'],
+  [62,'mob','backlog','Màn hình đăng nhập sinh trắc học','ui','medium'],
+  [63,'mob','backlog','Dark mode cho màn Settings','ui','low'],
+  [64,'mob','review','Push notification Android 15','bug','high'],
+].map(([id,p,st,title,tag,prio,failed]) => ({ id, p, st, title, tag, prio, failed }))
+
+const NOTES = {
+  A: 'A — Cột Project riêng (240px) giữa sidebar chính và bảng. Có tìm kiếm, ghim, thu gọn thành dải icon (nút ‹).',
+  B: 'B — Danh sách project lồng ngay dưới mục "Bảng công việc" trong sidebar chính. Không tốn thêm chiều ngang. Thử "Thu/mở sidebar chính" để xem bản thu gọn.',
+  C: 'C — Không lọc mà NHÓM: mỗi project là một làn ngang, tên project nằm cố định bên trái làn. Bấm tên để thu/mở làn. Popover Bộ lọc vẫn giữ Project.',
+  D: 'D — Một nút chuyển project kiểu "workspace switcher" ở đầu sidebar chính. Gọn nhất nhưng danh sách project bị ẩn sau 1 cú bấm.',
+  E: 'E — Bỏ popover "Bộ lọc": toàn bộ bộ lọc chuyển thành panel trái (Project đa chọn, Ưu tiên, Tag). Rê chuột lên project → "chỉ" để chọn riêng project đó.',
+}
+
+const state = {
+  variant: 'A', project: null, pq: '', q: '', collapsed: false, navCollapsed: false, pinned: ['ai', 'exp'],
+  switcherOpen: false, lanesClosed: new Set(), sel: new Set(), prio: new Set(), tags: new Set(),
+}
+const $ = (s) => document.querySelector(s)
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' })[c])
+const proj = (id) => PROJECTS.find((p) => p.id === id)
+const isE = () => state.variant === 'E'
+
+/** Task khớp bộ lọc hiện tại (không tính ô tìm kiếm) */
+function matchFilter(t, ignoreProject = false) {
+  if (isE()) {
+    if (!ignoreProject && state.sel.size && !state.sel.has(t.p)) return false
+    if (state.prio.size && !state.prio.has(t.prio)) return false
+    if (state.tags.size && !state.tags.has(t.tag)) return false
+    return true
+  }
+  if (state.variant === 'C') return true
+  return ignoreProject || !state.project || t.p === state.project
+}
+const ofProject = (pid) => TASKS.filter((t) => (!pid || t.p === pid))
+const attention = (pid) => ofProject(pid).filter((t) => t.st === 'review' || t.st === 'needs_input').length
+const active = (pid) => ofProject(pid).filter((t) => t.st !== 'done').length
+
+const I = (d, s = 18) => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`
+const icon = {
+  board: I('<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M8 7v7M12 7v4M16 7v9"/>'),
+  inbox: I('<path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>'),
+  folder: I('<path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>'),
+  chart: I('<path d="M3 3v18h18M18 17V9M13 17V5M8 17v-3"/>'),
+  gear: I('<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/>'),
+  chevL: I('<path d="m15 18-6-6 6-6"/>', 16),
+  chevR: I('<path d="m9 18 6-6-6-6"/>', 16),
+  chevD: I('<path d="m6 9 6 6 6-6"/>', 16),
+  updown: I('<path d="m7 15 5 5 5-5M7 9l5-5 5 5"/>', 14),
+  plus: I('<path d="M12 5v14M5 12h14"/>', 14),
+  all: I('<rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/>', 14),
+}
+
+const navItem = (ic, label, on, extra = '') => {
+  const c = state.navCollapsed
+  return `<a title="${label}" class="relative flex cursor-pointer items-center gap-2.5 whitespace-nowrap rounded-md px-2.5 py-2 text-sm ${c ? 'md:justify-center' : ''} ${on ? 'bg-indigo-50 font-medium text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300' : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800'}">${ic}<span class="${c ? 'md:hidden' : ''}">${label}</span>${extra}</a>`
+}
+
+const dot = (p, size = 'h-2.5 w-2.5') => `<span class="${size} shrink-0 rounded-full ${p.color}"></span>`
+const attBadge = (n) => n ? `<span class="rounded-full bg-violet-500 px-1.5 text-[11px] font-semibold text-white" title="Cần xử lý (Review + Needs input)">${n}</span>` : ''
+
+/** Dòng project dùng chung cho A, B, D */
+function projectRow(p, { indent = false } = {}) {
+  const on = state.project === (p ? p.id : null)
+  const name = p ? p.name : 'Tất cả project'
+  const lead = p ? dot(p) : `<span class="text-slate-400">${icon.all}</span>`
+  return `<button data-p="${p ? p.id : ''}" title="${p ? esc(p.repo) : ''}"
+    class="flex w-full items-center gap-2 rounded-md ${indent ? 'py-1.5 pl-9 pr-2' : 'px-2.5 py-1.5'} text-left text-sm ${on ? 'bg-indigo-50 font-medium text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300' : 'text-slate-700 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800'}">
+    ${lead}<span class="min-w-0 flex-1 truncate">${esc(name)}</span>
+    ${attBadge(attention(p?.id))}
+    <span class="w-5 text-right text-xs tabular-nums text-slate-400" title="Task đang mở">${active(p?.id)}</span>
+  </button>`
+}
+
+/** Ô vuông viết tắt (dùng khi thu gọn A, B) */
+function projectTile(p) {
+  const on = state.project === (p ? p.id : null)
+  const name = p ? p.name : 'Tất cả project'
+  const att = attention(p?.id)
+  return `<button data-p="${p ? p.id : ''}" title="${esc(name)} — ${active(p?.id)} đang mở${att ? `, ${att} cần xử lý` : ''}"
+    class="relative mx-auto grid h-8 w-8 shrink-0 place-items-center rounded-md text-[11px] font-semibold ${on ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300'}">
+    ${p ? esc(p.name.slice(0, 2).toUpperCase()) : '∗'}
+    ${p ? `<span class="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full ring-2 ring-white dark:ring-slate-900 ${p.color}"></span>` : ''}
+    ${att ? `<span class="absolute -right-1.5 -top-1.5 grid h-4 min-w-4 place-items-center rounded-full bg-violet-500 px-1 text-[10px] text-white">${att}</span>` : ''}
+  </button>`
+}
+
+const pinnedGroups = (list, rowFn) => {
+  const pinned = list.filter((p) => state.pinned.includes(p.id))
+  const rest = list.filter((p) => !state.pinned.includes(p.id))
+  const g = (title, arr) => arr.length ? `<h3 class="mb-1 mt-3 px-2.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">${title}</h3>${arr.map(rowFn).join('')}` : ''
+  return g('Đã ghim', pinned) + g(pinned.length ? 'Khác' : 'Tất cả', rest)
+}
+
+/* ---------- Sidebar chính ---------- */
+function renderNav() {
+  const aside = $('#mainAside')
+  aside.classList.toggle('md:w-56', !state.navCollapsed)
+  aside.classList.toggle('md:w-16', state.navCollapsed)
+  aside.classList.toggle('md:px-3', !state.navCollapsed)
+  aside.classList.toggle('md:px-2', state.navCollapsed)
+  document.querySelectorAll('.nav-label').forEach((n) => n.classList.toggle('md:inline', !state.navCollapsed))
+
+  let html = navItem(icon.board, 'Bảng công việc', true)
+  if (state.variant === 'B') {
+    html += state.navCollapsed
+      ? `<div class="hidden flex-col items-center gap-2 py-1 md:flex">${projectTile(null)}${PROJECTS.map(projectTile).join('')}</div>`
+      : `<div class="hidden md:block">${projectRow(null, { indent: true })}${PROJECTS.map((p) => projectRow(p, { indent: true })).join('')}
+         <a class="flex cursor-pointer items-center gap-1.5 py-1 pl-9 text-xs text-slate-400 hover:text-slate-600">${icon.plus} Thêm project</a></div>`
+  }
+  const att = attention(null)
+  html += navItem(icon.inbox, 'Cần xử lý', false, att ? `<span class="${state.navCollapsed ? 'absolute right-0.5 top-0.5' : 'ml-auto'} rounded-full bg-violet-500 px-1.5 text-[11px] font-semibold text-white">${att}</span>` : '')
+  html += navItem(icon.folder, 'Projects', false)
+  html += navItem(icon.chart, 'Thống kê', false)
+  html += navItem(icon.gear, 'Cài đặt', false)
+  $('#mainNav').innerHTML = html
+  renderSwitcher()
+}
+
+/* ---------- D: switcher ---------- */
+function renderSwitcher() {
+  const el = $('#switcher')
+  if (state.variant !== 'D') { el.innerHTML = ''; el.classList.add('md:hidden'); return }
+  el.classList.remove('md:hidden')
+  const p = state.project && proj(state.project)
+  const c = state.navCollapsed
+  const btn = c
+    ? `<button id="swBtn" class="mx-auto block">${projectTile(p || null).replace(/data-p="[^"]*"/, '')}</button>`
+    : `<button id="swBtn" class="flex w-full items-center gap-2 rounded-md border border-slate-200 px-2.5 py-2 text-left text-sm hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800">
+        ${p ? dot(p) : `<span class="text-slate-400">${icon.all}</span>`}
+        <span class="min-w-0 flex-1"><span class="block text-[10px] uppercase tracking-wide text-slate-400">Project</span><span class="block truncate font-medium">${p ? esc(p.name) : 'Tất cả project'}</span></span>
+        ${attBadge(attention(p?.id))}<span class="text-slate-400">${icon.updown}</span></button>`
+  const q = state.pq.toLowerCase()
+  const list = PROJECTS.filter((x) => x.name.toLowerCase().includes(q))
+  const menu = state.switcherOpen ? `
+    <div class="absolute left-0 top-full z-40 mt-1 w-72 rounded-lg border border-slate-200 bg-white p-2 shadow-xl dark:border-slate-700 dark:bg-slate-900">
+      <input id="pq" value="${esc(state.pq)}" placeholder="Tìm project… (Ctrl+P)" class="mb-1 w-full rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-sm outline-none focus:border-indigo-500 dark:border-slate-700 dark:bg-slate-900" />
+      <div class="max-h-80 overflow-y-auto scroll-thin">${q ? '' : projectRow(null)}${pinnedGroups(list, (x) => projectRow(x))}</div>
+      <a class="mt-1 flex cursor-pointer items-center gap-1.5 border-t border-slate-200 px-2.5 pt-2 text-xs text-slate-500 dark:border-slate-700">${icon.plus} Thêm project</a>
+    </div>` : ''
+  el.innerHTML = btn + menu
+  bindSearch()
+}
+
+/* ---------- Panel trái thứ hai: A, E ---------- */
+function renderPanel() {
+  const el = $('#sidePanel')
+  if (state.variant === 'A') return renderPanelA(el)
+  if (state.variant === 'E') return renderPanelE(el)
+  el.classList.add('md:hidden'); el.innerHTML = ''
+}
+
+function renderPanelA(el) {
+  el.classList.remove('md:hidden')
+  el.style.width = state.collapsed ? '56px' : '240px'
+  if (state.collapsed) {
+    el.innerHTML = `<div class="flex flex-col items-center gap-2 py-4">
+      <button data-collapse class="rounded p-1 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800" title="Mở rộng panel Project">${icon.chevR}</button>
+      ${projectTile(null)}<div class="my-1 h-px w-6 bg-slate-200 dark:bg-slate-700"></div>${PROJECTS.map(projectTile).join('')}</div>`
+    return
+  }
+  const q = state.pq.toLowerCase()
+  const list = PROJECTS.filter((p) => p.name.toLowerCase().includes(q))
+  el.innerHTML = `
+    <div class="flex items-center gap-2 px-3 pb-2 pt-4">
+      <span class="text-sm font-semibold">Project</span><span class="text-xs text-slate-400">${PROJECTS.length}</span>
+      <button data-collapse class="ml-auto rounded p-1 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800" title="Thu gọn panel">${icon.chevL}</button>
+    </div>
+    <div class="px-3 pb-2"><input id="pq" value="${esc(state.pq)}" placeholder="Tìm project…" class="w-full rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-sm outline-none focus:border-indigo-500 dark:border-slate-700 dark:bg-slate-900" /></div>
+    <div class="flex-1 overflow-y-auto px-2 pb-2 scroll-thin">
+      ${q ? '' : projectRow(null)}${pinnedGroups(list, (p) => projectRow(p))}
+      ${list.length === 0 ? '<p class="px-2.5 py-4 text-center text-xs text-slate-400">Không thấy project</p>' : ''}
+    </div>
+    <div class="border-t border-slate-200 p-2 dark:border-slate-800">
+      <a class="flex cursor-pointer items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800">${icon.plus} Thêm project</a>
+    </div>`
+  bindSearch()
+}
+
+function renderPanelE(el) {
+  el.classList.remove('md:hidden')
+  el.style.width = '256px'
+  const cnt = (pred) => TASKS.filter((t) => pred(t)).length
+  const box = (on) => `<span class="grid h-4 w-4 shrink-0 place-items-center rounded border ${on ? 'border-indigo-600 bg-indigo-600 text-white' : 'border-slate-300 dark:border-slate-600'}">${on ? I('<path d="M20 6 9 17l-5-5"/>', 11) : ''}</span>`
+  const row = (attr, on, lead, label, n, extra = '') => `<div class="group flex items-center">
+      <button ${attr} class="flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-slate-100 dark:hover:bg-slate-800">${box(on)}${lead}<span class="min-w-0 flex-1 truncate ${on ? 'font-medium' : ''}">${label}</span>
+      <span class="text-xs tabular-nums text-slate-400 group-hover:hidden">${n}</span></button>${extra}</div>`
+  const sec = (title, key, body) => {
+    const n = key === 'sel' ? state.sel.size : state[key].size
+    return `<section class="border-b border-slate-200 px-2 py-3 dark:border-slate-800">
+      <div class="mb-1 flex items-center px-2"><h3 class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">${title}</h3>
+      ${n ? `<button data-clear="${key}" class="ml-auto text-[11px] text-indigo-600 hover:underline dark:text-indigo-300">Bỏ chọn (${n})</button>` : ''}</div>${body}</section>`
+  }
+  const projRows = PROJECTS.map((p) => row(`data-sel="${p.id}"`, state.sel.has(p.id), dot(p), esc(p.name),
+    `${attBadge(attention(p.id))} ${cnt((t) => t.p === p.id && matchFilter(t, true))}`,
+    `<button data-only="${p.id}" class="hidden shrink-0 rounded px-1.5 py-0.5 text-[11px] text-indigo-600 hover:bg-indigo-50 group-hover:block dark:text-indigo-300 dark:hover:bg-indigo-950">chỉ</button>`)).join('')
+  const prioRows = PRIOS.map(([k, l]) => row(`data-prio="${k}"`, state.prio.has(k), '', l, cnt((t) => t.prio === k))).join('')
+  const tagRows = TAGS.map((k) => row(`data-tag="${k}"`, state.tags.has(k), '', esc(k), cnt((t) => t.tag === k))).join('')
+  const any = state.sel.size + state.prio.size + state.tags.size
+  el.innerHTML = `
+    <div class="flex items-center gap-2 px-4 pb-2 pt-4">
+      <span class="text-sm font-semibold">Bộ lọc</span>
+      ${any ? `<span class="rounded-full bg-indigo-600 px-1.5 text-xs font-medium text-white">${any}</span><button data-clear="all" class="ml-auto text-xs text-slate-500 hover:underline">Đặt lại</button>` : ''}
+    </div>
+    <div class="flex-1 overflow-y-auto scroll-thin">
+      ${sec('Project', 'sel', projRows)}
+      ${sec('Độ ưu tiên', 'prio', prioRows)}
+      ${sec('Tag', 'tags', tagRows)}
+      <label class="flex items-center gap-2 px-4 py-3 text-xs text-slate-600 dark:text-slate-300"><input type="checkbox" /> Hiện cả Done/Failed cũ hơn 24 giờ</label>
+    </div>`
+}
+
+function bindSearch() {
+  const pq = $('#pq')
+  if (!pq) return
+  pq.oninput = (e) => {
+    state.pq = e.target.value
+    state.variant === 'D' ? renderSwitcher() : renderPanel()
+    const n = $('#pq'); n.focus(); n.setSelectionRange(n.value.length, n.value.length)
+  }
+}
+
+function renderMobile() {
+  $('#mobileSelect').innerHTML = `<option value="">Tất cả project (${active(null)})</option>` +
+    PROJECTS.map((p) => `<option value="${p.id}" ${state.project === p.id ? 'selected' : ''}>${esc(p.name)} (${active(p.id)})</option>`).join('')
+}
+
+/* ---------- Bảng ---------- */
+function visibleTasks() {
+  const q = state.q.toLowerCase()
+  return TASKS.filter((t) => matchFilter(t) && (!q || t.title.toLowerCase().includes(q) || `#${t.id}`.includes(q) || t.tag.includes(q)))
+}
+
+function renderHeader(list) {
+  const v = state.variant
+  let crumb = ''
+  if (isE()) {
+    if (state.sel.size === 1) { const p = proj([...state.sel][0]); crumb = `/ <span class="inline-flex items-center gap-1.5 text-slate-700 dark:text-slate-200">${dot(p)}${esc(p.name)}</span>` }
+    else if (state.sel.size > 1) crumb = `/ <span class="text-slate-700 dark:text-slate-200">${state.sel.size} project</span>`
+  } else if (v !== 'C' && state.project) {
+    const p = proj(state.project); crumb = `/ <span class="inline-flex items-center gap-1.5 text-slate-700 dark:text-slate-200">${dot(p)}${esc(p.name)}</span>`
+  }
+  $('#crumb').innerHTML = crumb
+  $('#filterWrap').style.display = isE() ? 'none' : ''
+  $('#popNote').innerHTML = v === 'C'
+    ? 'Phương án C vẫn giữ mục <b>Project</b> trong popover (để ẩn bớt làn).'
+    : 'Mục <b>Project</b> đã chuyển ra bên trái — popover chỉ còn Độ ưu tiên, Tag, Done/Failed cũ.'
+  $('#countInfo').textContent = `${list.length}/${TASKS.length} task`
+}
+
+function colHeader(c, n) {
+  const cnt = c.id === 'review' && n ? 'bg-violet-500 font-semibold text-white' : 'bg-white text-slate-500 dark:bg-slate-800 dark:text-slate-400'
+  return `<div class="flex items-center gap-2 px-3 pb-1 pt-2.5"><span class="text-sm font-semibold">${c.label}</span><span class="rounded-full px-1.5 text-xs ${cnt}">${n}</span>
+    ${c.id === 'backlog' ? `<button class="ml-auto rounded p-0.5 text-slate-400 hover:bg-white dark:hover:bg-slate-800" title="Thêm task">${icon.plus}</button>` : ''}</div>`
+}
+
+function renderBoard() {
+  const list = visibleTasks()
+  renderHeader(list)
+  const showProjectOnCard = state.variant === 'C' ? false : isE() ? state.sel.size !== 1 : !state.project
+  if (state.variant === 'C') return renderLanes(list)
+  $('#board').innerHTML = `<div class="flex h-full gap-3">${COLS.map((c) => {
+    const items = list.filter((t) => t.st === c.id)
+    return `<section class="flex w-72 shrink-0 flex-col rounded-lg border-t-4 bg-slate-100/70 dark:bg-slate-900/50 ${c.border}">
+      ${colHeader(c, items.length)}
+      ${c.hint ? `<p class="px-3 pb-2 text-[11px] text-slate-500 dark:text-slate-400">${c.hint}</p>` : ''}
+      <div class="flex flex-1 flex-col gap-2 px-2 pb-2">${items.map((t) => card(t, showProjectOnCard)).join('') || '<p class="py-6 text-center text-xs text-slate-400">Trống</p>'}</div>
+    </section>`
+  }).join('')}</div>`
+}
+
+/* ---------- C: swimlane ---------- */
+function renderLanes(list) {
+  const lanes = PROJECTS.filter((p) => list.some((t) => t.p === p.id))
+  const head = `<div class="sticky top-0 z-10 flex gap-3 bg-slate-50 pb-2 dark:bg-slate-950">${COLS.map((c) =>
+    `<div class="w-72 shrink-0 rounded-lg border-t-4 bg-slate-100/70 dark:bg-slate-900/50 ${c.border}">${colHeader(c, list.filter((t) => t.st === c.id).length)}</div>`).join('')}</div>`
+  const lane = (p) => {
+    const items = list.filter((t) => t.p === p.id)
+    const closed = state.lanesClosed.has(p.id)
+    const bar = `<button data-lane="${p.id}" class="sticky left-0 flex items-center gap-2 rounded-md px-2 py-1.5 text-sm font-semibold hover:bg-slate-100 dark:hover:bg-slate-800">
+      <span class="text-slate-400 transition ${closed ? '-rotate-90' : ''}">${icon.chevD}</span>${dot(p)}${esc(p.name)}
+      <span class="text-xs font-normal text-slate-400">${items.length} task</span>${attBadge(attention(p.id))}</button>`
+    if (closed) return `<div class="border-b border-slate-200 py-1 dark:border-slate-800">${bar}</div>`
+    return `<div class="border-b border-slate-200 py-2 dark:border-slate-800">${bar}
+      <div class="mt-1 flex gap-3">${COLS.map((c) => {
+        const cell = items.filter((t) => t.st === c.id)
+        return `<div class="flex min-h-[3rem] w-72 shrink-0 flex-col gap-2 rounded-lg bg-slate-100/70 p-2 dark:bg-slate-900/50">${cell.map((t) => card(t, false)).join('') || '<p class="py-2 text-center text-[11px] text-slate-300 dark:text-slate-600">—</p>'}</div>`
+      }).join('')}</div></div>`
+  }
+  $('#board').innerHTML = `<div class="min-w-max">${head}${lanes.map(lane).join('') || '<p class="py-10 text-center text-sm text-slate-400">Không có task</p>'}</div>`
+}
+
+function card(t, showProject) {
+  const p = proj(t.p)
+  const pr = { high: 'text-rose-600', medium: 'text-amber-600', low: 'text-slate-400' }[t.prio]
+  return `<article class="rounded-md border border-slate-200 bg-white p-2.5 text-sm shadow-sm dark:border-slate-700 dark:bg-slate-900">
+    <div class="mb-1 flex items-center gap-1.5 text-[11px] text-slate-400">#${t.id}
+      ${showProject ? `<span class="inline-flex items-center gap-1 rounded bg-slate-100 px-1.5 py-0.5 text-slate-600 dark:bg-slate-800 dark:text-slate-300">${dot(p, 'h-1.5 w-1.5')}${esc(p.name)}</span>` : ''}
+      ${t.failed ? '<span class="ml-auto rounded bg-rose-100 px-1.5 py-0.5 font-semibold text-rose-700 dark:bg-rose-950 dark:text-rose-300">Fail</span>' : ''}
+    </div>
+    <p class="font-medium leading-snug">${esc(t.title)}</p>
+    <div class="mt-1.5 flex items-center gap-2 text-[11px]"><span class="rounded bg-slate-100 px-1.5 py-0.5 text-slate-500 dark:bg-slate-800">${t.tag}</span><span class="${pr}">● ${PRIOS.find(([k]) => k === t.prio)[1]}</span></div>
+  </article>`
+}
+
+function render() {
+  document.querySelectorAll('.variant-btn').forEach((b) => {
+    const on = b.dataset.variant === state.variant
+    b.className = `variant-btn rounded border px-2 py-0.5 ${on ? 'border-amber-600 bg-amber-600 text-white' : 'border-amber-400'}`
+  })
+  $('#variantNote').textContent = NOTES[state.variant]
+  renderNav(); renderPanel(); renderMobile(); renderBoard()
+}
+
+const toggleSet = (s, v) => (s.has(v) ? s.delete(v) : s.add(v))
+document.addEventListener('click', (e) => {
+  const at = (sel) => e.target.closest(sel)
+  let el
+  if ((el = at('.variant-btn'))) { state.variant = el.dataset.variant; state.switcherOpen = false; state.pq = ''; return render() }
+  if (at('#swBtn')) { state.switcherOpen = !state.switcherOpen; state.pq = ''; renderSwitcher(); $('#pq')?.focus(); return }
+  if ((el = at('[data-p]'))) { state.project = el.dataset.p || null; state.switcherOpen = false; return render() }
+  if (at('[data-collapse]')) { state.collapsed = !state.collapsed; return render() }
+  if ((el = at('[data-lane]'))) { toggleSet(state.lanesClosed, el.dataset.lane); return renderBoard() }
+  if ((el = at('[data-only]'))) { state.sel = new Set([el.dataset.only]); return render() }
+  if ((el = at('[data-sel]'))) { toggleSet(state.sel, el.dataset.sel); return render() }
+  if ((el = at('[data-prio]'))) { toggleSet(state.prio, el.dataset.prio); return render() }
+  if ((el = at('[data-tag]'))) { toggleSet(state.tags, el.dataset.tag); return render() }
+  if ((el = at('[data-clear]'))) {
+    const k = el.dataset.clear
+    if (k === 'all') { state.sel.clear(); state.prio.clear(); state.tags.clear() } else state[k].clear()
+    return render()
+  }
+  if (at('#filterBtn')) { $('#filterPop').classList.toggle('hidden'); return }
+  if (!at('#filterPop')) $('#filterPop').classList.add('hidden')
+  if (state.switcherOpen && !at('#switcher')) { state.switcherOpen = false; renderSwitcher() }
+})
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && state.switcherOpen) { state.switcherOpen = false; renderSwitcher() }
+  if (e.ctrlKey && e.key.toLowerCase() === 'p' && state.variant === 'D') { e.preventDefault(); state.switcherOpen = true; renderSwitcher(); $('#pq')?.focus() }
+})
+$('#mobileSelect').onchange = (e) => {
+  const v = e.target.value || null
+  if (isE()) state.sel = v ? new Set([v]) : new Set(); else state.project = v
+  render()
+}
+$('#q').oninput = (e) => { state.q = e.target.value; renderBoard() }
+$('#toggleNav').onclick = () => { state.navCollapsed = !state.navCollapsed; render() }
+$('#toggleDark').onclick = () => document.documentElement.classList.toggle('dark')
+render()
+</script>
+</body>
+</html>

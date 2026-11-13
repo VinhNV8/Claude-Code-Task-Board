@@ -3,6 +3,27 @@ import type { DiffHunk, DiffLine, FileDiff } from '../types.ts'
 
 const HUNK_RE = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/
 
+/** Đuôi file ảnh xem trước được khi review → MIME type trả về từ server. */
+export const IMAGE_MIME: Record<string, string> = {
+  png: 'image/png',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  gif: 'image/gif',
+  webp: 'image/webp',
+  avif: 'image/avif',
+  bmp: 'image/bmp',
+  ico: 'image/x-icon',
+  svg: 'image/svg+xml',
+}
+
+/** MIME của file ảnh theo đuôi; không phải ảnh thì undefined. */
+export function imageMime(path: string): string | undefined {
+  const m = /\.([a-z0-9]+)$/i.exec(path)
+  return m ? IMAGE_MIME[m[1].toLowerCase()] : undefined
+}
+
+export const isImagePath = (path: string) => imageMime(path) !== undefined
+
 /**
  * Parse phần hunk của patch (1 file) thành cấu trúc hiển thị.
  * Dựa vào số dòng trong header `@@` để biết hunk kết thúc ở đâu, nên dòng trống cuối patch
@@ -124,13 +145,15 @@ export function parseGitDiff(text: string): FileDiff[] {
     let minus: string | null | undefined
     let plus: string | null | undefined
     let bodyStart = lines.length
+    let binary = false
     for (let i = 1; i < lines.length; i++) {
       const l = lines[i].replace(/\r$/, '')
       if (l.startsWith('@@ ')) {
         bodyStart = i
         break
       }
-      if (l.startsWith('new file mode')) status = 'added'
+      if (l.startsWith('Binary files ') || l === 'GIT binary patch') binary = true
+      else if (l.startsWith('new file mode')) status = 'added'
       else if (l.startsWith('deleted file mode')) status = 'deleted'
       else if (l.startsWith('rename from ')) oldPath = unquoteGitPath(l.slice('rename from '.length))
       else if (l.startsWith('rename to ')) path = unquoteGitPath(l.slice('rename to '.length))
@@ -145,6 +168,7 @@ export function parseGitDiff(text: string): FileDiff[] {
 
     const fd = parsePatch(path, status, lines.slice(bodyStart).join('\n'))
     if (oldPath && oldPath !== path) fd.oldPath = oldPath
+    if (binary) fd.binary = true
     files.push(fd)
   }
   return files

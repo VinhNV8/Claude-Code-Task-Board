@@ -13,10 +13,11 @@ import {
   monthStart,
   nextMonthStart,
   projectSpend,
+  runCap,
 } from './budget.ts'
 import { setBudgetLevelSource } from './escalation.ts'
 import { TelegramError, sendTelegram, type TelegramConfig } from './telegram.ts'
-import type { ProjectBudget, Task } from './types.ts'
+import type { BudgetAction, ProjectBudget, Task } from './types.ts'
 
 /** Phụ thuộc có thể thay trong test (đồng hồ, múi giờ, gửi Telegram, log). */
 export const budgetDeps = {
@@ -51,8 +52,23 @@ export function getBudgets(): Record<string, ProjectBudget> {
   return cache!.budgets
 }
 
+/**
+ * Chế độ API key: chi phí là tiền thật nên budget là giới hạn cứng, vượt budget luôn tạm dừng project
+ * (bỏ qua lựa chọn "chỉ cảnh báo"). Chế độ gói: theo budgetAction của project như cũ.
+ */
+export const hardBudget = () => settings.get().auth.mode === 'apiKey'
+const actionOf = (action: BudgetAction | undefined): BudgetAction | undefined => (hardBudget() ? 'pause' : action)
+
 const blockedOf = (budgets: Record<string, ProjectBudget>, projectId: string) =>
-  isBudgetBlocked(projects.get(projectId)?.budgetAction, budgets[projectId]?.level)
+  isBudgetBlocked(actionOf(projects.get(projectId)?.budgetAction), budgets[projectId]?.level)
+
+/**
+ * Trần chi phí (`--max-budget-usd`) cho một lần chạy: giới hạn của task, và ở chế độ API key thêm
+ * phần budget tháng còn lại của project. undefined = không giới hạn.
+ */
+export function runBudgetCap(projectId: string, taskMax?: number): number | undefined {
+  return runCap(taskMax, hardBudget() ? getBudgets()[projectId] : undefined)
+}
 
 /** B3: project đang bị tạm dừng chạy task mới (pause + vượt budget). */
 export function isProjectBlocked(projectId: string): boolean {
@@ -76,7 +92,7 @@ export function withBlockedReason(t: Task): Task {
 /** Thời điểm hết bị chặn (đầu tháng sau), undefined nếu không có project nào đang bị chặn. */
 export function budgetWakeAt(): number | undefined {
   const budgets = getBudgets()
-  if (!projects.all().some((p) => isBudgetBlocked(p.budgetAction, budgets[p.id]?.level))) return undefined
+  if (!projects.all().some((p) => isBudgetBlocked(actionOf(p.budgetAction), budgets[p.id]?.level))) return undefined
   const now = budgetDeps.now()
   return nextMonthStart(now, budgetDeps.tzOffsetMin(now))
 }
@@ -95,7 +111,7 @@ export function refreshBudgets(): Record<string, ProjectBudget> {
   for (const p of projects.all()) {
     const b = budgets[p.id]
     if (!b) continue
-    sendAlertIfNeeded(p.id, p.name, p.budgetAction, b)
+    sendAlertIfNeeded(p.id, p.name, actionOf(p.budgetAction) ?? 'warn', b)
     // Task Queued của project vừa bị chặn / hết bị chặn: gửi lại để web thấy blockedReason.
     const was = prev ? blockedOf(prev.budgets, p.id) : false
     if (was !== blockedOf(budgets, p.id))

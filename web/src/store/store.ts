@@ -26,6 +26,7 @@ import type {
   TaskStatus,
   TestOutput,
   TelegramSettingsInput,
+  ClaudeAuthInput,
   TestRun,
   Toast,
 } from '../types'
@@ -85,6 +86,7 @@ let state: State = {
     defaultModel: 'auto',
     autoEscalate: true,
     telegram: { enabled: false, chatId: '', appUrl: '', hasToken: false },
+    auth: { mode: 'subscription', hasApiKey: false, envApiKey: false },
   },
   demo: { speed: 1, mergeConflict: false, dirtyMainRepo: false, nextRunFails: false, nextRunAsksPermission: false },
   nextTaskId: 0,
@@ -733,6 +735,27 @@ export async function saveTelegram(input: TelegramSettingsInput): Promise<string
 export async function testTelegram(input: TelegramSettingsInput): Promise<string | null> {
   try {
     await api('POST', '/settings/telegram/test', { botToken: input.botToken || undefined, chatId: input.chatId, appUrl: input.appUrl })
+    return null
+  } catch (e) {
+    return (e as Error).message
+  }
+}
+
+/** Lưu chế độ xác thực Claude / API key. Trả về thông báo lỗi hoặc null khi thành công. */
+export async function saveClaudeAuth(input: ClaudeAuthInput): Promise<string | null> {
+  try {
+    const saved = await api<Settings>('PUT', '/settings', { auth: input })
+    set(() => ({ settings: saved }))
+    return null
+  } catch (e) {
+    return (e as Error).message
+  }
+}
+
+/** Kiểm tra API key đang nhập (bỏ trống thì kiểm tra key đang dùng). Không tốn phí. */
+export async function testClaudeAuth(apiKey?: string): Promise<string | null> {
+  try {
+    await api('POST', '/settings/claude-auth/test', { apiKey: apiKey || undefined })
     return null
   } catch (e) {
     return (e as Error).message

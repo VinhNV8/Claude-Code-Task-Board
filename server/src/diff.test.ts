@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { parseGitDiff, parsePatch, unquoteGitPath } from '../../web/src/lib/diff.ts'
+import { imageMime, isImagePath, parseGitDiff, parsePatch, unquoteGitPath } from '../../web/src/lib/diff.ts'
 
 // Patch mẫu dạng output của `git diff --no-color --no-ext-diff -M main...claude/task-1`
 const SAMPLE = `diff --git a/src/new.ts b/src/new.ts
@@ -107,6 +107,20 @@ test('parseGitDiff: thêm, sửa, xoá, đổi tên, nhị phân, tên file có 
   ])
   assert.deepEqual(files[4].hunks, [])
   assert.deepEqual(files[5].hunks, [])
+  // Đánh dấu nhị phân để giao diện xem trước ảnh thay vì diff trống
+  assert.equal(files[5].binary, true)
+  assert.equal(files[4].binary, undefined, 'đổi tên thuần không phải nhị phân')
+  assert.equal(files[1].binary, undefined)
+})
+
+test('imageMime / isImagePath: theo đuôi file, không phân biệt hoa thường', () => {
+  assert.equal(imageMime('a/logo.PNG'), 'image/png')
+  assert.equal(imageMime('icon.svg'), 'image/svg+xml')
+  assert.equal(imageMime('photo.jpeg'), 'image/jpeg')
+  assert.equal(imageMime('README.md'), undefined)
+  assert.equal(imageMime('svg'), undefined)
+  assert.equal(isImagePath('x.webp'), true)
+  assert.equal(isImagePath('x.ts'), false)
 })
 
 test('parseGitDiff: chuỗi rỗng → [] và chịu được CRLF', () => {

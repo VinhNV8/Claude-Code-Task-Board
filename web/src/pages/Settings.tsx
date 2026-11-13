@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
-import { Bell, CalendarClock, Cpu, FileText, Info, Timer } from 'lucide-react'
-import { IS_MOCK, notify, saveTelegram, testTelegram, toast, updateSettings, useStore } from '../store/store'
+import { Bell, CalendarClock, Cpu, FileText, Info, KeyRound, Timer } from 'lucide-react'
+import { IS_MOCK, notify, saveClaudeAuth, saveTelegram, testClaudeAuth, testTelegram, toast, updateSettings, useStore } from '../store/store'
+import type { ClaudeAuthMode } from '../types'
 import { MODEL_OPTIONS } from '../lib/model'
 import { Button, Field, inputCls } from '../components/ui'
 import { TemplateManager } from '../components/TemplateManager'
@@ -93,6 +94,108 @@ function TelegramSettings() {
   )
 }
 
+const AUTH_OPTIONS: { value: ClaudeAuthMode; label: string; hint: string }[] = [
+  {
+    value: 'subscription',
+    label: 'Đăng nhập Claude Code (gói Pro/Max)',
+    hint: 'Dùng phiên đăng nhập Claude Code trên máy này. Chi phí nằm trong gói, có hạn mức theo 5 giờ và theo tuần. Chỉ dành cho cá nhân tự dùng, không dùng để phục vụ người khác.',
+  },
+  {
+    value: 'apiKey',
+    label: 'API key (trả theo token)',
+    hint: 'Tính tiền theo token vào tài khoản Claude Console, riêng với gói Pro/Max. Budget tháng của project trở thành giới hạn cứng: hết budget là dừng.',
+  },
+]
+
+/** Xác thực Claude: chọn chế độ, nhập API key. Key chỉ gửi lên, không bao giờ đọc lại từ backend. */
+function ClaudeAuthSettings() {
+  const { auth } = useStore().settings
+  const [mode, setMode] = useState<ClaudeAuthMode>(auth.mode)
+  const [apiKey, setApiKey] = useState('')
+  const [busy, setBusy] = useState<'save' | 'test' | 'clear' | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  useEffect(() => setMode(auth.mode), [auth.mode])
+
+  const hasKey = auth.hasApiKey || auth.envApiKey
+  const missingKey = mode === 'apiKey' && !apiKey.trim() && !hasKey
+  const dirty = mode !== auth.mode || !!apiKey.trim()
+
+  async function run(kind: 'save' | 'test' | 'clear') {
+    setBusy(kind)
+    setError(null)
+    const err =
+      kind === 'test'
+        ? await testClaudeAuth(apiKey.trim())
+        : kind === 'clear'
+          ? await saveClaudeAuth({ apiKey: null })
+          : await saveClaudeAuth({ mode, apiKey: apiKey.trim() || undefined })
+    setBusy(null)
+    if (err) return setError(err)
+    if (kind !== 'test') setApiKey('')
+    toast({
+      kind: 'success',
+      title: kind === 'test' ? 'API key hợp lệ' : kind === 'clear' ? 'Đã xoá API key đã lưu' : 'Đã lưu cài đặt xác thực',
+    })
+  }
+
+  const keyHint = auth.envApiKey
+    ? `Đang dùng key từ biến môi trường TASKBOARD_ANTHROPIC_API_KEY (…${auth.apiKeyHint ?? ''}). Key lưu ở đây chỉ dùng khi bỏ biến này.`
+    : auth.hasApiKey
+      ? `Đã lưu key …${auth.apiKeyHint ?? ''} (mã hoá). Để trống để giữ nguyên, nhập để thay.`
+      : 'Tạo key trong Claude Console → API keys.'
+
+  return (
+    <div className="space-y-4">
+      <div className="space-y-2">
+        {AUTH_OPTIONS.map((o) => (
+          <label key={o.value} className="flex items-start gap-3">
+            <input type="radio" name="claude-auth-mode" className="mt-1" checked={mode === o.value} onChange={() => setMode(o.value)} />
+            <span className="text-sm">
+              {o.label}
+              <span className="block text-xs text-slate-500">{o.hint}</span>
+            </span>
+          </label>
+        ))}
+      </div>
+      {mode === 'apiKey' && (
+        <>
+          <Field label="API key" hint={keyHint}>
+            <input
+              type="password"
+              autoComplete="off"
+              className={inputCls}
+              value={apiKey}
+              placeholder={hasKey ? `•••• ${auth.apiKeyHint ?? ''} (đã có)` : 'sk-ant-…'}
+              onChange={(e) => setApiKey(e.target.value)}
+            />
+          </Field>
+          <p className="rounded-md bg-amber-50 p-3 text-xs text-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
+            Chi phí là tiền thật. Nên đặt budget tháng cho từng project và đặt giới hạn chi tiêu (spend limit) trong Claude Console.
+            Số tiền Task Board hiển thị tính theo giá niêm yết, có thể lệch nhẹ so với hoá đơn.
+          </p>
+        </>
+      )}
+      {missingKey && <p className="text-xs text-rose-600">Chế độ API key cần có key trước khi lưu.</p>}
+      {error && <p className="text-xs text-rose-600">{error}</p>}
+      <div className="flex flex-wrap gap-2">
+        <Button size="sm" variant="primary" disabled={!!busy || missingKey || !dirty} onClick={() => run('save')}>
+          {busy === 'save' ? 'Đang lưu…' : 'Lưu xác thực'}
+        </Button>
+        {mode === 'apiKey' && (
+          <Button size="sm" disabled={!!busy || (!apiKey.trim() && !hasKey)} onClick={() => run('test')}>
+            {busy === 'test' ? 'Đang kiểm tra…' : 'Kiểm tra key (miễn phí)'}
+          </Button>
+        )}
+        {auth.hasApiKey && (
+          <Button size="sm" variant="ghost" disabled={!!busy} onClick={() => run('clear')}>
+            Xoá key đã lưu
+          </Button>
+        )}
+      </div>
+    </div>
+  )
+}
+
 export function Settings() {
   const { settings } = useStore()
   const [health, setHealth] = useState<{ claude: { found: boolean; version?: string; source?: string; path?: string } } | null>(null)
@@ -156,6 +259,10 @@ export function Settings() {
             </span>
           </span>
         </label>
+      </Section>
+
+      <Section icon={<KeyRound size={18} />} title="Xác thực Claude">
+        <ClaudeAuthSettings />
       </Section>
 
       <Section icon={<Timer size={18} />} title="Xin quyền (Needs Input)">
@@ -225,7 +332,11 @@ export function Settings() {
                   : '⚠ Không tìm thấy. Đặt biến môi trường CLAUDE_BIN rồi khởi động lại.'}
           </dd>
           <dt className="text-slate-500">Xác thực</dt>
-          <dd>Dùng phiên đăng nhập Claude Code trên máy, không dùng API key</dd>
+          <dd>
+            {settings.auth.mode === 'apiKey'
+              ? `API key …${settings.auth.apiKeyHint ?? '(chưa có)'}${settings.auth.envApiKey ? ' · từ biến môi trường' : ''}`
+              : 'Phiên đăng nhập Claude Code trên máy (gói Pro/Max)'}
+          </dd>
           <dt className="text-slate-500">Backend</dt>
           <dd className="font-mono text-xs">{IS_MOCK ? '(bản giả lập)' : health ? `${location.host} · online` : '…'}</dd>
         </dl>

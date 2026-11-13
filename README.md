@@ -1,7 +1,9 @@
 # Claude Task Board
 
 Giao việc cho Claude Code, theo dõi tiến độ và review kết quả qua trình duyệt, không cần mở VSCode.
-Dùng **Claude Code đã đăng nhập trên máy** (CLI headless). **Không gọi Claude API, không cần API key.**
+Chạy Claude Code CLI (headless) bằng một trong hai cách xác thực, chọn ở **Cài đặt → Xác thực Claude**:
+- **Đăng nhập Claude Code (gói Pro/Max)**: dùng phiên đăng nhập trên máy, chi phí nằm trong gói. Chỉ dành cho cá nhân tự dùng.
+- **API key**: trả tiền theo token vào tài khoản Claude Console. Đây là cách dùng cho sản phẩm và doanh nghiệp. Xem [Xác thực Claude](#xác-thực-claude).
 
 ## Chạy
 
@@ -23,6 +25,25 @@ Mở **http://localhost:3000**
 ## Yêu cầu
 - Node.js ≥ 22.13 (dùng `node:sqlite` có sẵn), git
 - Claude Code đã đăng nhập. Backend tự tìm `claude.exe` trong extension VSCode; nếu không tìm thấy, đặt biến `CLAUDE_BIN`.
+
+## Xác thực Claude
+
+| | Đăng nhập Claude Code | API key |
+|---|---|---|
+| Chi phí | Nằm trong gói Pro/Max | Theo token, **riêng với gói** (gói Max không gồm credit API) |
+| Giới hạn | Hạn mức theo 5 giờ / tuần của gói | Rate limit theo hạng tài khoản API |
+| Budget project | Theo lựa chọn của project (cảnh báo hoặc tạm dừng) | **Giới hạn cứng**: vượt budget là tạm dừng, mỗi run có trần `--max-budget-usd` bằng phần budget còn lại |
+
+| Biến môi trường | Ý nghĩa |
+|---|---|
+| `TASKBOARD_ANTHROPIC_API_KEY` | API key dùng cho chế độ API key. Ưu tiên hơn key lưu trong giao diện |
+| `TASKBOARD_DEFAULT_AUTH_MODE` | `apiKey` để mặc định dùng API key khi chưa lưu cài đặt (bản thương mại). Mặc định `subscription` |
+| `TASKBOARD_SECRET_KEY` | Khoá mã hoá (32 byte, hex hoặc base64) cho key lưu trong DB. Không đặt thì tự sinh ở `data/secret.key` |
+
+- Key nhập trong giao diện được mã hoá AES-256-GCM trước khi lưu vào SQLite, không bao giờ trả ra API hay ghi log. Mất `data/secret.key` thì phải nhập lại key.
+- Nút **Kiểm tra key** chỉ liệt kê model nên không tốn phí. Nút này không kiểm tra số dư credit.
+- Task Board luôn bỏ `ANTHROPIC_API_KEY` / `ANTHROPIC_AUTH_TOKEN` có sẵn trong môi trường, chỉ truyền key đã chọn, để không tính tiền nhầm tài khoản.
+- Nên đặt giới hạn chi tiêu (spend limit) trong Claude Console. Chi phí Task Board hiển thị tính theo giá niêm yết.
 
 ## Truy cập từ xa qua Tailscale
 

@@ -66,6 +66,18 @@ export function maxTierForLevel(level: BudgetLevel): ModelAlias {
 }
 
 /** B3: task mới của project có bị chặn không. */
+/**
+ * Trần chi phí cho một lần chạy: nhỏ nhất giữa giới hạn của task và phần budget tháng còn lại (khi có).
+ * undefined = không giới hạn. Đã hết budget thì trả 0 (người gọi không nên chạy).
+ */
+export function runCap(taskMax: number | undefined, budget?: Pick<ProjectBudget, 'spent' | 'budget'>): number | undefined {
+  const caps: number[] = []
+  if (taskMax !== undefined && taskMax !== null && Number.isFinite(taskMax) && taskMax > 0) caps.push(taskMax)
+  if (budget?.budget !== undefined && budget.budget !== null && Number.isFinite(budget.budget) && budget.budget >= 0)
+    caps.push(Math.max(0, Math.round((budget.budget - budget.spent) * 1e6) / 1e6))
+  return caps.length ? Math.min(...caps) : undefined
+}
+
 export function isBudgetBlocked(action: BudgetAction | undefined, level: BudgetLevel | undefined): boolean {
   return action === 'pause' && level === 'over'
 }

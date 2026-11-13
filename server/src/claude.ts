@@ -73,10 +73,17 @@ export function findClaudeBin(refresh = false): ClaudeBin | null {
   return bin
 }
 
-/** Môi trường cho tiến trình con: bỏ API key để luôn dùng phiên đăng nhập Claude Code (ràng buộc C1). */
-export function claudeEnv(extra: Record<string, string> = {}) {
+/**
+ * Môi trường cho tiến trình con.
+ * Không có apiKey (chế độ subscription): bỏ mọi API key/token để CLI dùng phiên đăng nhập Claude Code trên máy.
+ * Có apiKey (chế độ API key): CLI dùng đúng key này. Key/token khác có sẵn trong môi trường luôn bị bỏ,
+ * để không vô tình tính tiền vào một tài khoản khác.
+ */
+export function claudeEnv(extra: Record<string, string> = {}, o: { apiKey?: string } = {}) {
   const env: NodeJS.ProcessEnv = { ...process.env, ...extra }
   delete env.ANTHROPIC_API_KEY
   delete env.ANTHROPIC_AUTH_TOKEN
+  delete env.TASKBOARD_ANTHROPIC_API_KEY // không lộ key của Task Board sang tiến trình Claude và các lệnh nó chạy
+  if (o.apiKey) env.ANTHROPIC_API_KEY = o.apiKey
   return env
 }

@@ -7,6 +7,7 @@ import {
   FileMinus,
   FilePen,
   FilePlus,
+  Image as ImageIcon,
   Loader2,
   MessageSquarePlus,
   MessageSquareText,
@@ -21,6 +22,7 @@ import type { DiffLine, FileDiff, ReviewComment } from '../types'
 import { Markdown } from './Markdown'
 import { Button, inputCls } from './ui'
 import { fileSignature, isMarkdownPath } from '../lib/reviewComments'
+import { isImagePath } from '../lib/diff'
 import type { ReviewDraftApi } from '../lib/reviewDraft'
 
 const STATUS_ICON = {
@@ -45,6 +47,58 @@ export interface DiffReview {
   canEdit: boolean
   loadFile: (path: string) => Promise<string | null>
   saveFile: (path: string, content: string) => Promise<boolean>
+  /** URL ảnh để xem trước: bản trên nhánh task (`new`) hoặc nhánh chính (`old`). Không có: không xem trước ảnh */
+  imageUrl?: (path: string, side: 'old' | 'new') => string
+}
+
+// ---------------------------------------------------------------- ảnh: xem trước Trước / Sau
+
+function ImageSide({ label, src, tone }: { label: string; src: string; tone: 'old' | 'new' }) {
+  const [state, setState] = useState<'loading' | 'ok' | 'error'>('loading')
+  const [size, setSize] = useState<string>('')
+  useEffect(() => {
+    setState('loading')
+    setSize('')
+  }, [src])
+  return (
+    <figure className="flex min-w-0 flex-1 flex-col gap-1.5">
+      <figcaption className="flex items-center gap-2 text-xs">
+        <span className={`rounded px-1.5 py-0.5 font-medium ${tone === 'old' ? 'bg-rose-50 text-rose-700 dark:bg-rose-950/50 dark:text-rose-300' : 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300'}`}>
+          {label}
+        </span>
+        {size && <span className="font-mono text-slate-500 dark:text-slate-400">{size}</span>}
+        <a href={src} target="_blank" rel="noreferrer" className="ml-auto text-slate-500 hover:text-indigo-600 hover:underline dark:text-slate-400">
+          Mở ảnh gốc
+        </a>
+      </figcaption>
+      {/* Nền ca-rô để thấy vùng trong suốt của PNG/SVG */}
+      <div className="grid min-h-[140px] place-items-center rounded-md border border-slate-200 bg-[length:16px_16px] bg-[position:0_0,8px_8px] bg-[image:linear-gradient(45deg,#e2e8f0_25%,transparent_25%,transparent_75%,#e2e8f0_75%),linear-gradient(45deg,#e2e8f0_25%,transparent_25%,transparent_75%,#e2e8f0_75%)] p-3 dark:border-slate-700 dark:bg-[image:linear-gradient(45deg,#1e293b_25%,transparent_25%,transparent_75%,#1e293b_75%),linear-gradient(45deg,#1e293b_25%,transparent_25%,transparent_75%,#1e293b_75%)]">
+        {state === 'loading' && <Loader2 size={18} className="animate-spin text-slate-400" />}
+        {state === 'error' && <span className="text-xs text-rose-600 dark:text-rose-400">Không tải được ảnh</span>}
+        <img
+          src={src}
+          alt={label}
+          onLoad={(e) => {
+            setState('ok')
+            const img = e.currentTarget
+            if (img.naturalWidth) setSize(`${img.naturalWidth} × ${img.naturalHeight} px`)
+          }}
+          onError={() => setState('error')}
+          className={`max-h-[48vh] max-w-full object-contain ${state === 'ok' ? '' : 'hidden'}`}
+        />
+      </div>
+    </figure>
+  )
+}
+
+/** Ảnh bản cũ (nhánh chính) và bản mới (nhánh task) đặt cạnh nhau; file mới/xoá chỉ có một bên. */
+function ImagePane({ file, imageUrl }: { file: FileDiff; imageUrl: NonNullable<DiffReview['imageUrl']> }) {
+  return (
+    <div className="flex flex-col gap-4 p-3 sm:flex-row">
+      {file.status !== 'added' && <ImageSide label={file.status === 'deleted' ? 'Đã xoá' : 'Trước'} tone="old" src={imageUrl(file.oldPath ?? file.path, 'old')} />}
+      {file.status !== 'deleted' && <ImageSide label={file.status === 'added' ? 'Ảnh mới' : 'Sau'} tone="new" src={imageUrl(file.path, 'new')} />}
+    </div>
+  )
 }
 
 type Anchor = { side: 'old' | 'new'; line: number; snippet: string }
@@ -401,7 +455,10 @@ export function DiffView({ files, review }: { files: FileDiff[]; review?: DiffRe
   if (!file) return <p className="py-8 text-center text-sm text-slate-400">Không có thay đổi nào.</p>
 
   const md = isMarkdownPath(file.path) && file.status !== 'deleted' && !!review
-  const mode: ViewMode = md ? (modes[file.path] ?? 'preview') : 'diff'
+  // Ảnh: xem trước Trước/Sau. SVG còn có mã nguồn (diff chữ) nên cho chuyển qua lại
+  const img = isImagePath(file.path) && !!review?.imageUrl
+  const imgHasCode = img && file.hunks.length > 0
+  const mode: ViewMode = md || img ? (modes[file.path] ?? 'preview') : 'diff'
   const setMode = (m: ViewMode) => setModes((s) => ({ ...s, [file.path]: m }))
   const comments = allComments.filter((c) => c.path === file.path)
   const fileComments = comments.filter((c) => c.line === undefined)
@@ -465,8 +522,14 @@ export function DiffView({ files, review }: { files: FileDiff[]; review?: DiffRe
                       {n}
                     </span>
                   )}
-                  <span className="shrink-0 text-emerald-600">+{f.additions}</span>
-                  <span className="shrink-0 text-rose-600">−{f.deletions}</span>
+                  {f.binary ? (
+                    <span className="shrink-0 text-slate-400">{isImagePath(f.path) ? 'ảnh' : 'nhị phân'}</span>
+                  ) : (
+                    <>
+                      <span className="shrink-0 text-emerald-600">+{f.additions}</span>
+                      <span className="shrink-0 text-rose-600">−{f.deletions}</span>
+                    </>
+                  )}
                 </button>
               </li>
             )
@@ -491,6 +554,16 @@ export function DiffView({ files, review }: { files: FileDiff[]; review?: DiffRe
                     <Pencil size={13} /> Edit
                   </Seg>
                 )}
+              </div>
+            )}
+            {imgHasCode && (
+              <div className="flex rounded-md ring-1 ring-slate-200 dark:ring-slate-700">
+                <Seg active={mode === 'preview'} onClick={() => setMode('preview')} title="Xem ảnh trước và sau khi sửa">
+                  <ImageIcon size={13} /> Ảnh
+                </Seg>
+                <Seg active={mode === 'diff'} onClick={() => setMode('diff')} title="Xem thay đổi mã nguồn, nhận xét theo dòng">
+                  <FileCode2 size={13} /> Mã
+                </Seg>
               </div>
             )}
             {review?.canEdit && (
@@ -522,10 +595,14 @@ export function DiffView({ files, review }: { files: FileDiff[]; review?: DiffRe
             </div>
           )}
           <div className="max-h-[60vh] overflow-auto">
-            {md && mode !== 'diff' ? (
+            {img && (mode === 'preview' || !imgHasCode) ? (
+              <ImagePane file={file} imageUrl={review!.imageUrl!} />
+            ) : md && mode !== 'diff' ? (
               <MarkdownPane file={file} mode={mode} review={review!} onModeChange={setMode} />
             ) : file.hunks.length === 0 ? (
-              <p className="py-8 text-center text-sm text-slate-400">Không có nội dung để hiển thị (file nhị phân hoặc chỉ đổi tên).</p>
+              <p className="py-8 text-center text-sm text-slate-400">
+                {file.binary ? 'File nhị phân, không xem trước được nội dung.' : 'Không có nội dung để hiển thị (chỉ đổi tên hoặc đổi quyền file).'}
+              </p>
             ) : layout === 'unified' ? (
               <Unified {...bodyProps} />
             ) : (

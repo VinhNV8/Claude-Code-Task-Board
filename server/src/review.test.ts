@@ -475,3 +475,30 @@ test('reviewFiles: đọc file trong worktree, chặn đường dẫn ra ngoài 
   db.tasks.patch(t.id, { status: 'done' })
   await rejects(rf.saveTaskFile(t.id, 'doc.md', 'z'), 409, /không ở trạng thái Review/)
 })
+
+test('readTaskImage: bản mới từ worktree/nhánh, bản cũ từ nhánh chính; chặn file không phải ảnh và đường dẫn xấu', async () => {
+  const rf = await import('./reviewFiles.ts')
+  const sig = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]
+  const oldPng = Buffer.from([...sig, 0, 0, 0, 1, 0xff])
+  writeFileSync(join(repo, 'logo.png'), oldPng)
+  assert.equal(await g.commitAll(repo, 'thêm logo'), true)
+
+  const t = await reviewTask('Đổi logo', { 'icon.svg': '<svg xmlns="http://www.w3.org/2000/svg"/>\n' })
+  const newPng = Buffer.from([...sig, 9, 9, 9, 9, 0x00, 0xfe])
+  writeFileSync(join(t.worktreePath!, 'logo.png'), newPng)
+  assert.equal(await g.commitAll(t.worktreePath!, 'logo mới'), true)
+
+  const n = await rf.readTaskImage(t.id, 'logo.png', 'new')
+  assert.equal(n.mime, 'image/png')
+  assert.deepEqual(n.data, newPng, 'bytes nhị phân giữ nguyên')
+  assert.deepEqual((await rf.readTaskImage(t.id, 'logo.png', 'old')).data, oldPng)
+  assert.equal((await rf.readTaskImage(t.id, 'icon.svg', 'new')).mime, 'image/svg+xml')
+  await rejects(rf.readTaskImage(t.id, 'icon.svg', 'old'), 404, /nhánh chính/)
+  await rejects(rf.readTaskImage(t.id, 'README.md', 'new'), 400, /file ảnh/)
+  for (const bad of ['../x.png', '/x.png', 'C:/x.png', '.git/x.png', 'a/../../x.png', 'a\\..\\x.png', ''])
+    await assert.rejects(rf.readTaskImage(t.id, bad, 'new'), (e: Error & { statusCode?: number }) => e.statusCode === 400)
+
+  // Worktree đã dọn: bản mới đọc từ nhánh task
+  db.tasks.patch(t.id, { worktreePath: join(root, 'khong-con-worktree') })
+  assert.deepEqual((await rf.readTaskImage(t.id, 'logo.png', 'new')).data, newPng)
+})

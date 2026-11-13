@@ -32,6 +32,7 @@ import type {
   Task,
   TaskStatus,
   TelegramSettingsInput,
+  ClaudeAuthInput,
   TestOutput,
   TestRun,
   Toast,
@@ -800,6 +801,21 @@ export async function saveTelegram(input: TelegramSettingsInput): Promise<string
     return { settings: { ...s.settings, telegram: { ...s.settings.telegram, ...rest, hasToken } } }
   })
   return null
+}
+
+// Xác thực Claude: prototype chỉ lưu chế độ và cờ có key, không lưu key thật.
+export async function saveClaudeAuth(input: ClaudeAuthInput): Promise<string | null> {
+  set((s) => {
+    const cur = s.settings.auth
+    const hasApiKey = input.apiKey === undefined ? cur.hasApiKey : !!input.apiKey
+    const apiKeyHint = input.apiKey ? input.apiKey.trim().slice(-4) : input.apiKey === undefined ? cur.apiKeyHint : undefined
+    return { settings: { ...s.settings, auth: { ...cur, mode: input.mode ?? cur.mode, hasApiKey, apiKeyHint } } }
+  })
+  return null
+}
+
+export async function testClaudeAuth(_apiKey?: string): Promise<string | null> {
+  return 'Kiểm tra API key chỉ hoạt động khi chạy với backend thật (npm run dev)'
 }
 
 export async function testTelegram(_input: TelegramSettingsInput): Promise<string | null> {

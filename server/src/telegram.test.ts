@@ -111,6 +111,7 @@ function setup(over: Partial<Settings['telegram']> = {}, tokenArg: string | null
     defaultModel: '',
     autoEscalate: true,
     telegram: { enabled: true, chatId: '42', appUrl: 'http://h', hasToken: !!token, ...over },
+    auth: { mode: 'subscription', hasApiKey: false, envApiKey: false },
   }
   const handle = createTelegramNotifier({
     initial: [task(1, 'review'), task(2, 'running')],

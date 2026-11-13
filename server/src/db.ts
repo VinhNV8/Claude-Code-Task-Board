@@ -22,6 +22,8 @@ import type {
 } from './types.ts'
 import { DEFAULT_TEMPLATES } from './templates.ts'
 import { DEFAULT_TELEGRAM } from './telegram.ts'
+import { decryptSecret, encryptSecret, loadOrCreateKey } from './secretBox.ts'
+import { defaultAuthMode, effectiveApiKey, publicAuth } from './claudeAuth.ts'
 
 export const DATA_DIR = process.env.TASKBOARD_DATA ?? join(import.meta.dirname, '..', '..', 'data')
 mkdirSync(DATA_DIR, { recursive: true })
@@ -726,6 +728,7 @@ export const DEFAULT_SETTINGS: Settings = {
   defaultModel: 'auto',
   autoEscalate: true,
   telegram: DEFAULT_TELEGRAM,
+  auth: { mode: defaultAuthMode(), hasApiKey: false, envApiKey: false },
 }
 
 const getKey = (key: string) => (db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as Row | undefined)?.value as string | undefined
@@ -745,6 +748,31 @@ export const telegramToken = {
     token ? setKey('telegram_token', token) : db.prepare("DELETE FROM settings WHERE key = 'telegram_token'").run(),
 }
 
+/**
+ * API key Claude (chế độ apiKey) lưu ở khoá riêng, mã hoá AES-256-GCM (secretBox.ts), không nằm trong Settings trả ra API.
+ * Khoá mã hoá chỉ được tạo/đọc khi thật sự lưu hoặc dùng key.
+ */
+let secretKey: Buffer | undefined
+const boxKey = () => (secretKey ??= loadOrCreateKey(DATA_DIR))
+
+export const claudeApiKey = {
+  /** Key đã lưu (đã giải mã). Không giải mã được (đổi khoá mã hoá) thì coi như chưa có. */
+  get: (): string | undefined => {
+    const box = getKey('claude_api_key')
+    if (!box) return undefined
+    try {
+      return decryptSecret(box, boxKey())
+    } catch (e) {
+      console.error(`[auth] ${(e as Error).message}`)
+      return undefined
+    }
+  },
+  set: (key: string | null) =>
+    key ? setKey('claude_api_key', encryptSecret(key, boxKey())) : db.prepare("DELETE FROM settings WHERE key = 'claude_api_key'").run(),
+  /** Key dùng cho lần chạy: biến môi trường TASKBOARD_ANTHROPIC_API_KEY ưu tiên hơn key đã lưu. */
+  effective: (): string | undefined => effectiveApiKey(claudeApiKey.get()),
+}
+
 export const settings = {
   get: (): Settings => {
     const raw = getKey('app')
@@ -753,12 +781,14 @@ export const settings = {
       ...DEFAULT_SETTINGS,
       ...s,
       telegram: { ...DEFAULT_TELEGRAM, ...s.telegram, hasToken: !!telegramToken.get() },
+      auth: publicAuth(s.auth?.mode ?? DEFAULT_SETTINGS.auth.mode, claudeApiKey.get()),
     }
   },
   set: (s: Settings) => {
     const telegram: Partial<Settings['telegram']> = { ...s.telegram }
     delete telegram.hasToken // chỉ là cờ suy ra từ telegram_token
-    setKey('app', JSON.stringify({ ...s, telegram }))
+    // auth chỉ lưu chế độ; các cờ về key suy ra lúc đọc
+    setKey('app', JSON.stringify({ ...s, telegram, auth: { mode: s.auth.mode } }))
     return settings.get()
   },
 }

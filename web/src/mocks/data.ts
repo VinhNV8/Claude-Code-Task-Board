@@ -59,6 +59,7 @@ export const defaultSettings: Settings = {
   defaultModel: 'auto',
   autoEscalate: true,
   telegram: { enabled: false, chatId: '', appUrl: '', hasToken: false },
+  auth: { mode: 'subscription', hasApiKey: false, envApiKey: false },
 }
 
 // ---------------------------------------------------------------- Diff mẫu

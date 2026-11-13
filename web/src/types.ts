@@ -159,6 +159,8 @@ export interface FileDiff {
   additions: number
   deletions: number
   hunks: DiffHunk[]
+  /** Git coi là file nhị phân (ảnh PNG/JPG…): không có hunk để hiển thị */
+  binary?: boolean
 }
 
 export interface DiffHunk {
@@ -372,6 +374,30 @@ export interface Settings {
   autoEscalate: boolean
   /** Thông báo Telegram (FR-51). Bot token không bao giờ trả ra API, chỉ có cờ hasToken. */
   telegram: TelegramSettings
+  /** Cách Claude Code xác thực khi chạy task. API key không bao giờ trả ra API. */
+  auth: ClaudeAuthSettings
+}
+
+/**
+ * subscription: phiên đăng nhập Claude Code (gói Pro/Max) trên máy, chỉ dành cho cá nhân tự dùng.
+ * apiKey: API key của Claude Console, trả tiền theo token; budget project trở thành giới hạn cứng.
+ */
+export type ClaudeAuthMode = 'subscription' | 'apiKey'
+
+export interface ClaudeAuthSettings {
+  mode: ClaudeAuthMode
+  /** Đã lưu API key (mã hoá) trong DB */
+  hasApiKey: boolean
+  /** 4 ký tự cuối của key đang dùng, để nhận diện */
+  apiKeyHint?: string
+  /** Đang dùng key từ biến môi trường TASKBOARD_ANTHROPIC_API_KEY (ưu tiên hơn key đã lưu) */
+  envApiKey: boolean
+}
+
+/** Dữ liệu gửi lên khi lưu xác thực. apiKey: chuỗi = đặt mới, null hoặc '' = xoá, bỏ trống = giữ nguyên. */
+export interface ClaudeAuthInput {
+  mode?: ClaudeAuthMode
+  apiKey?: string | null
 }
 
 export interface TelegramSettings {

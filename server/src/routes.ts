@@ -5,10 +5,11 @@ import { isAbsolute } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { bus, broadcast, type ServerMessage } from './bus.ts'
 import { approveTask, checkMerge, rejectTask, requestChanges } from './review.ts'
-import { readTaskFile, saveTaskFile } from './reviewFiles.ts'
+import { readTaskFile, readTaskImage, saveTaskFile } from './reviewFiles.ts'
 import { retryTask } from './retry.ts'
 import { resumeTask } from './resume.ts'
-import { events, projects, reviews, runs, scheduleRuns, schedules, settings, taskDeps, tasks, telegramToken, templates, testRuns } from './db.ts'
+import { claudeApiKey, events, projects, reviews, runs, scheduleRuns, schedules, settings, taskDeps, tasks, telegramToken, templates, testRuns } from './db.ts'
+import { ClaudeAuthError, mergeAuth, testApiKey, validateApiKey } from './claudeAuth.ts'
 import { ScheduleError, checkCron, validateSchedule, type ScheduleInput } from './schedules.ts'
 import { nextRuns } from './cron.ts'
 import { TelegramError, mergeTelegram, sendTelegram, validateAppUrl, validateChatId, validateToken } from './telegram.ts'
@@ -30,7 +31,7 @@ import { PERMISSION_PRESETS } from './permissionPresets.ts'
 import { dismissRule, ruleSuggestionsFor, watchRuleSuggestions } from './ruleSuggestions.ts'
 import { getBudgets, isProjectBlocked, refreshBudgets, withBlockedReason } from './budgetService.ts'
 import { DepsError, pendingDeps, suggestDeps, validateDeps } from './taskDeps.ts'
-import type { FileDiff, PermissionMode, Priority, Project, PromptTemplate, Schedule, Settings, TelegramSettingsInput } from './types.ts'
+import type { FileDiff, PermissionMode, Priority, Project, PromptTemplate, Schedule, Settings, TelegramSettingsInput, ClaudeAuthInput } from './types.ts'
 
 const PRIORITIES: Priority[] = ['urgent', 'high', 'normal', 'low']
 // Không cho phép bypassPermissions (SPEC Mục 9)
@@ -76,6 +77,7 @@ export async function routes(app: FastifyInstance) {
     return {
       ok: true,
       claude: bin ? { found: true, path: bin.path, source: bin.source, version: bin.version } : { found: false },
+      authMode: settings.get().auth.mode,
       time: new Date().toISOString(),
     }
   })
@@ -117,6 +119,19 @@ export async function routes(app: FastifyInstance) {
   app.get<{ Params: { id: string }; Querystring: { path?: string } }>('/api/tasks/:id/file', async (req) => {
     const t = getTask(req.params.id)
     return readTaskFile(t.id, req.query.path)
+  })
+
+  // Xem trước file ảnh khi review: bản trên nhánh task (side=new) hoặc nhánh chính (side=old)
+  app.get<{ Params: { id: string }; Querystring: { path?: string; side?: string } }>('/api/tasks/:id/image', async (req, reply) => {
+    const t = getTask(req.params.id)
+    const { mime, data } = await readTaskImage(t.id, req.query.path, req.query.side === 'old' ? 'old' : 'new')
+    // SVG có thể chứa script: chỉ hiển thị qua <img> (không chạy script); mở trực tiếp thì CSP sandbox chặn mọi script
+    return reply
+      .header('content-type', mime)
+      .header('x-content-type-options', 'nosniff')
+      .header('content-security-policy', "default-src 'none'; img-src data:; style-src 'unsafe-inline'; sandbox")
+      .header('cache-control', 'private, no-cache')
+      .send(data)
   })
 
   app.put<{ Params: { id: string }; Body: { path?: string; content?: string } }>('/api/tasks/:id/file', async (req) => {
@@ -626,7 +641,7 @@ export async function routes(app: FastifyInstance) {
 
   // ------------------------------------------------------------ settings
 
-  type SettingsBody = Partial<Omit<Settings, 'telegram'>> & { telegram?: TelegramSettingsInput }
+  type SettingsBody = Partial<Omit<Settings, 'telegram' | 'auth'>> & { telegram?: TelegramSettingsInput; auth?: ClaudeAuthInput }
 
   app.put<{ Body: SettingsBody }>('/api/settings', async (req) => {
     const cur = settings.get()
@@ -638,6 +653,13 @@ export async function routes(app: FastifyInstance) {
       if (e instanceof TelegramError) throw new HttpError(400, e.message)
       throw e
     }
+    let auth: ReturnType<typeof mergeAuth>
+    try {
+      auth = mergeAuth(cur.auth.mode, b.auth)
+    } catch (e) {
+      if (e instanceof ClaudeAuthError) throw new HttpError(400, e.message)
+      throw e
+    }
     const next: Settings = {
       maxParallel: b.maxParallel !== undefined ? Math.min(5, Math.max(1, Number(b.maxParallel) || 1)) : cur.maxParallel,
       browserNotifications: b.browserNotifications ?? cur.browserNotifications,
@@ -646,8 +668,10 @@ export async function routes(app: FastifyInstance) {
       defaultModel: b.defaultModel !== undefined ? normalizeModel(b.defaultModel) : cur.defaultModel,
       autoEscalate: b.autoEscalate !== undefined ? !!b.autoEscalate : cur.autoEscalate,
       telegram: { ...tg.telegram, hasToken: cur.telegram.hasToken },
+      auth: { ...cur.auth, mode: auth.mode },
     }
     if (tg.token !== undefined) telegramToken.set(tg.token)
+    if (auth.apiKey !== undefined) claudeApiKey.set(auth.apiKey)
     const saved = settings.set(next) // hasToken lấy lại từ DB, token không bao giờ nằm trong kết quả
     broadcast({ type: 'settings', settings: saved })
     pump()
@@ -697,6 +721,20 @@ export async function routes(app: FastifyInstance) {
       await sendTelegram({ token, chatId }, `🔔 Tin nhắn thử từ Claude Task Board.\nThông báo Telegram đã hoạt động.${link}`)
     } catch (e) {
       if (e instanceof TelegramError) throw new HttpError(400, e.message)
+      throw e
+    }
+    return { ok: true }
+  })
+
+  // Kiểm tra API key Claude: key đang nhập (nếu có) hoặc key đang dùng. Chỉ liệt kê model, không tốn tiền.
+  app.post<{ Body: { apiKey?: string } }>('/api/settings/claude-auth/test', async (req) => {
+    try {
+      const raw = req.body?.apiKey
+      const key = typeof raw === 'string' && raw.trim() ? validateApiKey(raw) : claudeApiKey.effective()
+      if (!key) throw new ClaudeAuthError('Chưa nhập API key')
+      await testApiKey(key)
+    } catch (e) {
+      if (e instanceof ClaudeAuthError) throw new HttpError(400, e.message)
       throw e
     }
     return { ok: true }

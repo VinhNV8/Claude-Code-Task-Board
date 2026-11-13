@@ -7,7 +7,8 @@ import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import readline from 'node:readline'
 import { claudeEnv, findClaudeBin } from './claude.ts'
-import { DATA_DIR, events, projects, runs, settings, taskDeps, tasks, testRuns } from './db.ts'
+import { DATA_DIR, claudeApiKey, events, projects, runs, settings, taskDeps, tasks, testRuns } from './db.ts'
+import { authFailureHint, resolveCredentials } from './claudeAuth.ts'
 import { broadcast } from './bus.ts'
 import { StreamParser, type ResultInfo } from './stream.ts'
 import { INTERNAL_TOKEN, PORT } from './config.ts'
@@ -21,7 +22,7 @@ import { autoModelNote, chooseRunModel, fallbackModelFor } from './model.ts'
 import { applyEscalation, escalationPrompt, maxTierForProject } from './escalation.ts'
 import { adjustByHistory } from './modelHistoryService.ts'
 // Nạp budgetService cũng đăng ký nguồn budget cho maxTierForProject (B4) và blockedReason cho task gửi ra web.
-import { budgetWakeAt, isProjectBlocked, refreshBudgets } from './budgetService.ts'
+import { budgetWakeAt, isProjectBlocked, refreshBudgets, runBudgetCap } from './budgetService.ts'
 import { decideBlocked, pendingDeps } from './taskDeps.ts'
 import { prepareRetry } from './retry.ts'
 import { withLock } from './review.ts'
@@ -317,6 +318,20 @@ function spawnClaude(o: {
   const { task, project, kind, feedback, sessionId, resume, cwd } = o
   const run = { id: o.runId }
 
+  // Xác thực: chế độ API key mà chưa có key thì dừng, không lặng lẽ chạy bằng gói đăng nhập.
+  const auth = settings.get().auth
+  const creds = resolveCredentials(auth.mode, auth.mode === 'apiKey' ? claudeApiKey.effective() : undefined)
+  if (!creds.ok) {
+    finish(task.id, run.id, { exitCode: -1, error: creds.reason })
+    return
+  }
+  // Chế độ API key: trần chi phí của run gồm cả phần budget tháng còn lại của project (giới hạn cứng).
+  const maxBudgetUsd = runBudgetCap(project.id, task.maxCostUsd)
+  if (maxBudgetUsd === 0) {
+    finish(task.id, run.id, { exitCode: -1, error: 'Project đã dùng hết budget tháng (chế độ API key: budget là giới hạn cứng).' })
+    return
+  }
+
   // P3 (PLAN 3.2): file MCP config tạm cho permission prompt tool; tắt bằng TASKBOARD_PERMISSION_TOOL=off.
   let mcpConfig: string | undefined
   if (permissionToolEnabled()) {
@@ -353,14 +368,14 @@ function spawnClaude(o: {
     settingsPath: hookSettings,
     model: o.model,
     fallbackModel: fallbackModelFor(o.model),
-    maxBudgetUsd: task.maxCostUsd,
+    maxBudgetUsd,
     appendSystemPrompt: BLOCKED_BY_INSTRUCTION,
   })
 
   const prompt = o.prompt ?? resumePrompt({ kind, resume, feedback, taskPrompt: task.prompt })
   let child: ChildProcess
   try {
-    child = spawn(o.bin, args, { cwd, env: claudeEnv({ TASKBOARD_TASK_ID: String(task.id) }), windowsHide: true })
+    child = spawn(o.bin, args, { cwd, env: claudeEnv({ TASKBOARD_TASK_ID: String(task.id) }, { apiKey: creds.apiKey }), windowsHide: true })
   } catch (err) {
     removeTempFiles(tempFiles)
     finish(task.id, run.id, { exitCode: -1, error: `Không chạy được Claude CLI: ${(err as Error).message}` })
@@ -467,6 +482,9 @@ function finish(
     const tail = (stderr ?? '').trim().split('\n').slice(-3).join(' ').trim()
     reason = `Claude CLI thoát với mã ${exitCode}${tail ? `: ${tail}` : ''}`
   }
+  // Chế độ API key: thêm gợi ý cho lỗi key sai / hết credit.
+  const hint = !error && settings.get().auth.mode === 'apiKey' ? authFailureHint(`${result?.text ?? ''} ${stderr ?? ''}`) : undefined
+  if (hint) reason = `${hint} (${reason})`
   if (!result) addEvent(runId, { type: 'result', isError: true, text: reason })
   updateTask(taskId, { status: 'failed', failReason: reason.slice(0, 1000) })
   pump()
