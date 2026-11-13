@@ -24,6 +24,9 @@ export function imageMime(path: string): string | undefined {
 
 export const isImagePath = (path: string) => imageMime(path) !== undefined
 
+/** Trang HTML tĩnh: xem trước giao diện khi review. */
+export const isHtmlPath = (path: string) => /\.html?$/i.test(path)
+
 /**
  * Parse phần hunk của patch (1 file) thành cấu trúc hiển thị.
  * Dựa vào số dòng trong header `@@` để biết hunk kết thúc ở đâu, nên dòng trống cuối patch

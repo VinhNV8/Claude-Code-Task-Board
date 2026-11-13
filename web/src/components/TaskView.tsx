@@ -30,6 +30,7 @@ import {
   deleteTask,
   ensureDiff,
   ensureEvents,
+  createPreviewLink,
   fetchTaskFile,
   queueTask,
   rejectTask,
@@ -236,6 +237,7 @@ export function TaskView({
     saveFile: (path, content) => saveTaskFile(task.id, path, content),
     // v=: đổi khi task cập nhật (Claude sửa lại ảnh) để trình duyệt không dùng ảnh cũ trong cache
     imageUrl: (path, side) => `/api/tasks/${task.id}/image?${new URLSearchParams({ path, side, v: String(task.updatedAt) })}`,
+    previewUrl: (path, side) => createPreviewLink(task.id, path, side),
   }
 
   const tabs: { id: Tab; label: string; icon: JSX.Element; count?: number; hidden?: boolean }[] = [

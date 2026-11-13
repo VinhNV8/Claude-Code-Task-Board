@@ -39,6 +39,19 @@ npm run uat:stop | uat:start | uat:restart
 
 Tuỳ chỉnh: `UAT_PORT` (mặc định 4000), `UAT_DIR` (mặc định `../<tên-repo>-uat`).
 
+## Cổng xem trước trang HTML
+
+Khi review, file `.html` có chế độ **Giao diện**: trang chạy trong iframe từ một server riêng của backend,
+trên cổng `PORT + 10` (đặt lại bằng `PREVIEW_PORT`). Cổng riêng = origin riêng, nên JavaScript trong trang
+không đọc được cookie hay gọi được API của Task Board; link có token ký, hết hạn sau 30 phút.
+
+| | DEV | UAT | `npm start` |
+|---|---|---|---|
+| Giao diện | 3000 | 4000 | 3000 |
+| Xem trước HTML | 3011 | 4010 | 3010 |
+
+Truy cập từ xa qua Tailscale: cho phép thêm cổng xem trước trong Firewall/ACL (cùng điều kiện với cổng chính).
+
 ## Quy trình đề xuất
 
 1. Giao task ở DEV (hoặc UAT). Claude làm việc trên nhánh `claude/task-<id>`.

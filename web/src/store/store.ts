@@ -569,6 +569,16 @@ export async function fetchTaskFile(id: number, path: string): Promise<string | 
   return r ? r.content : null
 }
 
+/**
+ * Link xem trước trang HTML của task (bản trên nhánh task hoặc nhánh chính). Trang chạy trên cổng xem trước
+ * riêng (origin khác Task Board), cùng hostname đang dùng để mở giao diện (localhost hoặc IP Tailscale).
+ */
+export async function createPreviewLink(id: number, path: string, side: 'old' | 'new'): Promise<string> {
+  const r = await api<{ token: string; port: number }>('POST', `/tasks/${id}/preview`, { side })
+  const encoded = path.split('/').map(encodeURIComponent).join('/')
+  return `${location.protocol}//${location.hostname}:${r.port}/p/${r.token}/${encoded}`
+}
+
 /** Lưu file Markdown đã sửa khi review: server ghi vào worktree, commit trên nhánh task và trả diff mới. */
 export async function saveTaskFile(id: number, path: string, content: string): Promise<boolean> {
   const r = await act(() => api<{ committed: boolean; files: FileDiff[] }>('PUT', `/tasks/${id}/file`, { path, content }), `Không lưu được ${path}`)

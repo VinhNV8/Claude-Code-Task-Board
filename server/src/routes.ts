@@ -6,6 +6,7 @@ import { randomUUID } from 'node:crypto'
 import { bus, broadcast, type ServerMessage } from './bus.ts'
 import { approveTask, checkMerge, rejectTask, requestChanges } from './review.ts'
 import { readTaskFile, readTaskImage, saveTaskFile } from './reviewFiles.ts'
+import { PREVIEW_PORT, PREVIEW_TTL_MS, signPreviewToken } from './preview.ts'
 import { retryTask } from './retry.ts'
 import { resumeTask } from './resume.ts'
 import { claudeApiKey, events, projects, reviews, runs, scheduleRuns, schedules, settings, taskDeps, tasks, telegramToken, templates, testRuns } from './db.ts'
@@ -119,6 +120,13 @@ export async function routes(app: FastifyInstance) {
   app.get<{ Params: { id: string }; Querystring: { path?: string } }>('/api/tasks/:id/file', async (req) => {
     const t = getTask(req.params.id)
     return readTaskFile(t.id, req.query.path)
+  })
+
+  // Xem trước trang HTML: cấp token cho server xem trước (cổng riêng, xem preview.ts)
+  app.post<{ Params: { id: string }; Body: { side?: string } }>('/api/tasks/:id/preview', async (req, reply) => {
+    const t = getTask(req.params.id)
+    reply.header('cache-control', 'no-store')
+    return { token: signPreviewToken(t.id, req.body?.side === 'old' ? 'old' : 'new'), port: PREVIEW_PORT, ttlMs: PREVIEW_TTL_MS }
   })
 
   // Xem trước file ảnh khi review: bản trên nhánh task (side=new) hoặc nhánh chính (side=old)

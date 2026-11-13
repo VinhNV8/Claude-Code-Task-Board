@@ -660,6 +660,14 @@ export async function fetchMergeCheck(id: number): Promise<MergeCheck | null> {
   }
 }
 
+/** Bản prototype: không có server xem trước, dựng trang từ nội dung file (chỉ bản Sau). */
+export async function createPreviewLink(id: number, path: string, side: 'old' | 'new'): Promise<string> {
+  if (side === 'old') throw new Error('Bản prototype chỉ xem được bản Sau')
+  const content = await fetchTaskFile(id, path)
+  if (content === null) throw new Error(`Không đọc được ${path}`)
+  return URL.createObjectURL(new Blob([content], { type: 'text/html' }))
+}
+
 export async function fetchTaskFile(id: number, path: string): Promise<string | null> {
   const saved = mockFiles.get(`${id}:${path}`)
   if (saved !== undefined) return saved

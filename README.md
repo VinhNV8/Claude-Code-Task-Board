@@ -72,6 +72,7 @@ Các bước (Windows, PowerShell):
    ```
    Log khởi động sẽ in `Server: http://127.0.0.1:3000`, `Server: http://100.x.y.z:3000` và `🔒 Bắt buộc đăng nhập bằng token`.
 5. Nếu Windows Firewall hỏi, chỉ cho phép **Private network**. Có thể giới hạn chặt hơn bằng ACL của Tailscale (chỉ cho thiết bị của bạn vào port 3000).
+   Muốn xem trước trang HTML khi review từ máy khác, mở thêm port 3010 (cổng xem trước = `PORT + 10`, đổi bằng `PREVIEW_PORT`, xem [ENVIRONMENTS](docs/ENVIRONMENTS.md)).
 6. Trên thiết bị khác mở `http://100.x.y.z:3000` (hoặc `http://<tên-máy>:3000` nếu bật MagicDNS), nhập token để đăng nhập.
 
 Cách hoạt động:

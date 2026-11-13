@@ -22,7 +22,8 @@ import type { DiffLine, FileDiff, ReviewComment } from '../types'
 import { Markdown } from './Markdown'
 import { Button, inputCls } from './ui'
 import { fileSignature, isMarkdownPath } from '../lib/reviewComments'
-import { isImagePath } from '../lib/diff'
+import { isHtmlPath, isImagePath } from '../lib/diff'
+import { HtmlPreview } from './HtmlPreview'
 import type { ReviewDraftApi } from '../lib/reviewDraft'
 
 const STATUS_ICON = {
@@ -49,6 +50,8 @@ export interface DiffReview {
   saveFile: (path: string, content: string) => Promise<boolean>
   /** URL ảnh để xem trước: bản trên nhánh task (`new`) hoặc nhánh chính (`old`). Không có: không xem trước ảnh */
   imageUrl?: (path: string, side: 'old' | 'new') => string
+  /** Link xem trước trang HTML (cổng xem trước riêng, có hạn). Không có: chỉ xem mã */
+  previewUrl?: (path: string, side: 'old' | 'new') => Promise<string>
 }
 
 // ---------------------------------------------------------------- ảnh: xem trước Trước / Sau
@@ -458,7 +461,9 @@ export function DiffView({ files, review }: { files: FileDiff[]; review?: DiffRe
   // Ảnh: xem trước Trước/Sau. SVG còn có mã nguồn (diff chữ) nên cho chuyển qua lại
   const img = isImagePath(file.path) && !!review?.imageUrl
   const imgHasCode = img && file.hunks.length > 0
-  const mode: ViewMode = md || img ? (modes[file.path] ?? 'preview') : 'diff'
+  // Trang HTML: xem giao diện (iframe cách ly) hoặc mã
+  const html = isHtmlPath(file.path) && !!review?.previewUrl
+  const mode: ViewMode = md || img || html ? (modes[file.path] ?? 'preview') : 'diff'
   const setMode = (m: ViewMode) => setModes((s) => ({ ...s, [file.path]: m }))
   const comments = allComments.filter((c) => c.path === file.path)
   const fileComments = comments.filter((c) => c.line === undefined)
@@ -556,6 +561,16 @@ export function DiffView({ files, review }: { files: FileDiff[]; review?: DiffRe
                 )}
               </div>
             )}
+            {html && (
+              <div className="flex rounded-md ring-1 ring-slate-200 dark:ring-slate-700">
+                <Seg active={mode === 'preview'} onClick={() => setMode('preview')} title="Xem giao diện trang (chạy trong vùng cách ly)">
+                  <Eye size={13} /> Giao diện
+                </Seg>
+                <Seg active={mode === 'diff'} onClick={() => setMode('diff')} title="Xem thay đổi mã nguồn, nhận xét theo dòng">
+                  <FileCode2 size={13} /> Mã
+                </Seg>
+              </div>
+            )}
             {imgHasCode && (
               <div className="flex rounded-md ring-1 ring-slate-200 dark:ring-slate-700">
                 <Seg active={mode === 'preview'} onClick={() => setMode('preview')} title="Xem ảnh trước và sau khi sửa">
@@ -595,7 +610,9 @@ export function DiffView({ files, review }: { files: FileDiff[]; review?: DiffRe
             </div>
           )}
           <div className="max-h-[60vh] overflow-auto">
-            {img && (mode === 'preview' || !imgHasCode) ? (
+            {html && mode === 'preview' ? (
+              <HtmlPreview file={file} getUrl={review!.previewUrl!} />
+            ) : img && (mode === 'preview' || !imgHasCode) ? (
               <ImagePane file={file} imageUrl={review!.imageUrl!} />
             ) : md && mode !== 'diff' ? (
               <MarkdownPane file={file} mode={mode} review={review!} onModeChange={setMode} />

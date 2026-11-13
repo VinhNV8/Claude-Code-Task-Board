@@ -66,20 +66,31 @@ export function safeRepoPath(rel: unknown): string {
  * - `old`: bản trên nhánh chính tại điểm rẽ nhánh (`git merge-base`), khớp với diff `main...nhánh`.
  */
 export async function readTaskImage(taskId: number, path: unknown, side: unknown): Promise<{ mime: string; data: Buffer }> {
+  const rel = safeRepoPath(path)
+  const mime = imageMime(rel)
+  if (!mime) throw new ReviewError(400, 'Chỉ xem trước được file ảnh')
+  return { mime, data: await readTaskBlob(taskId, rel, side === 'old' ? 'old' : 'new') }
+}
+
+/**
+ * Bytes của một file bất kỳ trong task (dùng cho xem trước ảnh và trang HTML).
+ * - `new`: bản trên nhánh task (đọc từ worktree; worktree đã dọn thì lấy từ nhánh).
+ * - `old`: bản trên nhánh chính tại điểm rẽ nhánh (`git merge-base`), khớp với diff `main...nhánh`.
+ */
+export async function readTaskBlob(taskId: number, path: unknown, side: 'old' | 'new', maxBytes = MAX_IMAGE_BYTES): Promise<Buffer> {
   const task = tasks.get(taskId)
   if (!task) throw new ReviewError(404, `Không tìm thấy task #${taskId}`)
   const project = projects.get(task.projectId)
   if (!project) throw new ReviewError(404, `Không tìm thấy project của task #${taskId}`)
   const rel = safeRepoPath(path)
-  const mime = imageMime(rel)
-  if (!mime) throw new ReviewError(400, 'Chỉ xem trước được file ảnh')
+  const tooBig = () => new ReviewError(413, `File lớn hơn ${Math.round(maxBytes / 1024 / 1024)} MB, không xem trước được`)
   const branch = taskBranch(taskId)
 
-  if (side !== 'old' && task.worktreePath && existsSync(task.worktreePath)) {
+  if (side === 'new' && task.worktreePath && existsSync(task.worktreePath)) {
     const abs = resolveInWorktree(task.worktreePath, rel)
     if (!existsSync(abs) || !statSync(abs).isFile()) throw new ReviewError(404, `Không tìm thấy file ${rel}`)
-    if (statSync(abs).size > MAX_IMAGE_BYTES) throw new ReviewError(413, 'Ảnh lớn hơn 10 MB, không xem trước được')
-    return { mime, data: readFileSync(abs) }
+    if (statSync(abs).size > maxBytes) throw tooBig()
+    return readFileSync(abs)
   }
 
   let rev = branch
@@ -88,10 +99,11 @@ export async function readTaskImage(taskId: number, path: unknown, side: unknown
     if (base.code !== 0) throw new ReviewError(404, 'Không tìm thấy điểm rẽ nhánh của task')
     rev = base.stdout.trim()
   }
-  const r = await gitBuffer(project.repoPath, ['show', `${rev}:${rel}`], MAX_IMAGE_BYTES + 1)
+  const r = await gitBuffer(project.repoPath, ['show', `${rev}:${rel}`], maxBytes + 1)
+  if (r.code !== 0 && /maxBuffer/i.test(r.stderr)) throw tooBig()
   if (r.code !== 0) throw new ReviewError(404, `Không tìm thấy file ${rel}${side === 'old' ? ' trên nhánh chính' : ''}`)
-  if (r.stdout.length > MAX_IMAGE_BYTES) throw new ReviewError(413, 'Ảnh lớn hơn 10 MB, không xem trước được')
-  return { mime, data: r.stdout }
+  if (r.stdout.length > maxBytes) throw tooBig()
+  return r.stdout
 }
 
 /**
