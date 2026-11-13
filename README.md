@@ -1,4 +1,4 @@
-# Claude Task Board
+# Claude Workspace
 
 Giao việc cho Claude Code, theo dõi tiến độ và review kết quả qua trình duyệt, không cần mở VSCode.
 Dùng **Claude Code đã đăng nhập trên máy** (CLI headless). **Không gọi Claude API, không cần API key.**
@@ -37,8 +37,8 @@ nên đi qua [Tailscale](https://tailscale.com) (mạng riêng mã hoá, không 
 
 Các bước (Windows, PowerShell):
 
-1. Cài Tailscale trên máy chạy Task Board và trên thiết bị muốn truy cập, đăng nhập **cùng một tailnet**.
-2. Lấy IP Tailscale của máy chạy Task Board: `tailscale ip -4` (dạng `100.x.y.z`).
+1. Cài Tailscale trên máy chạy Claude Workspace và trên thiết bị muốn truy cập, đăng nhập **cùng một tailnet**.
+2. Lấy IP Tailscale của máy chạy Claude Workspace: `tailscale ip -4` (dạng `100.x.y.z`).
 3. Tạo token ngẫu nhiên và lưu lại ở nơi an toàn (trình quản lý mật khẩu):
    ```powershell
    node -e "console.log(require('crypto').randomBytes(24).toString('base64url'))"
