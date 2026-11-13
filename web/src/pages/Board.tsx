@@ -7,14 +7,17 @@ import { BOARD_COLUMNS, DRAG_MIME, applyDrop, canDrag, columnTasks, dropAction, 
 import { collectTags, facetCounts, filterToParams, matchTask, parseFilter, pruneProjects, type BoardFilter } from '../lib/taskFilter'
 import { FILTER_PANEL_STORAGE_KEY, loadCollapsed, saveCollapsed } from '../lib/sidebar'
 import {
+  TRIAGE_COLLAPSED_KEY,
   VIEW_META,
   VIEW_STORAGE_KEY,
   WORK_VIEWS,
   attentionItems,
   initialView,
+  parseCollapsedGroups,
   parseTaskParam,
   stepSelection,
   triageGroups,
+  visibleOrder,
   withParams,
   workShortcut,
   type WorkView,
@@ -171,9 +174,25 @@ export function Board() {
   const attnBoard = useMemo(() => attentionItems(tasks, s.permissions, { includeReview: false, now }), [tasks, s.permissions])
   const attnOps = useMemo(() => attentionItems(tasks, s.permissions, { includeReview: true, now }), [tasks, s.permissions])
 
-  // Danh sách Phân luồng (bỏ task Done cũ như trên Bảng); cũng là thứ tự J/K
+  // Danh sách Phân luồng (bỏ task Done cũ như trên Bảng). Nhóm thu gọn được, nhớ trong localStorage
   const groups = useMemo(() => triageGroups(tasks.filter((t) => !isStale(t, hideOld))), [tasks, hideOld])
-  const order = useMemo(() => groups.flatMap((g) => g.tasks.map((t) => t.id)), [groups])
+  const [collapsedGroups, setCollapsedGroups] = useState<TaskStatus[]>(() => {
+    try {
+      return parseCollapsedGroups(storage()?.getItem(TRIAGE_COLLAPSED_KEY))
+    } catch {
+      return parseCollapsedGroups(null)
+    }
+  })
+  const changeCollapsedGroups = (next: TaskStatus[]) => {
+    setCollapsedGroups(next)
+    try {
+      storage()?.setItem(TRIAGE_COLLAPSED_KEY, JSON.stringify(next))
+    } catch {
+      /* bỏ qua */
+    }
+  }
+  // Thứ tự J/K: chỉ task đang thấy trong danh sách (bỏ nhóm thu gọn)
+  const order = useMemo(() => visibleOrder(groups, collapsedGroups, selectedId), [groups, collapsedGroups, selectedId])
   // Phân luồng trên desktop: chưa chọn thì xem task đầu danh sách
   const docked = view === 'triage' && isDesktop
   const shownId = docked ? (selectedId ?? order[0]) : selectedId
@@ -450,7 +469,14 @@ export function Board() {
         {view === 'triage' && (
           <div className="flex min-h-[480px] overflow-hidden rounded-lg border border-slate-200 bg-white md:h-[calc(100vh-10rem)] dark:border-slate-800 dark:bg-slate-900">
             <div className="flex w-full min-w-0 flex-col md:w-[340px] md:shrink-0 md:border-r md:border-slate-200 lg:w-[380px] md:dark:border-slate-800">
-              <TriageList groups={groups} projects={s.projects} selectedId={shownId} taskLink={taskLink} />
+              <TriageList
+                groups={groups}
+                projects={s.projects}
+                selectedId={shownId}
+                taskLink={taskLink}
+                collapsed={collapsedGroups}
+                onCollapsedChange={changeCollapsedGroups}
+              />
               <p className="hidden gap-3 border-t border-slate-200 px-3.5 py-1.5 text-[11px] text-slate-400 md:flex dark:border-slate-800">
                 <span>
                   <kbd className="font-mono">J</kbd> / <kbd className="font-mono">K</kbd> chuyển task

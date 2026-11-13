@@ -4,8 +4,12 @@ import assert from 'node:assert/strict'
 import {
   attentionItems,
   initialView,
+  isGroupOpen,
   logLine,
+  parseCollapsedGroups,
   parseTaskParam,
+  toggleGroup,
+  visibleOrder,
   parseView,
   searchTasks,
   slotAssignments,
@@ -100,6 +104,28 @@ test('triageGroups: thứ tự nhóm và thứ tự trong nhóm', () => {
   assert.deepEqual(ids('review'), [3, 2], 'chờ duyệt lâu nhất trước')
   assert.deepEqual(ids('queued'), [6, 5], 'hàng đợi: tạo trước chạy trước')
   assert.deepEqual(ids('backlog'), [8, 7], 'mới cập nhật trước')
+})
+
+test('parseCollapsedGroups: mặc định thu gọn Xong, bỏ giá trị lạ, dữ liệu hỏng về mặc định', () => {
+  assert.deepEqual(parseCollapsedGroups(null), ['done'])
+  assert.deepEqual(parseCollapsedGroups('[]'), [], 'đã chọn mở hết thì giữ nguyên')
+  assert.deepEqual(parseCollapsedGroups('["done","queued","xyz"]'), ['queued', 'done'], 'theo thứ tự nhóm, bỏ giá trị lạ')
+  assert.deepEqual(parseCollapsedGroups('{oops'), ['done'])
+  assert.deepEqual(parseCollapsedGroups('"done"'), ['done'])
+})
+
+test('toggleGroup / isGroupOpen / visibleOrder', () => {
+  assert.deepEqual(toggleGroup(['done'], 'queued'), ['queued', 'done'])
+  assert.deepEqual(toggleGroup(['queued', 'done'], 'done'), ['queued'])
+  const groups = [
+    { status: 'review' as TaskStatus, tasks: [{ id: 1 }, { id: 2 }] },
+    { status: 'queued' as TaskStatus, tasks: [{ id: 3 }] },
+    { status: 'done' as TaskStatus, tasks: [{ id: 4 }, { id: 5 }] },
+  ]
+  assert.deepEqual(visibleOrder(groups, ['done']), [1, 2, 3])
+  assert.deepEqual(visibleOrder(groups, ['review', 'done']), [3])
+  assert.equal(isGroupOpen(groups[2], ['done'], 5), true, 'nhóm chứa task đang xem luôn mở')
+  assert.deepEqual(visibleOrder(groups, ['done'], 5), [1, 2, 3, 4, 5])
 })
 
 const perm = (id: string, taskId: number, ageMin: number, status: PermissionRequest['status'] = 'pending'): PermissionRequest => ({

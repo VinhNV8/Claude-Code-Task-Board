@@ -88,6 +88,37 @@ export function triageGroups<T extends TriageItem>(tasks: T[]): { status: TaskSt
   }).filter((g) => g.tasks.length > 0)
 }
 
+/** Khoá localStorage nhớ các nhóm đang thu gọn ở view Phân luồng. */
+export const TRIAGE_COLLAPSED_KEY = 'triage-collapsed'
+/** Chưa từng chọn: thu gọn nhóm Xong (thường dài nhất, ít cần xem). */
+export const DEFAULT_TRIAGE_COLLAPSED: TaskStatus[] = ['done']
+
+/** Đọc danh sách nhóm thu gọn đã lưu; thiếu hoặc hỏng thì dùng mặc định. */
+export function parseCollapsedGroups(raw: string | null | undefined): TaskStatus[] {
+  if (raw === null || raw === undefined) return [...DEFAULT_TRIAGE_COLLAPSED]
+  try {
+    const v: unknown = JSON.parse(raw)
+    if (!Array.isArray(v)) return [...DEFAULT_TRIAGE_COLLAPSED]
+    return TRIAGE_ORDER.filter((s) => v.includes(s))
+  } catch {
+    return [...DEFAULT_TRIAGE_COLLAPSED]
+  }
+}
+
+export function toggleGroup(collapsed: TaskStatus[], status: TaskStatus): TaskStatus[] {
+  return collapsed.includes(status) ? collapsed.filter((s) => s !== status) : TRIAGE_ORDER.filter((s) => s === status || collapsed.includes(s))
+}
+
+/** Nhóm đang mở: không bị thu gọn, hoặc chứa task đang xem (để task đang mở luôn thấy trong danh sách). */
+export function isGroupOpen(group: { status: TaskStatus; tasks: { id: number }[] }, collapsed: TaskStatus[], selectedId?: number): boolean {
+  return !collapsed.includes(group.status) || (selectedId !== undefined && group.tasks.some((t) => t.id === selectedId))
+}
+
+/** Thứ tự J/K: chỉ task trong nhóm đang mở. */
+export function visibleOrder(groups: { status: TaskStatus; tasks: { id: number }[] }[], collapsed: TaskStatus[], selectedId?: number): number[] {
+  return groups.filter((g) => isGroupOpen(g, collapsed, selectedId)).flatMap((g) => g.tasks.map((t) => t.id))
+}
+
 // ------------------------------------------------------------ Cần bạn
 
 const DAY = 24 * 3600_000

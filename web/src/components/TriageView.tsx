@@ -1,5 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { Link } from 'react-router-dom'
+import { ChevronRight, ChevronsDownUp, ChevronsUpDown } from 'lucide-react'
+import { isGroupOpen, toggleGroup } from '../lib/workView'
 import { useStore } from '../store/store'
 import { StatusGlyph, useNow } from './ui'
 import { duration, timeAgo, STATUS_META } from '../lib/format'
@@ -34,11 +36,16 @@ export function TriageList({
   projects,
   selectedId,
   taskLink,
+  collapsed,
+  onCollapsedChange,
 }: {
   groups: { status: TaskStatus; tasks: Task[] }[]
   projects: Project[]
   selectedId?: number
   taskLink: (id: number) => string
+  /** Các nhóm đang thu gọn */
+  collapsed: TaskStatus[]
+  onCollapsedChange: (next: TaskStatus[]) => void
 }) {
   const s = useStore()
   const now = useNow(1000)
@@ -51,14 +58,36 @@ export function TriageList({
 
   if (!groups.length) return <p className="px-4 py-10 text-center text-sm text-slate-400">Không có task nào khớp bộ lọc.</p>
 
+  const allCollapsed = groups.every((g) => collapsed.includes(g.status))
+
   return (
     <div ref={listRef} className="min-h-0 flex-1 overflow-y-auto">
-      {groups.map((g) => (
+      <div className="flex items-center justify-end border-b border-slate-200 px-3.5 py-1 dark:border-slate-800">
+        <button
+          onClick={() => onCollapsedChange(allCollapsed ? [] : groups.map((g) => g.status))}
+          className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs text-slate-500 hover:bg-slate-100 hover:text-slate-800 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+        >
+          {allCollapsed ? <ChevronsUpDown size={13} /> : <ChevronsDownUp size={13} />}
+          {allCollapsed ? 'Mở tất cả' : 'Thu gọn tất cả'}
+        </button>
+      </div>
+      {groups.map((g) => {
+        const open = isGroupOpen(g, collapsed, selectedId)
+        return (
         <section key={g.status} aria-label={STATUS_META[g.status].label}>
-          <h3 className="sticky top-0 z-[1] flex items-center gap-1.5 border-b border-slate-200 bg-slate-50/95 px-3.5 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500 backdrop-blur dark:border-slate-800 dark:bg-slate-950/95 dark:text-slate-400">
-            <StatusGlyph status={g.status} size={12} /> {STATUS_META[g.status].label} · {g.tasks.length}
+          <h3 className="sticky top-0 z-[1] border-b border-slate-200 bg-slate-50/95 backdrop-blur dark:border-slate-800 dark:bg-slate-950/95">
+            <button
+              onClick={() => onCollapsedChange(toggleGroup(collapsed, g.status))}
+              aria-expanded={open}
+              className="flex w-full items-center gap-1.5 px-3.5 py-1.5 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200"
+              title={open ? 'Thu gọn nhóm' : 'Mở nhóm'}
+            >
+              <ChevronRight size={13} className={`shrink-0 transition-transform ${open ? 'rotate-90' : ''}`} />
+              <StatusGlyph status={g.status} size={12} /> {STATUS_META[g.status].label}
+              <span className="ml-auto rounded-full bg-slate-200/70 px-1.5 font-mono text-[10px] normal-case tracking-normal text-slate-600 dark:bg-slate-800 dark:text-slate-300">{g.tasks.length}</span>
+            </button>
           </h3>
-          {g.tasks.map((t) => {
+          {open && g.tasks.map((t) => {
             const on = t.id === selectedId
             const project = projects.find((p) => p.id === t.projectId)
             const sub = subline(t, s)
@@ -85,7 +114,8 @@ export function TriageList({
             )
           })}
         </section>
-      ))}
+        )
+      })}
     </div>
   )
 }
