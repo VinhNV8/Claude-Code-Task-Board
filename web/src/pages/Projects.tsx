@@ -107,7 +107,7 @@ export function Projects() {
         open={!!del}
         onClose={() => setDel(null)}
         title={`Xoá project ${del?.name}?`}
-        message="Chỉ xoá khỏi Task Board, repo trên đĩa không bị ảnh hưởng."
+        message="Chỉ xoá khỏi Claude Workspace, repo trên đĩa không bị ảnh hưởng."
         confirmLabel="Xoá"
         danger
         onConfirm={() => del && deleteProject(del.id)}

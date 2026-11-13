@@ -35,8 +35,10 @@ const ENV_BADGE: Record<string, { label: string; cls: string } | undefined> = {
   uat: { label: 'UAT', cls: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-300' },
 }
 const envBadge = ENV_BADGE[__APP_ENV__]
-const TITLE = envBadge ? `[${envBadge.label}] Claude Task Board` : 'Claude Task Board'
+const TITLE = pageTitle({ env: envBadge?.label })
 import { Button, ConfirmDialog } from './ui'
+import { Logo } from './Logo'
+import { APP_NAME, pageTitle } from '../lib/brand'
 
 // ------------------------------------------------------------ mở modal tạo task từ bất kỳ đâu
 
@@ -189,9 +191,9 @@ export function Layout() {
             collapsed ? 'md:w-16 md:px-2' : 'md:w-56 md:px-3'
           }`}
         >
-          <Link to="/" className="mr-2 flex items-center gap-2 px-2 font-semibold md:mb-4 md:mr-0" title="Claude Task Board">
-            <span className="grid h-7 w-7 shrink-0 place-items-center rounded-md bg-indigo-600 text-sm text-white">CT</span>
-            <span className={`hidden whitespace-nowrap ${collapsed ? '' : 'md:inline'}`}>Claude Task Board</span>
+          <Link to="/" className="mr-2 flex items-center gap-2 px-2 font-semibold md:mb-4 md:mr-0" title={APP_NAME}>
+            <Logo size={28} className="shrink-0" />
+            <span className={`hidden whitespace-nowrap ${collapsed ? '' : 'md:inline'}`}>{APP_NAME}</span>
             {envBadge && (
               <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold tracking-wide ${envBadge.cls} ${mdHide}`}>{envBadge.label}</span>
             )}

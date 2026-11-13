@@ -1,0 +1,372 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Prototype – Cải thiện trang Projects</title>
+<style>
+:root{
+  --bg:#f8fafc;--card:#fff;--line:#e2e8f0;--line2:#cbd5e1;--txt:#0f172a;--mut:#64748b;--mut2:#94a3b8;
+  --hover:#f1f5f9;--pri:#4f46e5;--pri-bg:#eef2ff;--pri-tx:#4338ca;
+  --ok:#059669;--ok-bg:#d1fae5;--warn:#d97706;--warn-bg:#fef3c7;--err:#e11d48;--err-bg:#ffe4e6;
+  --run:#4f46e5;--run-bg:#e0e7ff;--rev:#7c3aed;--rev-bg:#ede9fe;--que:#0284c7;--que-bg:#e0f2fe;
+  --code:#f1f5f9;
+}
+:root.dark{
+  --bg:#020617;--card:#0f172a;--line:#1e293b;--line2:#334155;--txt:#f1f5f9;--mut:#94a3b8;--mut2:#64748b;
+  --hover:#1e293b;--pri:#818cf8;--pri-bg:#1e1b4b99;--pri-tx:#a5b4fc;
+  --ok:#34d399;--ok-bg:#064e3b;--warn:#fbbf24;--warn-bg:#451a03;--err:#fb7185;--err-bg:#4c0519;
+  --run:#818cf8;--run-bg:#1e1b4b;--rev:#a78bfa;--rev-bg:#2e1065;--que:#38bdf8;--que-bg:#082f49;
+  --code:#1e293b;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--txt);font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+button,input,select{font:inherit;color:inherit}
+.mono{font-family:ui-monospace,Consolas,monospace}
+.muted{color:var(--mut)}
+.xs{font-size:12px}.xxs{font-size:11px}
+
+/* proposal switcher */
+.switch{position:sticky;top:0;z-index:30;background:var(--card);border-bottom:1px solid var(--line);padding:10px 20px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.switch .tabs{display:flex;gap:6px;flex-wrap:wrap}
+.tab{border:1px solid var(--line);background:var(--card);border-radius:8px;padding:6px 12px;cursor:pointer}
+.tab b{display:block;font-size:13px}.tab span{font-size:11px;color:var(--mut)}
+.tab.on{border-color:var(--pri);background:var(--pri-bg)}
+.tab.on b{color:var(--pri-tx)}
+.theme{margin-left:auto}
+.btn{border:1px solid var(--line2);background:var(--card);border-radius:7px;padding:6px 12px;cursor:pointer;display:inline-flex;gap:6px;align-items:center}
+.btn:hover{background:var(--hover)}
+.btn.pri{background:var(--pri);border-color:var(--pri);color:#fff}
+:root.dark .btn.pri{color:#0f172a}
+.btn.pri:hover{filter:brightness(1.08)}
+.btn.sm{padding:3px 9px;font-size:12px}
+.btn.ghost{border-color:transparent;background:transparent}
+.btn.ghost:hover{background:var(--hover)}
+.btn.danger:hover{color:var(--err)}
+
+.note{max-width:1100px;margin:16px auto 0;padding:0 20px}
+.note .box{background:var(--card);border:1px solid var(--line);border-left:3px solid var(--pri);border-radius:8px;padding:10px 14px;display:grid;grid-template-columns:1fr 1fr;gap:4px 24px}
+.note h3{margin:0 0 2px;font-size:14px}
+.note ul{margin:0;padding-left:16px;color:var(--mut);font-size:12.5px}
+.note .full{grid-column:1/-1}
+@media(max-width:720px){.note .box{grid-template-columns:1fr}}
+
+.page{max-width:1100px;margin:0 auto;padding:16px 20px 60px}
+.head{display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap}
+.head h1{font-size:18px;margin:0}
+.head .sp{flex:1}
+.in{border:1px solid var(--line2);background:var(--card);border-radius:7px;padding:6px 10px;min-width:0}
+.in:focus{outline:2px solid var(--pri);outline-offset:-1px}
+
+/* badges */
+.pill{display:inline-flex;align-items:center;gap:4px;border-radius:999px;padding:1px 8px;font-size:11px;white-space:nowrap}
+.p-run{background:var(--run-bg);color:var(--run)}.p-need{background:var(--warn-bg);color:var(--warn)}
+.p-rev{background:var(--rev-bg);color:var(--rev)}.p-que{background:var(--que-bg);color:var(--que)}
+.p-ok{background:var(--ok-bg);color:var(--ok)}.p-err{background:var(--err-bg);color:var(--err)}
+.p-gray{background:var(--code);color:var(--mut)}
+.chip{background:var(--code);border-radius:4px;padding:1px 6px;font-size:11px}
+.dot{width:8px;height:8px;border-radius:50%;display:inline-block}
+.d-run{background:var(--run)}.d-need{background:var(--warn)}.d-idle{background:var(--mut2)}.d-err{background:var(--err)}
+.pulse{animation:pl 1.6s infinite}@keyframes pl{50%{opacity:.35}}
+
+/* stacked bar + meter */
+.bar{display:flex;height:6px;border-radius:99px;overflow:hidden;background:var(--code)}
+.bar i{display:block}
+.c-run{background:var(--run)}.c-need{background:var(--warn)}.c-rev{background:var(--rev)}.c-que{background:var(--que)}.c-done{background:var(--ok)}
+.meter{height:6px;border-radius:99px;background:var(--code);overflow:hidden}
+.meter i{display:block;height:100%;background:var(--ok)}
+.meter.w i{background:var(--warn)}.meter.e i{background:var(--err)}
+
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px}
+.grid{display:grid;gap:12px}
+.g2{grid-template-columns:repeat(auto-fill,minmax(440px,1fr))}
+@media(max-width:520px){.g2{grid-template-columns:1fr}}
+
+/* A: cards */
+.pc{padding:14px;display:flex;flex-direction:column;gap:10px;transition:border-color .15s,box-shadow .15s}
+.pc:hover{border-color:var(--line2);box-shadow:0 2px 10px rgba(0,0,0,.06)}
+.pc.attn{border-left:3px solid var(--warn)}
+.row{display:flex;align-items:center;gap:8px}
+.row.top{align-items:flex-start}
+.grow{flex:1;min-width:0}
+.trunc{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.avatar{width:34px;height:34px;border-radius:8px;display:grid;place-items:center;font-weight:700;color:#fff;flex:none}
+.kv{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.kv div{background:var(--code);border-radius:7px;padding:6px 9px}
+.kv small{display:block;color:var(--mut);font-size:11px}
+.kv b{font-size:13px}
+.legend{display:flex;gap:10px;flex-wrap:wrap;font-size:11px;color:var(--mut)}
+.legend .dot{width:7px;height:7px;margin-right:4px}
+.sugg{background:var(--warn-bg);color:var(--warn);border-radius:7px;padding:6px 10px;font-size:12px;display:flex;gap:8px;align-items:center;cursor:pointer;border:0;width:100%;text-align:left}
+.foot{display:flex;gap:6px;border-top:1px solid var(--line);padding-top:10px;margin-top:2px}
+.menu{position:relative}
+.menu>div{position:absolute;right:0;top:100%;z-index:10;background:var(--card);border:1px solid var(--line);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.15);padding:4px;min-width:170px;display:none}
+.menu.open>div{display:block}
+.menu button{display:block;width:100%;text-align:left;border:0;background:none;padding:6px 10px;border-radius:5px;cursor:pointer}
+.menu button:hover{background:var(--hover)}
+.menu .del{color:var(--err)}
+
+/* B: table */
+.tbl{width:100%;border-collapse:collapse}
+.tbl th{font-weight:500;color:var(--mut);font-size:12px;text-align:left;padding:8px 12px;border-bottom:1px solid var(--line);white-space:nowrap;user-select:none}
+.tbl th.s{cursor:pointer}.tbl th.s:hover{color:var(--txt)}
+.tbl td{padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:middle}
+.tbl tr.r{cursor:pointer}.tbl tr.r:hover td{background:var(--hover)}
+.tbl tr.ex td{background:var(--hover);padding:0}
+.tbl tr:last-child td{border-bottom:0}
+.exin{padding:14px 16px 16px 40px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px}
+@media(max-width:820px){.exin{grid-template-columns:1fr;padding-left:16px}.hide-m{display:none}}
+.exin h4{margin:0 0 6px;font-size:12px;color:var(--mut);font-weight:600;text-transform:uppercase;letter-spacing:.04em}
+.tools{display:flex;gap:4px;flex-wrap:wrap}
+.seg{display:inline-flex;border:1px solid var(--line2);border-radius:7px;overflow:hidden}
+.seg button{border:0;background:var(--card);padding:5px 10px;cursor:pointer;font-size:12px}
+.seg button.on{background:var(--pri-bg);color:var(--pri-tx);font-weight:600}
+.caret{display:inline-block;transition:transform .15s;color:var(--mut)}
+.open .caret{transform:rotate(90deg)}
+
+/* C: master-detail */
+.md{display:grid;grid-template-columns:300px 1fr;gap:12px;align-items:start}
+@media(max-width:820px){.md{grid-template-columns:1fr}}
+.list{padding:6px;display:flex;flex-direction:column;gap:2px;max-height:calc(100vh - 220px);overflow:auto}
+.li{display:flex;gap:10px;align-items:center;padding:9px 10px;border-radius:8px;cursor:pointer;border:1px solid transparent}
+.li:hover{background:var(--hover)}
+.li.on{background:var(--pri-bg);border-color:var(--pri)}
+.det{padding:0;overflow:hidden}
+.dh{padding:16px 18px;border-bottom:1px solid var(--line)}
+.dtabs{display:flex;gap:2px;padding:0 12px;border-bottom:1px solid var(--line);overflow:auto}
+.dtab{border:0;background:none;padding:10px 12px;cursor:pointer;color:var(--mut);border-bottom:2px solid transparent;white-space:nowrap}
+.dtab.on{color:var(--pri-tx);border-bottom-color:var(--pri);font-weight:600}
+.dtab .pill{margin-left:4px}
+.dbody{padding:18px;display:flex;flex-direction:column;gap:16px}
+.f{display:grid;gap:4px}.f label{font-size:12.5px;font-weight:600}.f .h{font-size:12px;color:var(--mut)}
+.f2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media(max-width:620px){.f2{grid-template-columns:1fr}}
+.opt{display:flex;gap:8px;align-items:flex-start;border:1px solid var(--line);border-radius:8px;padding:8px 10px;cursor:pointer}
+.opt.on{border-color:var(--pri);background:var(--pri-bg)}
+.savebar{position:sticky;bottom:0;display:flex;gap:8px;align-items:center;padding:10px 18px;background:var(--card);border-top:1px solid var(--line)}
+.rule{display:flex;align-items:center;gap:8px;padding:7px 10px;border:1px solid var(--line);border-radius:7px}
+.rule .mono{font-size:12px}
+.toast{position:fixed;bottom:18px;right:18px;background:var(--txt);color:var(--bg);padding:9px 14px;border-radius:8px;font-size:13px;opacity:0;transform:translateY(8px);transition:.2s;pointer-events:none;z-index:50}
+.toast.on{opacity:1;transform:none}
+.empty{padding:40px;text-align:center;color:var(--mut)}
+</style>
+</head>
+<body>
+
+<div class="switch">
+  <div class="tabs" id="tabs"></div>
+  <button class="btn theme" id="theme">🌙 Giao diện tối</button>
+</div>
+
+<div class="note"><div class="box" id="note"></div></div>
+<div class="page" id="app"></div>
+<div class="toast" id="toast"></div>
+
+<script>
+/* ---------- dữ liệu mẫu (đúng với type Project hiện tại + vài trường tổng hợp) ---------- */
+const MODE = {
+  default:{l:'Hỏi mọi thứ',c:'p-gray'}, acceptEdits:{l:'Tự nhận sửa file',c:'p-que'},
+  plan:{l:'Chỉ lập kế hoạch',c:'p-rev'}, auto:{l:'Auto',c:'p-need'}, bypassPermissions:{l:'Bỏ qua quyền',c:'p-err'}
+};
+const P = [
+ {id:'p1',name:'shop-web',path:'D:\\Projects\\shop-web',branch:'main',mode:'acceptEdits',par:2,test:'npm run test:ci',model:'Sonnet 5.5',color:'#4f46e5',
+  t:{running:2,needs_input:1,review:3,queued:2,done:41,failed:1},budget:50,spent:38.4,act:'2 phút trước',
+  tools:['Read','Edit','Write','Glob','Grep','Bash(npm test:*)','Bash(git diff:*)'],
+  sugg:[{rule:'Bash(npm run lint:*)',n:5,ex:'npm run lint -- --fix'},{rule:'Bash(git status:*)',n:4,ex:'git status --short'}]},
+ {id:'p2',name:'claude-task-board',path:'D:\\Projects\\AI Project\\AI-Interface',branch:'main',mode:'auto',par:3,test:'npm test',model:'Kế thừa hệ thống',color:'#0891b2',
+  t:{running:1,needs_input:0,review:2,queued:4,done:52,failed:0},budget:80,spent:81.2,act:'vừa xong',
+  tools:['Read','Edit','Write','Glob','Grep','Bash(npm test:*)'],sugg:[]},
+ {id:'p3',name:'mobile-app',path:'D:\\Projects\\mobile-app',branch:'develop',mode:'default',par:1,test:'',model:'Opus 5.5',color:'#db2777',
+  t:{running:0,needs_input:0,review:0,queued:0,done:12,failed:0},budget:null,spent:4.1,act:'3 ngày trước',
+  tools:['Read','Glob','Grep'],sugg:[]},
+ {id:'p4',name:'infra-scripts',path:'/home/vinh/infra',branch:'main',mode:'plan',par:1,test:'',model:'Haiku 5.5',color:'#65a30d',
+  t:{running:0,needs_input:0,review:1,queued:0,done:7,failed:2},budget:20,spent:6.3,act:'hôm qua',
+  tools:['Read','Glob','Grep','Bash(terraform plan:*)'],sugg:[{rule:'Bash(terraform fmt:*)',n:3,ex:'terraform fmt -recursive'}]},
+ {id:'p5',name:'docs-site',path:'D:\\Projects\\docs-site',branch:'main',mode:'acceptEdits',par:1,test:'npm run build',model:'Kế thừa hệ thống',color:'#ea580c',
+  t:{running:0,needs_input:0,review:0,queued:0,done:3,failed:0},budget:10,spent:0.9,act:'1 tuần trước',
+  tools:['Read','Edit','Write','Glob','Grep'],sugg:[]},
+];
+const sum = (p,ks)=>ks.reduce((a,k)=>a+p.t[k],0);
+const active = p=>p.t.running+p.t.needs_input;
+const pctB = p=>p.budget?Math.round(p.spent/p.budget*100):null;
+const state = p=>p.t.needs_input?['need','Cần bạn xử lý']:p.t.running?['run','Đang chạy']:p.t.failed&&!sum(p,['review','queued'])?['err','Có task lỗi']:['idle','Rảnh'];
+const $ = s=>document.querySelector(s);
+const esc = s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('on');clearTimeout(toast.h);toast.h=setTimeout(()=>t.classList.remove('on'),1800)}
+
+/* ---------- thành phần dùng chung ---------- */
+const av = p=>`<div class="avatar" style="background:${p.color}">${esc(p.name[0].toUpperCase())}</div>`;
+const pill = p=>{const[s,l]=state(p);return `<span class="pill ${{need:'p-need',run:'p-run',err:'p-err',idle:'p-gray'}[s]}"><span class="dot d-${s} ${s==='run'?'pulse':''}"></span>${l}</span>`};
+const stack = p=>{const tot=Object.values(p.t).reduce((a,b)=>a+b,0)||1;
+  const seg=(k,c)=>p.t[k]?`<i class="${c}" style="width:${p.t[k]/tot*100}%" title="${k}: ${p.t[k]}"></i>`:'';
+  return `<div class="bar">${seg('running','c-run')}${seg('needs_input','c-need')}${seg('review','c-rev')}${seg('queued','c-que')}${seg('done','c-done')}</div>`};
+const legend = p=>`<div class="legend">
+  <span><i class="dot c-run"></i>Running ${p.t.running}</span><span><i class="dot c-need"></i>Needs input ${p.t.needs_input}</span>
+  <span><i class="dot c-rev"></i>Review ${p.t.review}</span><span><i class="dot c-que"></i>Queued ${p.t.queued}</span><span><i class="dot c-done"></i>Done ${p.t.done}</span></div>`;
+const budget = p=>{if(!p.budget)return `<span class="muted xs">Không giới hạn · đã dùng $${p.spent.toFixed(1)}</span>`;const x=pctB(p);
+  return `<div class="meter ${x>=100?'e':x>=80?'w':''}" title="${x}%"><i style="width:${Math.min(x,100)}%"></i></div>
+  <div class="xs ${x>=100?'':'muted'}" style="${x>=100?'color:var(--err)':''}">$${p.spent.toFixed(1)} / $${p.budget} (${x}%)${x>=100?' · vượt budget':''}</div>`};
+const modeP = p=>`<span class="pill ${MODE[p.mode].c}">🛡 ${MODE[p.mode].l}</span>`;
+
+/* ---------- ghi chú từng phương án ---------- */
+const NOTES = {
+ A:{t:'A · Card “Sức khoẻ” — nâng cấp tối thiểu, giữ bố cục quen thuộc',
+  pros:['Thay đổi nhỏ nhất so với hiện tại, dễ làm (1 file Projects.tsx)','Thanh trạng thái + budget cho thấy ngay project nào cần chú ý','Hành động nhanh: Giao việc / Mở board ngay trên card'],
+  cons:['Không scale tốt khi >12 project','Chi tiết (allowlist, rule gợi ý) vẫn phải mở modal'],
+  fit:'Phù hợp khi bạn có 2–8 project và muốn “nhìn là biết”.'},
+ B:{t:'B · Bảng dày đặc + hàng mở rộng — tối ưu cho nhiều project',
+  pros:['Quét nhanh, sắp xếp theo cột (cần xử lý, budget, hoạt động gần nhất)','Mở rộng hàng để xem allowlist + gợi ý rule mà không rời trang','Lọc theo tìm kiếm / trạng thái'],
+  cons:['Kém “trực quan” hơn card','Cần thiết kế responsive: cột ẩn dần trên mobile'],
+  fit:'Phù hợp khi bạn quản lý >8 project hoặc hay so sánh budget/tải.'},
+ C:{t:'C · Master-detail có tab — thay modal bằng trang chi tiết',
+  pros:['Sửa cấu hình ngay tại chỗ, không modal dài; tách tab Tổng quan / Quyền / Cấu hình / Budget','Gợi ý allowlist có chỗ riêng, thấy rõ & xử lý hàng loạt','Có thể deep-link /projects/:id'],
+  cons:['Thay đổi lớn nhất (route mới, form tách tab, cần cảnh báo “chưa lưu”)','Mobile phải chuyển thành danh sách → chi tiết'],
+  fit:'Phù hợp khi cấu hình project là việc thường xuyên (permissions, whitelist, budget).'}
+};
+function note(k){const n=NOTES[k];$('#note').innerHTML=`<h3 class="full">${n.t}</h3>
+ <div><b class="xs">Ưu điểm</b><ul>${n.pros.map(x=>`<li>${x}</li>`).join('')}</ul></div>
+ <div><b class="xs">Hạn chế</b><ul>${n.cons.map(x=>`<li>${x}</li>`).join('')}</ul></div>
+ <div class="full xs" style="color:var(--pri-tx)"><b>Gợi ý:</b> ${n.fit}</div>`}
+
+/* ---------- A ---------- */
+let aQ='',aSort='attn';
+function viewA(){
+  let l=P.filter(p=>p.name.toLowerCase().includes(aQ.toLowerCase()));
+  const sorters={attn:(a,b)=>b.t.needs_input-a.t.needs_input||active(b)-active(a),name:(a,b)=>a.name.localeCompare(b.name),budget:(a,b)=>(pctB(b)??-1)-(pctB(a)??-1)};
+  l=[...l].sort(sorters[aSort]);
+  const need=P.reduce((a,p)=>a+p.t.needs_input,0),run=P.reduce((a,p)=>a+p.t.running,0),over=P.filter(p=>pctB(p)>=100).length;
+  $('#app').innerHTML=`
+  <div class="head"><h1>Projects</h1><span class="muted xs">${P.length} project · ${run} task đang chạy${need?` · <b style="color:var(--warn)">${need} cần xử lý</b>`:''}${over?` · <b style="color:var(--err)">${over} vượt budget</b>`:''}</span>
+   <span class="sp"></span>
+   <input class="in" placeholder="Tìm project…" value="${esc(aQ)}" id="aq" style="width:180px">
+   <select class="in" id="as"><option value="attn">Ưu tiên: cần xử lý</option><option value="name">Tên A→Z</option><option value="budget">Budget cao nhất</option></select>
+   <button class="btn pri" data-t="Mở form thêm project">＋ Thêm project</button></div>
+  ${l.length?`<div class="grid g2">${l.map(p=>`
+   <div class="card pc ${p.t.needs_input?'attn':''}">
+    <div class="row top">${av(p)}<div class="grow"><div class="row"><b>${esc(p.name)}</b>${pill(p)}</div>
+      <div class="mono xs muted trunc" title="${esc(p.path)}">${esc(p.path)}</div></div>
+      <div class="menu"><button class="btn ghost sm" data-menu>⋯</button><div>
+        <button data-t="Sửa ${esc(p.name)}">✏️ Sửa cấu hình</button><button data-t="Nhân bản">📄 Nhân bản</button><button data-t="Mở thư mục">📂 Mở thư mục repo</button><button class="del" data-t="Xoá project">🗑 Xoá…</button></div></div></div>
+    <div>${stack(p)}<div style="margin-top:6px">${legend(p)}</div></div>
+    <div class="kv"><div><small>Nhánh chính</small><b class="mono">⎇ ${esc(p.branch)}</b></div><div><small>Song song</small><b>${active(p)} / ${p.par} slot</b></div><div><small>Model</small><b>${esc(p.model)}</b></div></div>
+    <div><div class="row xs muted" style="margin-bottom:3px"><span>Budget tháng</span></div>${budget(p)}</div>
+    <div class="row" style="flex-wrap:wrap;gap:6px">${modeP(p)}${p.test?`<span class="pill p-gray mono">🧪 ${esc(p.test)}</span>`:`<span class="pill p-gray">Chưa có lệnh test</span>`}<span class="chip">${p.tools.length} tool cho phép</span></div>
+    ${p.sugg.length?`<button class="sugg" data-t="Mở danh sách gợi ý allowlist">💡 ${p.sugg.length} rule được gợi ý thêm vào allowlist <span style="margin-left:auto">Xem →</span></button>`:''}
+    <div class="foot"><button class="btn sm pri" data-t="Giao việc cho ${esc(p.name)}">＋ Giao việc</button><button class="btn sm" data-t="Mở Bảng công việc đã lọc ${esc(p.name)}">▦ Mở board</button><span class="grow"></span><span class="xs muted" style="align-self:center">Hoạt động: ${p.act}</span></div>
+   </div>`).join('')}</div>`:`<div class="empty">Không có project khớp “${esc(aQ)}”.</div>`}`;
+  $('#aq').oninput=e=>{aQ=e.target.value;const pos=e.target.selectionStart;viewA();const i=$('#aq');i.focus();i.setSelectionRange(pos,pos)};
+  $('#as').value=aSort;$('#as').onchange=e=>{aSort=e.target.value;viewA()};
+}
+
+/* ---------- B ---------- */
+let bSort={k:'attn',d:-1},bOpen=null,bF='all',bQ='';
+function viewB(){
+  const key={name:p=>p.name,attn:p=>p.t.needs_input*100+p.t.review,run:p=>p.t.running,budget:p=>pctB(p)??-1,act:p=>-P.indexOf(p)};
+  let l=P.filter(p=>p.name.toLowerCase().includes(bQ.toLowerCase())).filter(p=>bF==='all'||(bF==='attn'&&(p.t.needs_input||p.t.review))||(bF==='run'&&p.t.running)||(bF==='over'&&pctB(p)>=80));
+  l=[...l].sort((a,b)=>{const x=key[bSort.k](a),y=key[bSort.k](b);return (x>y?1:x<y?-1:0)*bSort.d});
+  const th=(k,t,cls='')=>`<th class="s ${cls}" data-s="${k}">${t}${bSort.k===k?(bSort.d>0?' ▲':' ▼'):''}</th>`;
+  $('#app').innerHTML=`
+  <div class="head"><h1>Projects</h1><span class="muted xs">${P.length} project</span><span class="sp"></span>
+   <input class="in" placeholder="Tìm project…" id="bq" value="${esc(bQ)}" style="width:180px">
+   <div class="seg" id="bf">${[['all','Tất cả'],['attn','Cần xử lý'],['run','Đang chạy'],['over','Budget ≥80%']].map(([k,t])=>`<button data-f="${k}" class="${bF===k?'on':''}">${t}</button>`).join('')}</div>
+   <button class="btn pri" data-t="Mở form thêm project">＋ Thêm project</button></div>
+  <div class="card" style="overflow:auto"><table class="tbl">
+   <thead><tr><th style="width:26px"></th>${th('name','Project')}${th('run','Đang chạy','')}${th('attn','Cần xử lý')}<th class="hide-m">Phân bố task</th>${th('budget','Budget tháng','hide-m')}<th class="hide-m">Quyền</th>${th('act','Hoạt động','hide-m')}<th></th></tr></thead>
+   <tbody>${l.length?l.map(p=>{const o=bOpen===p.id;return `
+    <tr class="r ${o?'open':''}" data-r="${p.id}">
+     <td><span class="caret">▸</span></td>
+     <td><div class="row">${av(p).replace('width:34px','')}<div><b>${esc(p.name)}</b><div class="mono xxs muted">⎇ ${esc(p.branch)} · ${esc(p.model)}</div></div></div></td>
+     <td>${p.t.running?`<span class="pill p-run"><span class="dot d-run pulse"></span>${p.t.running}</span>`:'<span class="muted">—</span>'} <span class="xs muted">/ ${p.par}</span></td>
+     <td>${[p.t.needs_input&&`<span class="pill p-need">⚠ ${p.t.needs_input} input</span>`,p.t.review&&`<span class="pill p-rev">${p.t.review} review</span>`].filter(Boolean).join(' ')||'<span class="muted">—</span>'}</td>
+     <td class="hide-m" style="min-width:140px">${stack(p)}</td>
+     <td class="hide-m" style="min-width:150px">${budget(p)}</td>
+     <td class="hide-m">${modeP(p)}</td>
+     <td class="hide-m xs muted">${p.act}</td>
+     <td><div class="row" style="justify-content:flex-end"><button class="btn sm pri" data-t="Giao việc cho ${esc(p.name)}">＋ Giao việc</button></div></td></tr>
+    ${o?`<tr class="ex"><td colspan="9"><div class="exin">
+      <div><h4>Cấu hình</h4><div class="xs" style="display:grid;gap:5px">
+        <div><span class="muted">Repo:</span> <span class="mono">${esc(p.path)}</span></div>
+        <div><span class="muted">Lệnh test:</span> <span class="mono">${esc(p.test||'—')}</span></div>
+        <div><span class="muted">Slot song song:</span> ${p.par}</div></div>
+        <div style="margin-top:10px;display:flex;gap:6px"><button class="btn sm" data-t="Sửa ${esc(p.name)}">✏️ Sửa</button><button class="btn sm" data-t="Mở board">▦ Board</button><button class="btn sm ghost danger" data-t="Xoá…">🗑 Xoá</button></div></div>
+      <div><h4>Allowlist (${p.tools.length})</h4><div class="tools">${p.tools.map(t=>`<span class="chip mono">${esc(t)}</span>`).join('')}</div></div>
+      <div><h4>Gợi ý rule ${p.sugg.length?`(${p.sugg.length})`:''}</h4>${p.sugg.length?p.sugg.map(s=>`<div class="row xs" style="margin-bottom:6px"><div class="grow"><b class="mono">${esc(s.rule)}</b><div class="muted">đã cho phép ${s.n} lần</div></div><button class="btn sm" data-t="Đã thêm ${esc(s.rule)}">Thêm</button></div>`).join(''):'<span class="muted xs">Chưa có gợi ý.</span>'}</div>
+    </div></td></tr>`:''}`}).join(''):`<tr><td colspan="9" class="empty">Không có project khớp bộ lọc.</td></tr>`}</tbody></table></div>`;
+  document.querySelectorAll('[data-s]').forEach(e=>e.onclick=()=>{const k=e.dataset.s;bSort=bSort.k===k?{k,d:-bSort.d}:{k,d:k==='name'?1:-1};viewB()});
+  document.querySelectorAll('[data-r]').forEach(e=>e.onclick=ev=>{if(ev.target.closest('button'))return;bOpen=bOpen===e.dataset.r?null:e.dataset.r;viewB()});
+  document.querySelectorAll('[data-f]').forEach(e=>e.onclick=()=>{bF=e.dataset.f;viewB()});
+  $('#bq').oninput=e=>{bQ=e.target.value;const pos=e.target.selectionStart;viewB();const i=$('#bq');i.focus();i.setSelectionRange(pos,pos)};
+}
+
+/* ---------- C ---------- */
+let cSel='p1',cTab='overview',cDirty=false,cMode=null;
+function viewC(){
+  const p=P.find(x=>x.id===cSel);const mode=cMode??p.mode;
+  const tabs=[['overview','Tổng quan'],['perm','Quyền & allowlist',p.sugg.length],['cfg','Cấu hình'],['budget','Budget']];
+  let body='';
+  if(cTab==='overview')body=`
+   <div class="kv"><div><small>Đang chạy</small><b>${p.t.running} / ${p.par} slot</b></div><div><small>Cần xử lý</small><b>${p.t.needs_input+p.t.review}</b></div><div><small>Hoàn thành</small><b>${p.t.done}</b></div></div>
+   <div>${stack(p)}<div style="margin-top:6px">${legend(p)}</div></div>
+   ${p.sugg.length?`<button class="sugg" data-go="perm">💡 ${p.sugg.length} rule được gợi ý thêm vào allowlist <span style="margin-left:auto">Xem →</span></button>`:''}
+   <div><b class="xs">Task gần đây</b>${['#128 Sửa lỗi giỏ hàng|running','#127 Thêm trang thanh toán|review','#125 Refactor API|done'].map(s=>{const[a,b]=s.split('|');return `<div class="row" style="padding:8px 0;border-bottom:1px solid var(--line)"><span class="grow trunc">${a}</span><span class="pill ${{running:'p-run',review:'p-rev',done:'p-ok'}[b]}">${b}</span></div>`}).join('')}</div>`;
+  if(cTab==='perm')body=`
+   <div class="f"><label>Mức quyền mặc định</label><div style="display:grid;gap:8px;grid-template-columns:repeat(auto-fill,minmax(220px,1fr))">${Object.entries(MODE).map(([k,m])=>`<div class="opt ${mode===k?'on':''}" data-mode="${k}"><input type="radio" ${mode===k?'checked':''}><div><b class="xs">${m.l}</b></div></div>`).join('')}</div></div>
+   ${p.sugg.length?`<div class="card" style="padding:12px;background:var(--warn-bg);border-color:transparent"><b class="xs" style="color:var(--warn)">💡 Gợi ý (cho phép ≥3 lần trong 30 ngày)</b>${p.sugg.map(s=>`<div class="row xs" style="margin-top:8px"><div class="grow"><b class="mono">${esc(s.rule)}</b> <span class="muted">· ${s.n} lần</span><div class="mono muted trunc">${esc(s.ex)}</div></div><button class="btn sm" data-t="Đã thêm ${esc(s.rule)}">Thêm</button><button class="btn sm ghost" data-t="Đã bỏ qua">Bỏ qua</button></div>`).join('')}<div style="margin-top:8px"><button class="btn sm pri" data-t="Đã thêm tất cả gợi ý">Thêm tất cả</button></div></div>`:''}
+   <div class="f"><label>Tool được tự động cho phép (${p.tools.length})</label>
+    <div class="row"><input class="in grow mono" placeholder="Bash(git diff:*)"><button class="btn" data-t="Đã thêm rule">Thêm</button><button class="btn" data-t="Mở danh sách preset">Preset ▾</button></div>
+    <div style="display:grid;gap:6px;margin-top:6px">${p.tools.map(t=>`<div class="rule"><span class="mono grow">${esc(t)}</span><button class="btn ghost sm danger" data-dirty>✕</button></div>`).join('')}</div></div>`;
+  if(cTab==='cfg')body=`
+   <div class="f2"><div class="f"><label>Tên</label><input class="in" value="${esc(p.name)}" data-dirty-in></div><div class="f"><label>Nhánh chính</label><input class="in mono" value="${esc(p.branch)}" data-dirty-in></div></div>
+   <div class="f"><label>Đường dẫn repo</label><input class="in mono" value="${esc(p.path)}" data-dirty-in><span class="h">Thư mục gốc chứa .git — kiểm tra khi lưu.</span></div>
+   <div class="f2"><div class="f"><label>Số task song song tối đa</label><input class="in" type="number" min="1" max="5" value="${p.par}" data-dirty-in></div>
+    <div class="f"><label>Model mặc định</label><select class="in" data-dirty-in><option>Kế thừa hệ thống</option><option ${p.model==='Sonnet 5.5'?'selected':''}>Sonnet 5.5</option><option ${p.model==='Opus 5.5'?'selected':''}>Opus 5.5</option><option ${p.model==='Haiku 5.5'?'selected':''}>Haiku 5.5</option></select></div></div>
+   <div class="f"><label>Lệnh test (tuỳ chọn)</label><input class="in mono" value="${esc(p.test)}" placeholder="npm test" data-dirty-in><span class="h">Chạy trong worktree khi bấm “Chạy test” ở trang Review. Không hỗ trợ &&, |, &gt;.</span></div>
+   <div class="card" style="padding:12px;border-color:var(--err)"><b class="xs" style="color:var(--err)">Vùng nguy hiểm</b><div class="row" style="margin-top:6px"><span class="xs muted grow">Chỉ xoá khỏi Claude Workspace, repo trên đĩa không bị ảnh hưởng.</span><button class="btn sm danger" data-t="Xác nhận xoá…">🗑 Xoá project</button></div></div>`;
+  if(cTab==='budget')body=`
+   <div class="f"><label>Budget tháng (USD)</label><input class="in" type="number" value="${p.budget??''}" placeholder="Không giới hạn" data-dirty-in style="max-width:200px"></div>
+   <div>${budget(p)}</div>
+   <div class="f"><label>Khi vượt budget</label><div class="seg" style="width:fit-content"><button class="on" data-dirty>Chỉ cảnh báo</button><button data-dirty>Tạm dừng task mới</button></div></div>`;
+
+  $('#app').innerHTML=`
+  <div class="head"><h1>Projects</h1><span class="muted xs">${P.length} project</span><span class="sp"></span><button class="btn pri" data-t="Mở form thêm project">＋ Thêm project</button></div>
+  <div class="md">
+   <div class="card list">${P.map(x=>`<div class="li ${x.id===cSel?'on':''}" data-sel="${x.id}">${av(x)}<div class="grow"><div class="row"><b class="trunc grow">${esc(x.name)}</b>${x.t.needs_input?`<span class="pill p-need">${x.t.needs_input}</span>`:''}${x.t.running?`<span class="dot d-run pulse"></span>`:''}</div><div class="xs muted">${x.t.running} chạy · ${x.t.review} review${pctB(x)>=100?' · <span style="color:var(--err)">vượt budget</span>':''}</div></div></div>`).join('')}</div>
+   <div class="card det">
+    <div class="dh"><div class="row top">${av(p)}<div class="grow"><div class="row"><b style="font-size:16px">${esc(p.name)}</b>${pill(p)}</div><div class="mono xs muted">${esc(p.path)} · ⎇ ${esc(p.branch)}</div></div>
+     <button class="btn sm pri" data-t="Giao việc cho ${esc(p.name)}">＋ Giao việc</button><button class="btn sm" data-t="Mở board">▦ Board</button></div></div>
+    <div class="dtabs">${tabs.map(([k,t,b])=>`<button class="dtab ${cTab===k?'on':''}" data-tab="${k}">${t}${b?`<span class="pill p-need">${b}</span>`:''}</button>`).join('')}</div>
+    <div class="dbody">${body}</div>
+    ${cDirty?`<div class="savebar"><span class="xs" style="color:var(--warn)">● Có thay đổi chưa lưu</span><span class="grow"></span><button class="btn" id="cdis">Hoàn tác</button><button class="btn pri" id="csave">Lưu thay đổi</button></div>`:''}
+   </div></div>`;
+  document.querySelectorAll('[data-sel]').forEach(e=>e.onclick=()=>{if(cDirty&&!confirm('Bỏ các thay đổi chưa lưu?'))return;cDirty=false;cMode=null;cSel=e.dataset.sel;viewC()});
+  document.querySelectorAll('[data-tab]').forEach(e=>e.onclick=()=>{cTab=e.dataset.tab;viewC()});
+  document.querySelectorAll('[data-go]').forEach(e=>e.onclick=()=>{cTab=e.dataset.go;viewC()});
+  document.querySelectorAll('[data-mode]').forEach(e=>e.onclick=()=>{cMode=e.dataset.mode;cDirty=cMode!==p.mode;viewC()});
+  document.querySelectorAll('[data-dirty]').forEach(e=>e.onclick=()=>{cDirty=true;viewC()});
+  document.querySelectorAll('[data-dirty-in]').forEach(e=>e.oninput=()=>{if(!cDirty){cDirty=true;const f=e.value,i=[...document.querySelectorAll('[data-dirty-in]')].indexOf(e);viewC();const n=document.querySelectorAll('[data-dirty-in]')[i];n.focus();try{n.setSelectionRange(f.length,f.length)}catch(_){}}});
+  const s=$('#csave');if(s)s.onclick=()=>{cDirty=false;cMode=null;toast('Đã lưu thay đổi (demo)');viewC()};
+  const d=$('#cdis');if(d)d.onclick=()=>{cDirty=false;cMode=null;viewC()};
+}
+
+/* ---------- khung ---------- */
+let cur=localStorage.getItem('proto-tab')||'A';
+const VIEWS={A:viewA,B:viewB,C:viewC};
+const LABEL={A:['A · Card “Sức khoẻ”','Nâng cấp nhỏ'],B:['B · Bảng dày đặc','Cho nhiều project'],C:['C · Master-detail','Thay modal bằng tab']};
+function render(){
+  $('#tabs').innerHTML=Object.keys(LABEL).map(k=>`<button class="tab ${k===cur?'on':''}" data-k="${k}"><b>${LABEL[k][0]}</b><span>${LABEL[k][1]}</span></button>`).join('');
+  document.querySelectorAll('[data-k]').forEach(e=>e.onclick=()=>{cur=e.dataset.k;try{localStorage.setItem('proto-tab',cur)}catch(_){}render()});
+  note(cur);VIEWS[cur]();
+}
+/* sự kiện chung: toast demo + menu ⋯ */
+document.addEventListener('click',e=>{
+  const t=e.target.closest('[data-t]');if(t)toast(t.dataset.t+' (demo)');
+  const m=e.target.closest('[data-menu]');
+  document.querySelectorAll('.menu.open').forEach(x=>{if(!m||x!==m.parentElement)x.classList.remove('open')});
+  if(m)m.parentElement.classList.toggle('open');
+});
+$('#theme').onclick=()=>{const d=document.documentElement.classList.toggle('dark');$('#theme').textContent=d?'☀️ Giao diện sáng':'🌙 Giao diện tối'};
+if(matchMedia('(prefers-color-scheme: dark)').matches){document.documentElement.classList.add('dark');$('#theme').textContent='☀️ Giao diện sáng'}
+render();
+</script>
+</body>
+</html>
