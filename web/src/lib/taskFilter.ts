@@ -95,6 +95,54 @@ export function isFilterActive(f: BoardFilter): boolean {
   return !!f.q.trim() || !!f.projectId || f.tags.length > 0 || f.priorities.length > 0
 }
 
+/** Số nhóm bộ lọc đang bật (project, ưu tiên, tag, "hiện cả cũ") — hiện trên badge nút Bộ lọc. Từ khoá tìm kiếm không tính. */
+export function activeFilterCount(f: BoardFilter): number {
+  return (f.projectId ? 1 : 0) + f.priorities.length + f.tags.length + (f.showAll ? 1 : 0)
+}
+
+/** Bật/tắt một giá trị trong danh sách (so tên không phân biệt hoa thường). Giữ thứ tự thêm vào. */
+export function toggleValue<T extends string>(list: readonly T[], value: T): T[] {
+  const key = value.toLowerCase()
+  return list.some((x) => x.toLowerCase() === key) ? list.filter((x) => x.toLowerCase() !== key) : [...list, value]
+}
+
+/** Bật/tắt độ ưu tiên và luôn trả về theo thứ tự chuẩn (urgent → low) để URL ổn định. */
+export function togglePriority(list: readonly FilterPriority[], value: FilterPriority): FilterPriority[] {
+  const next = toggleValue(list, value)
+  return PRIORITY_VALUES.filter((p) => next.includes(p))
+}
+
+/** Danh sách "chip" bộ lọc đang bật để hiển thị và gỡ từng cái. */
+export type ActiveChip =
+  | { kind: 'project'; value: string }
+  | { kind: 'priority'; value: FilterPriority }
+  | { kind: 'tag'; value: string }
+
+export function activeChips(f: BoardFilter): ActiveChip[] {
+  return [
+    ...(f.projectId ? [{ kind: 'project', value: f.projectId } as const] : []),
+    ...f.priorities.map((value) => ({ kind: 'priority', value }) as const),
+    ...f.tags.map((value) => ({ kind: 'tag', value }) as const),
+  ]
+}
+
+/** Trả về bộ lọc sau khi gỡ một chip. */
+export function removeChip(f: BoardFilter, chip: ActiveChip): BoardFilter {
+  switch (chip.kind) {
+    case 'project':
+      return { ...f, projectId: null }
+    case 'priority':
+      return { ...f, priorities: f.priorities.filter((p) => p !== chip.value) }
+    case 'tag':
+      return { ...f, tags: f.tags.filter((t) => t.toLowerCase() !== chip.value.toLowerCase()) }
+  }
+}
+
+/** Xoá mọi bộ lọc nhưng giữ từ khoá nếu keepQuery (dùng cho nút "Xoá bộ lọc" trong popover). */
+export function clearFilters(f: BoardFilter, keepQuery = true): BoardFilter {
+  return { ...EMPTY_FILTER, q: keepQuery ? f.q : '' }
+}
+
 /** Từ khoá có khớp task không. "#12" chỉ khớp id; "12" khớp id hoặc chữ trong tiêu đề/prompt. */
 export function matchQuery(t: FilterableTask, q: string): boolean {
   const query = fold(q.trim())
