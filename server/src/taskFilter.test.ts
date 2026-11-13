@@ -3,6 +3,12 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   EMPTY_FILTER,
+  activeChips,
+  activeFilterCount,
+  clearFilters,
+  removeChip,
+  toggleValue,
+  togglePriority,
   collectTags,
   filterToParams,
   isFilterActive,
@@ -82,4 +88,34 @@ test('collectTags + suggestTags: dùng nhiều lên trước, khớp đầu chu�
   assert.deepEqual(suggestTags(all, [], 'b'), ['bug', 'backend', 'debug'])
   assert.deepEqual(suggestTags(all, ['BUG'], 'bu'), ['debug'])
   assert.deepEqual(suggestTags(all, [], 'g', 1), ['bug'])
+})
+
+test('activeFilterCount: đếm project, từng ưu tiên, từng tag, showAll; không đếm từ khoá', () => {
+  assert.equal(activeFilterCount(EMPTY_FILTER), 0)
+  assert.equal(activeFilterCount(F({ q: 'abc' })), 0)
+  assert.equal(activeFilterCount(F({ projectId: 'p1', priorities: ['high', 'low'], tags: ['a', 'b', 'c'], showAll: true })), 7)
+})
+
+test('toggleValue/togglePriority: bật tắt, không phân biệt hoa thường, giữ thứ tự chuẩn', () => {
+  assert.deepEqual(toggleValue(['bug'], 'ui'), ['bug', 'ui'])
+  assert.deepEqual(toggleValue(['bug', 'ui'], 'BUG'), ['ui'])
+  assert.deepEqual(togglePriority([], 'low'), ['low'])
+  assert.deepEqual(togglePriority(['low'], 'urgent'), ['urgent', 'low'])
+  assert.deepEqual(togglePriority(['urgent', 'low'], 'urgent'), ['low'])
+})
+
+test('activeChips/removeChip: gỡ từng chip, chỉ ảnh hưởng đúng nhóm đó', () => {
+  const f = F({ q: 'x', projectId: 'p1', priorities: ['urgent', 'low'], tags: ['Bug', 'ui'], showAll: true })
+  const chips = activeChips(f)
+  assert.deepEqual(chips.map((c) => `${c.kind}:${c.value}`), ['project:p1', 'priority:urgent', 'priority:low', 'tag:Bug', 'tag:ui'])
+  assert.deepEqual(removeChip(f, { kind: 'project', value: 'p1' }), { ...f, projectId: null })
+  assert.deepEqual(removeChip(f, { kind: 'priority', value: 'urgent' }).priorities, ['low'])
+  assert.deepEqual(removeChip(f, { kind: 'tag', value: 'bug' }).tags, ['ui'], 'gỡ tag không phân biệt hoa thường')
+  assert.deepEqual(activeChips(EMPTY_FILTER), [])
+})
+
+test('clearFilters: giữ hoặc bỏ từ khoá', () => {
+  const f = F({ q: 'abc', projectId: 'p1', tags: ['a'], priorities: ['high'], showAll: true })
+  assert.deepEqual(clearFilters(f), { ...EMPTY_FILTER, q: 'abc' })
+  assert.deepEqual(clearFilters(f, false), EMPTY_FILTER)
 })
