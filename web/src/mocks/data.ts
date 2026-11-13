@@ -27,6 +27,7 @@ export const seedProjects: Project[] = [
     maxParallel: 2,
     testCommand: 'npm test',
     budgetAction: 'warn',
+    deliveryMode: 'worktree',
   },
   {
     id: 'p-api',
@@ -38,6 +39,7 @@ export const seedProjects: Project[] = [
     maxParallel: 1,
     testCommand: 'dotnet test',
     budgetAction: 'warn',
+    deliveryMode: 'worktree',
   },
   {
     id: 'p-docs',
@@ -48,6 +50,7 @@ export const seedProjects: Project[] = [
     allowedTools: ['Read', 'Glob', 'Grep'],
     maxParallel: 1,
     budgetAction: 'warn',
+    deliveryMode: 'direct',
   },
 ]
 

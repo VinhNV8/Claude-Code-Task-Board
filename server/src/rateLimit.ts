@@ -17,6 +17,8 @@ export interface RateLimitEvent {
   status: string
   /** epoch ms */
   resetsAt?: number
+  /** 'five_hour' | 'seven_day' | 'seven_day_opus'... */
+  rateLimitType?: string
 }
 
 export interface RateLimitHit {
@@ -28,7 +30,8 @@ export interface RateLimitHit {
 const PATTERNS = [
   /usage limit/i,
   /rate[ _-]?limit(ed)?\b/i,
-  /hit your (usage |session |weekly )?limit/i,
+  // "hit your limit", "hit your 5-hour limit", "hit your weekly limit", "hit your Opus weekly limit"...
+  /hit your [\w -]{0,30}limit/i,
   /\blimit (reached|exceeded)\b/i,
   /\bapi error:?\s*429\b/i,
   /too many requests/i,

@@ -49,9 +49,15 @@ function fromPath(): string | undefined {
 }
 
 let cached: ClaudeBin | null | undefined
+let checkedAt = 0
+/** Chưa tìm thấy CLI: dò lại sau khoảng này (người dùng có thể vừa cài extension Claude Code). */
+const RECHECK_MISSING_MS = 10_000
 
 export function findClaudeBin(refresh = false): ClaudeBin | null {
-  if (cached !== undefined && !refresh) return cached
+  // Bản cũ của extension Claude Code bị gỡ khi cập nhật: đường dẫn đã lưu không còn thì dò lại
+  const fresh = cached ? existsSync(cached.path) : cached === null && Date.now() - checkedAt < RECHECK_MISSING_MS
+  if (cached !== undefined && !refresh && fresh) return cached
+  checkedAt = Date.now()
   let bin: ClaudeBin | null = null
   if (process.env.CLAUDE_BIN && existsSync(process.env.CLAUDE_BIN)) bin = { path: process.env.CLAUDE_BIN, source: 'env' }
   else {

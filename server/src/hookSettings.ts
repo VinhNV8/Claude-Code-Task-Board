@@ -5,6 +5,7 @@
 import { readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { resolveTsxLoader } from './permissionTool.ts'
+import { scriptArgs } from './runtime.ts'
 
 export const SETTINGS_SUFFIX = '.settings.json'
 export const NOTIFICATION_HOOK_SCRIPT = join(import.meta.dirname, 'hooks', 'notification.ts')
@@ -13,7 +14,7 @@ export interface HookOptions {
   port: number
   token: string
   taskId: number
-  /** File thực thi node (mặc định process.execPath). */
+  /** File thực thi node (mặc định process.execPath; bản đóng gói trong VS Code: node shim, xem runtime.ts). */
   nodePath?: string
   /** URL file của loader tsx (mặc định resolve từ node_modules của server). */
   tsxLoader?: string
@@ -37,9 +38,9 @@ export function buildNotificationCommand(o: HookOptions) {
   const platform = o.platform ?? process.platform
   const parts = [
     o.nodePath ?? process.execPath,
-    '--import',
-    o.tsxLoader ?? resolveTsxLoader(),
-    o.scriptPath ?? NOTIFICATION_HOOK_SCRIPT,
+    ...(o.tsxLoader || o.scriptPath
+      ? ['--import', o.tsxLoader ?? resolveTsxLoader(), o.scriptPath ?? NOTIFICATION_HOOK_SCRIPT]
+      : scriptArgs({ tsScript: NOTIFICATION_HOOK_SCRIPT, bundled: 'notification.mjs', tsxLoader: resolveTsxLoader })),
     '--port',
     String(o.port),
     '--token',

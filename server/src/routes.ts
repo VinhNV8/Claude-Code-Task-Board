@@ -4,7 +4,7 @@ import { existsSync } from 'node:fs'
 import { isAbsolute } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { bus, broadcast, type ServerMessage } from './bus.ts'
-import { approveTask, checkMerge, rejectTask, requestChanges } from './review.ts'
+import { approveTask, checkMerge, mergeTask, rejectTask, requestChanges } from './review.ts'
 import { readTaskFile, readTaskImage, saveTaskFile } from './reviewFiles.ts'
 import { PREVIEW_PORT, PREVIEW_TTL_MS, signPreviewToken } from './preview.ts'
 import { retryTask } from './retry.ts'
@@ -31,6 +31,7 @@ import { BudgetError, parseBudgetAction, parseUsd } from './budget.ts'
 import { PERMISSION_PRESETS } from './permissionPresets.ts'
 import { dismissRule, ruleSuggestionsFor, watchRuleSuggestions } from './ruleSuggestions.ts'
 import { getBudgets, isProjectBlocked, refreshBudgets, withBlockedReason } from './budgetService.ts'
+import { getClaudeLimit } from './claudeLimit.ts'
 import { DepsError, pendingDeps, suggestDeps, validateDeps } from './taskDeps.ts'
 import type { FileDiff, PermissionMode, Priority, Project, PromptTemplate, Schedule, Settings, TelegramSettingsInput, ClaudeAuthInput } from './types.ts'
 
@@ -64,6 +65,10 @@ function getTask(id: string) {
   return t
 }
 
+/** Số kết nối WebSocket đang mở (giao diện đang mở), dùng cho tự tắt khi rảnh (idle.ts). */
+let wsClients = 0
+export const openClients = () => wsClients
+
 export async function routes(app: FastifyInstance) {
   app.setErrorHandler((err: Error & { status?: number; statusCode?: number }, _req, reply) => {
     const status = err instanceof HttpError ? err.status : err.statusCode ?? 500
@@ -79,6 +84,8 @@ export async function routes(app: FastifyInstance) {
       ok: true,
       claude: bin ? { found: true, path: bin.path, source: bin.source, version: bin.version } : { found: false },
       authMode: settings.get().auth.mode,
+      pid: process.pid,
+      version: process.env.TASKBOARD_VERSION,
       time: new Date().toISOString(),
     }
   })
@@ -99,8 +106,12 @@ export async function routes(app: FastifyInstance) {
       permissions: listPermissions(),
       reviews: reviews.all(),
       diffs,
+      claudeLimit: getClaudeLimit(),
     }
   })
+
+  // Gói Claude hết lượt: endpoint nhẹ cho extension VS Code hỏi định kỳ (thanh trạng thái, thông báo)
+  app.get('/api/claude-limit', async () => ({ limit: getClaudeLimit() }))
 
   app.get<{ Params: { id: string } }>('/api/tasks/:id/diff', async (req) => {
     const t = getTask(req.params.id)
@@ -113,7 +124,7 @@ export async function routes(app: FastifyInstance) {
     }
   })
 
-  // G3: kiểm tra trước khi Approve & Merge (không thay đổi gì): repo chính có file trùng/đã stage, sai nhánh...
+  // G3: kiểm tra trước khi Merge (tuỳ chọn) (không thay đổi gì): repo chính có file trùng/đã stage, sai nhánh...
   app.get<{ Params: { id: string } }>('/api/tasks/:id/merge-check', async (req) => checkMerge(getTask(req.params.id).id))
 
   // G3: Preview / Edit file Markdown khi review (đọc từ worktree của task)
@@ -182,7 +193,12 @@ export async function routes(app: FastifyInstance) {
     if (!name) throw new HttpError(400, 'Nhập tên project')
     if (!repoPath || !isAbsolute(repoPath)) throw new HttpError(400, 'Đường dẫn repo phải là đường dẫn tuyệt đối')
     if (!existsSync(repoPath)) throw new HttpError(400, 'Thư mục không tồn tại')
-    if (!(await gitToplevel(repoPath))) throw new HttpError(400, 'Thư mục này không phải git repo (không tìm thấy .git)')
+    // Project mới mặc định direct (output ghi thẳng vào thư mục, không cần git); form cũ không gửi trường thì giữ giá trị đang có.
+    const cur = body.id ? projects.get(body.id) : undefined
+    const deliveryMode: Project['deliveryMode'] =
+      body.deliveryMode === 'direct' || body.deliveryMode === 'worktree' ? body.deliveryMode : (cur?.deliveryMode ?? 'direct')
+    if (deliveryMode === 'worktree' && !(await gitToplevel(repoPath)))
+      throw new HttpError(400, 'Thư mục này không phải git repo (không tìm thấy .git). Chọn "Ghi thẳng vào thư mục project" hoặc khởi tạo git.')
     const mode = (body.permissionMode ?? 'acceptEdits') as PermissionMode
     if (!MODES.includes(mode)) throw new HttpError(400, `Mức quyền không hợp lệ: ${mode}`)
     return {
@@ -196,6 +212,7 @@ export async function routes(app: FastifyInstance) {
       testCommand: validateTestCommand(body.testCommand),
       defaultModel: normalizeModel(body.defaultModel) || undefined,
       ...validateBudget(body),
+      deliveryMode,
     }
   }
 
@@ -491,14 +508,15 @@ export async function routes(app: FastifyInstance) {
   app.post<{ Params: { id: string }; Body: { action?: string; feedback?: string; comments?: unknown } }>('/api/tasks/:id/review', async (req) => {
     const t = getTask(req.params.id)
     const action = req.body?.action
-    if (action === 'approve') {
-      const r = await approveTask(t.id)
+    if (action === 'approve' || action === 'merge') {
+      // approve = chấp nhận output (không merge); merge = chấp nhận + merge nhánh task (mode worktree, tuỳ chọn)
+      const r = action === 'merge' ? await mergeTask(t.id) : await approveTask(t.id)
       pump() // FR-08 (R3): task vừa Done có thể là task mà task khác đang chờ
       return r
     }
     if (action === 'request_changes') return requestChanges(t.id, req.body?.feedback, { hasSlot, startRun }, req.body?.comments)
     if (action === 'reject') return rejectTask(t.id, req.body?.feedback)
-    throw new HttpError(400, 'Thao tác review không hợp lệ (chỉ chấp nhận approve, request_changes, reject)')
+    throw new HttpError(400, 'Thao tác review không hợp lệ (chỉ chấp nhận approve, merge, request_changes, reject)')
   })
 
   // ------------------------------------------------------------ duyệt quyền (PLAN 3.3–3.5)
@@ -751,6 +769,8 @@ export async function routes(app: FastifyInstance) {
   // ------------------------------------------------------------ websocket
 
   app.get('/ws', { websocket: true }, (socket) => {
+    wsClients++
+    socket.on('close', () => wsClients--)
     const send = (m: ServerMessage) => {
       if (socket.readyState === socket.OPEN) socket.send(JSON.stringify(m))
     }

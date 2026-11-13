@@ -61,7 +61,7 @@ export interface Sample {
  */
 export function sampleOf(task: Task, taskRuns: Run[], taskReviews: ReviewAction[]): Sample | undefined {
   const reviews = [...taskReviews].sort((a, b) => a.createdAt - b.createdAt)
-  const outcome = reviews.find((r) => r.action === 'approve' || r.action === 'reject')
+  const outcome = reviews.find((r) => r.action === 'approve' || r.action === 'merge' || r.action === 'reject')
   if (!outcome && task.status !== 'failed') return undefined
   const runs = [...taskRuns].sort((a, b) => a.startedAt - b.startedAt)
   const first = runs.find((r) => r.kind === 'initial') ?? runs[0]
@@ -70,7 +70,7 @@ export function sampleOf(task: Task, taskRuns: Run[], taskReviews: ReviewAction[
   if (tier === 'other') return undefined
   const firstReview = reviews[0]
   const approvedFirst =
-    firstReview?.action === 'approve' && !runs.some((r) => r.startedAt <= firstReview.createdAt && isFailedRun(r))
+    (firstReview?.action === 'approve' || firstReview?.action === 'merge') && !runs.some((r) => r.startedAt <= firstReview.createdAt && isFailedRun(r))
   return {
     projectId: task.projectId,
     tags: tagsOf(task.tags),

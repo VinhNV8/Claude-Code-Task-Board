@@ -14,6 +14,8 @@ export interface RetryPatch {
   worktreePath: string | null
   /** Retry luôn dùng session mới, không resume phiên cũ. */
   sessionId: null
+  /** Mode direct: bỏ snapshot "sau" của run cũ (diff tính lại khi run mới xong). */
+  headRef?: null
 }
 
 /**
@@ -24,9 +26,12 @@ export interface RetryPatch {
  * Throw nếu không đưa được worktree về trạng thái sạch.
  */
 export async function prepareRetry(
-  task: Pick<Task, 'id' | 'branch' | 'worktreePath'>,
+  task: Pick<Task, 'id' | 'branch' | 'worktreePath' | 'baseRef'>,
   project: Pick<Project, 'id' | 'repoPath' | 'mainBranch'>,
 ): Promise<RetryPatch> {
+  // Mode direct: Claude làm thẳng trong thư mục của người dùng, KHÔNG reset/xoá file ở đó.
+  // Giữ snapshot gốc (baseRef) để diff khi review vẫn là toàn bộ thay đổi so với trước khi giao task.
+  if (task.baseRef) return { branch: null, worktreePath: task.worktreePath ?? null, sessionId: null, headRef: null }
   if (task.worktreePath && existsSync(task.worktreePath)) {
     const wt = await resetWorktree(project, task.id)
     return { branch: wt.branch, worktreePath: wt.path, sessionId: null }

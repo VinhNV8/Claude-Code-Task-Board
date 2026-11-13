@@ -37,6 +37,7 @@ interface Active {
 const active = new Map<number, Active>()
 
 export const isTesting = (taskId: number) => active.has(taskId)
+export const hasActiveTests = () => active.size > 0
 
 function flush(taskId: number, a: Active) {
   if (a.flushTimer) clearTimeout(a.flushTimer)

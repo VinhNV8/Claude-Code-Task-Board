@@ -217,7 +217,7 @@ function mkProject(id: string, p: Partial<Project>) {
     permissionMode: 'acceptEdits',
     allowedTools: [],
     maxParallel: 5,
-    budgetAction: 'warn',
+    budgetAction: 'warn', deliveryMode: 'worktree',
     ...p,
   })
 }
@@ -232,7 +232,7 @@ function spend(projectId: string, costUsd: number) {
 const setMode = (mode: Settings['auth']['mode']) => settings.set({ ...settings.get(), maxParallel: 5, auth: { ...settings.get().auth, mode } })
 
 test('Chế độ API key: project "chỉ cảnh báo" vượt budget cũng bị tạm dừng; chế độ gói vẫn chạy', () => {
-  mkProject('hw', { budgetAction: 'warn', monthlyBudgetUsd: 5 })
+  mkProject('hw', { budgetAction: 'warn', deliveryMode: 'worktree', monthlyBudgetUsd: 5 })
   spend('hw', 6)
 
   setMode('subscription')

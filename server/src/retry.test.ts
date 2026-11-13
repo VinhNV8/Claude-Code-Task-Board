@@ -29,6 +29,7 @@ const project: Project = {
   allowedTools: [],
   maxParallel: 1,
   budgetAction: 'warn' as const,
+  deliveryMode: 'worktree' as const,
 }
 
 async function ok(cwd: string, args: string[]) {
@@ -157,7 +158,7 @@ test('retry dựa trên main mới nhất (main đã tiến lên sau khi task t�
   await g.removeWorktree(project, t.id)
 })
 
-test('retry task bị Reject (không còn worktree): xoá branch/worktreePath để startRun tạo worktree mới từ main', async () => {
+test('retry task bị Reject (worktree được giữ): reset worktree về main sạch, session mới', async () => {
   const t = db.tasks.create({
     projectId: project.id,
     title: 'Bị từ chối',
@@ -175,16 +176,15 @@ test('retry task bị Reject (không còn worktree): xoá branch/worktreePath đ
   await rv.rejectTask(t.id)
 
   const p = fakePump()
+  assert.ok(existsSync(join(wt.path, 'run1.txt'))) // Reject không xoá output
   const res = await rt.retryTask(t.id, p)
   assert.equal(res.status, 'queued')
-  assert.equal(res.branch, undefined)
-  assert.equal(res.worktreePath, undefined)
+  assert.equal(res.branch, wt.branch)
+  assert.equal(res.worktreePath, wt.path)
   assert.equal(res.sessionId, undefined)
   assert.equal(p.calls, 1)
 
-  const fresh = await c.ensureWorktree(res, project)
-  assert.equal(fresh.created, true)
-  await assertClean(fresh.path)
+  await assertClean(wt.path)
   await g.removeWorktree(project, t.id)
 })
 

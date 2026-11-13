@@ -4,7 +4,7 @@ import type { MergeCheck } from '../types'
 import { fetchMergeCheck } from '../store/store'
 
 /**
- * Trạng thái repo chính trước khi Approve & Merge (G3). Tự kiểm tra khi mở, khi diff đổi và khi quay lại tab
+ * Trạng thái repo chính trước khi Merge (tuỳ chọn) (G3). Tự kiểm tra khi mở, khi diff đổi và khi quay lại tab
  * trình duyệt (ví dụ vừa commit xong ở VSCode); có nút "Kiểm tra lại".
  */
 export function useMergeCheck(taskId: number | undefined, enabled: boolean, diffKey: string) {

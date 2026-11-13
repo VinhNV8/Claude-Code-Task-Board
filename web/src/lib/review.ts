@@ -5,6 +5,9 @@ import { formatReviewFeedback } from './reviewComments.ts'
 /** Feedback "Request changes" tối thiểu (khớp kiểm tra ở server/src/review.ts). */
 export const MIN_FEEDBACK = 5
 
+/** failReason của task bị Reject khi review (output vẫn được giữ, nhưng chỉ Chạy lại chứ không Tiếp tục). */
+export const REJECT_REASON = 'Bị từ chối khi review'
+
 /** Đếm cho badge: cột Review và mục "Cần xử lý" trên menu. */
 export function attentionCounts(tasks: Pick<Task, 'id' | 'status'>[], permissions: Pick<PermissionRequest, 'taskId' | 'status'>[]) {
   const ids = new Set(tasks.map((t) => t.id))

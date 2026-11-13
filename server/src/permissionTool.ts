@@ -7,6 +7,7 @@
 // (lệnh ngoài whitelist bị từ chối và ghi vào permission_denials).
 import { readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { nodeEnv, scriptArgs } from './runtime.ts'
 
 export const MCP_SERVER_NAME = 'taskboard'
 export const PERMISSION_PROMPT_TOOL = `mcp__${MCP_SERVER_NAME}__approve`
@@ -52,8 +53,14 @@ export function buildMcpConfig(o: McpServerOptions) {
       [MCP_SERVER_NAME]: {
         type: 'stdio',
         command: o.nodePath ?? process.execPath,
-        args: ['--import', o.tsxLoader ?? resolveTsxLoader(), o.scriptPath ?? PERMISSION_SCRIPT],
+        // Chỉ định loader/script (test): giữ cách chạy tsx. Mặc định: bản dev chạy .ts qua tsx, bản đóng gói chạy .mjs.
+        args:
+          o.tsxLoader || o.scriptPath
+            ? ['--import', o.tsxLoader ?? resolveTsxLoader(), o.scriptPath ?? PERMISSION_SCRIPT]
+            : scriptArgs({ tsScript: PERMISSION_SCRIPT, bundled: 'permission.mjs', tsxLoader: resolveTsxLoader }),
         env: {
+          // Server chạy bằng file thực thi của VS Code (Electron): bật chế độ Node cho tiến trình MCP
+          ...(o.nodePath ? {} : nodeEnv()),
           TASKBOARD_TASK_ID: String(o.taskId),
           TASKBOARD_PORT: String(o.port),
           TASKBOARD_TOKEN: o.token,

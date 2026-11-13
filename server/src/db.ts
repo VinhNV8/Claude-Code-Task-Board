@@ -127,6 +127,9 @@ if (!taskCols.some((c) => c.name === 'not_before')) db.exec('ALTER TABLE tasks A
 if (!taskCols.some((c) => c.name === 'rate_limit_retries'))
   db.exec('ALTER TABLE tasks ADD COLUMN rate_limit_retries INTEGER NOT NULL DEFAULT 0')
 // Resume: task Queued chờ chạy tiếp phiên cũ (Tiếp tục khi hết slot, hoặc tự đưa lại hàng đợi do giới hạn sử dụng).
+// Mode direct: snapshot thư mục project trước run đầu tiên (git tree hash trong kho snapshot riêng).
+if (!taskCols.some((c) => c.name === 'base_ref')) db.exec('ALTER TABLE tasks ADD COLUMN base_ref TEXT')
+if (!taskCols.some((c) => c.name === 'head_ref')) db.exec('ALTER TABLE tasks ADD COLUMN head_ref TEXT')
 if (!taskCols.some((c) => c.name === 'resume_next')) db.exec('ALTER TABLE tasks ADD COLUMN resume_next INTEGER NOT NULL DEFAULT 0')
 
 // G3: nhận xét theo file/dòng gửi kèm "Request changes" (JSON ReviewComment[]).
@@ -135,6 +138,9 @@ if (!reviewCols.some((c) => c.name === 'comments')) db.exec('ALTER TABLE reviews
 
 // FR-34: lệnh test của project (DB cũ chưa có cột) và lần chạy test gần nhất của mỗi task.
 const projectCols = db.prepare('PRAGMA table_info(projects)').all() as { name: string }[]
+// Cách giao output. Project cũ giữ worktree (task đang dở có worktree); project mới mặc định direct.
+if (!projectCols.some((c) => c.name === 'delivery_mode'))
+  db.exec("ALTER TABLE projects ADD COLUMN delivery_mode TEXT NOT NULL DEFAULT 'worktree'")
 if (!projectCols.some((c) => c.name === 'test_command')) db.exec('ALTER TABLE projects ADD COLUMN test_command TEXT')
 db.exec(`
 CREATE TABLE IF NOT EXISTS test_runs (
@@ -228,6 +234,7 @@ const toProject = (r: Row): Project => ({
   defaultModel: (r.default_model as string | null) || undefined,
   monthlyBudgetUsd: (r.monthly_budget_usd as number | null) ?? undefined,
   budgetAction: r.budget_action === 'pause' ? 'pause' : 'warn',
+  deliveryMode: r.delivery_mode === 'direct' ? 'direct' : 'worktree',
 })
 
 const opt = <T>(v: unknown) => (v === null ? undefined : (v as T))
@@ -243,6 +250,8 @@ const toTask = (r: Row): Task => ({
   tags: JSON.parse(r.tags as string),
   branch: opt(r.branch),
   worktreePath: opt(r.worktree_path),
+  baseRef: opt(r.base_ref),
+  headRef: opt(r.head_ref),
   sessionId: opt(r.session_id),
   createdAt: r.created_at as number,
   updatedAt: r.updated_at as number,
@@ -330,12 +339,13 @@ export const projects = {
   upsert: (p: Project) => {
     db.prepare(
       `INSERT INTO projects (id, name, repo_path, main_branch, permission_mode, allowed_tools, max_parallel, test_command, default_model,
-         monthly_budget_usd, budget_action)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         monthly_budget_usd, budget_action, delivery_mode)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET name=excluded.name, repo_path=excluded.repo_path, main_branch=excluded.main_branch,
          permission_mode=excluded.permission_mode, allowed_tools=excluded.allowed_tools, max_parallel=excluded.max_parallel,
          test_command=excluded.test_command, default_model=excluded.default_model,
-         monthly_budget_usd=excluded.monthly_budget_usd, budget_action=excluded.budget_action`,
+         monthly_budget_usd=excluded.monthly_budget_usd, budget_action=excluded.budget_action,
+         delivery_mode=excluded.delivery_mode`,
     ).run(
       p.id,
       p.name,
@@ -348,6 +358,7 @@ export const projects = {
       p.defaultModel || null,
       p.monthlyBudgetUsd ?? null,
       p.budgetAction === 'pause' ? 'pause' : 'warn',
+      p.deliveryMode === 'direct' ? 'direct' : 'worktree',
     )
     return projects.get(p.id)!
   },
@@ -366,6 +377,8 @@ const TASK_COLS: Record<string, string> = {
   tags: 'tags',
   branch: 'branch',
   worktreePath: 'worktree_path',
+  baseRef: 'base_ref',
+  headRef: 'head_ref',
   sessionId: 'session_id',
   startedAt: 'started_at',
   failReason: 'fail_reason',

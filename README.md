@@ -84,6 +84,25 @@ Cách hoạt động:
 - Muốn có HTTPS: dùng `tailscale serve --bg 3000` (giữ `REMOTE_HOST` trống, chỉ đặt `TASKBOARD_AUTH_TOKEN`). Tailscale proxy về `127.0.0.1:3000`; cookie được thêm cờ `Secure` khi proxy gửi `X-Forwarded-Proto: https`.
   **Không** dùng `tailscale funnel` (mở ra Internet công cộng).
 
+## Extension VS Code
+Thư mục [vscode-extension/](vscode-extension/) đóng gói Task Board thành extension: người dùng cài từ Marketplace là dùng được, không cần Node hay `npm start`. Hướng dẫn cho người dùng nằm ở [vscode-extension/README.md](vscode-extension/README.md).
+
+- **Chạy thử:** mở thư mục `vscode-extension` trong VS Code rồi bấm F5 (tự build trước khi chạy).
+- **Build:** `npm run ext:build`. Lệnh này bundle extension, server và các script MCP/hook bằng esbuild, đồng thời build web, rồi đặt kết quả vào `vscode-extension/dist/`.
+- **Đóng gói:** `npm run ext:package` → `vscode-extension/agent-task-board-<version>.vsix`. Cài thử bằng `code --install-extension <file>.vsix`.
+- **Đăng lên Marketplace:** publisher hiện là `vinhnguyen`. Tải file `.vsix` lên trang https://marketplace.visualstudio.com/manage, hoặc dùng `npx vsce publish`. Nên đăng thêm lên Open VSX (`npx ovsx publish`) để người dùng Cursor/Windsurf cài được.
+- **Icon:** `media/icon.svg` → `media/icon.png` (128×128) bằng `npm run icon -w vscode-extension`.
+- **Ngôn ngữ:**
+  - Extension: chuỗi gốc tiếng Anh, bản dịch tiếng Việt ở `package.nls.vi.json` và `l10n/bundle.l10n.vi.json`.
+  - Giao diện web: bọc chuỗi tiếng Việt bằng `tr()` (`web/src/lib/i18n.ts`), bản tiếng Anh ở `web/src/i18n/en.ts`. Test `server/src/i18n.test.ts` báo chuỗi còn thiếu bản dịch. Dịch xong file nào thì thêm file đó vào danh sách `TRANSLATED` trong test.
+- **CI:** [.github/workflows/ci.yml](.github/workflows/ci.yml) chạy typecheck, test server, build và test extension trên Windows, macOS và Linux. Bản chạy trên Linux có kèm file `.vsix` trong mục artifact.
+
+Cách chạy bản đóng gói:
+- Server là file `dist/server/index.mjs`, chạy bằng file thực thi của VS Code với `ELECTRON_RUN_AS_NODE=1`. Node đi kèm VS Code 1.101+ có sẵn `node:sqlite`.
+- Server được cấu hình qua các biến môi trường `TASKBOARD_DATA`, `TASKBOARD_WEB_DIST`, `TASKBOARD_BUNDLE_DIR`, `TASKBOARD_IDLE_EXIT_MIN`, `PORT` và `PREVIEW_PORT`.
+- Script MCP xin quyền và hook chạy dạng `.mjs`. Hook đi qua một "node shim" lưu ở `<data>/bin/`.
+- Một server dùng chung cho mọi cửa sổ VS Code (thông tin lưu ở `server.json` trong globalStorage). Server tự tắt khi rảnh, và tự khởi động lại khi extension được cập nhật.
+
 ## Dữ liệu
 `data/taskboard.db` (SQLite) và `data/runs/<runId>.jsonl` (output gốc của từng lần chạy). Thư mục `data/` không được commit.
 

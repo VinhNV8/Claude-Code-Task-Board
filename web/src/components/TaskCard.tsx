@@ -97,7 +97,7 @@ export function TaskCard({
               ? 'bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300'
               : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'
           }`}
-          title={depFailed ? 'Có task được chờ đang lỗi: Chạy lại task đó, hoặc gỡ phụ thuộc' : 'Chỉ chạy khi các task này Done (đã merge)'}
+          title={depFailed ? 'Có task được chờ đang lỗi: Chạy lại task đó, hoặc gỡ phụ thuộc' : 'Chỉ chạy khi các task này Done (đã chấp nhận output)'}
         >
           <Link2 size={11} /> Chờ {waitingOn.map((id) => `#${id}${statusOf(id) === 'failed' ? ' (lỗi)' : ''}`).join(', ')}
         </div>

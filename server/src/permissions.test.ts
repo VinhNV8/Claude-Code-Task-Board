@@ -25,6 +25,7 @@ projects.upsert({
   allowedTools: ['Read', 'Bash(npm test:*)'],
   maxParallel: 1,
   budgetAction: 'warn' as const,
+  deliveryMode: 'worktree' as const,
 })
 
 /** Task đang chạy có một run mở (giống lúc Claude CLI đang chạy). */

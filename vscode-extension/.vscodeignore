@@ -1,0 +1,10 @@
+**
+!dist/**
+!media/icon.png
+!media/activity.svg
+!l10n/**
+!package.json
+!package.nls*.json
+!README.md
+!CHANGELOG.md
+!LICENSE

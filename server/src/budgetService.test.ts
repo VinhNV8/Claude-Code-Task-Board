@@ -59,7 +59,7 @@ function mkProject(id: string, p: Partial<Project>) {
     permissionMode: 'acceptEdits',
     allowedTools: [],
     maxParallel: 5,
-    budgetAction: 'warn',
+    budgetAction: 'warn', deliveryMode: 'worktree',
     ...p,
   })
 }
@@ -165,7 +165,7 @@ test('B2: cảnh báo warn và over mỗi mức một lần mỗi tháng, toast 
   now = vn(2026, 11, 15, 10)
   settings.set({ ...settings.get(), telegram: { ...settings.get().telegram, enabled: true, chatId: '123456' } })
   telegramToken.set('123456:' + 'a'.repeat(35))
-  mkProject('pa', { budgetAction: 'warn', monthlyBudgetUsd: 50 })
+  mkProject('pa', { budgetAction: 'warn', deliveryMode: 'worktree', monthlyBudgetUsd: 50 })
   spend('pa', 41.2)
   svc.refreshBudgets()
   assert.deepEqual(

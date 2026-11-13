@@ -92,7 +92,7 @@ projects.upsert({
   permissionMode: 'acceptEdits',
   allowedTools: ['Read'],
   maxParallel: 1,
-  budgetAction: 'warn',
+  budgetAction: 'warn', deliveryMode: 'worktree',
 })
 projects.upsert({ ...projects.get('p1')!, id: 'p2', name: 'P2' })
 

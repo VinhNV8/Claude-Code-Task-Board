@@ -18,6 +18,7 @@ const project = (id: string, name = id): Project => ({
   allowedTools: [],
   maxParallel: 1,
   budgetAction: 'warn' as const,
+  deliveryMode: 'worktree' as const,
 })
 
 const task = (id: number, projectId: string, status: Task['status'], createdAt: number, updatedAt = createdAt): Task => ({

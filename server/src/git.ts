@@ -1,9 +1,9 @@
 // Thao tác git cho review flow (PLAN mục 2.1): mỗi task chạy trong worktree riêng trên nhánh claude/task-<id>.
 // Luôn gọi git bằng execFile + mảng tham số (đường dẫn có dấu cách trên Windows vẫn đúng).
 import { execFile } from 'node:child_process'
-import { existsSync, mkdirSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
-import { DATA_DIR } from './db.ts'
+import { DATA_DIR, tasks } from './db.ts'
 import { parseGitDiff } from '../../web/src/lib/diff.ts'
 import type { FileDiff, Project } from './types.ts'
 
@@ -85,11 +85,11 @@ export async function createWorktree(project: Pick<Project, 'id' | 'repoPath' | 
   return { branch, path }
 }
 
-/** Xoá worktree + nhánh của task. Bỏ qua lỗi nếu đã bị xoá trước đó. */
-export async function removeWorktree(project: Pick<Project, 'id' | 'repoPath'>, taskId: number) {
+/** Xoá worktree (+ nhánh, trừ khi `keepBranch`) của task. Bỏ qua lỗi nếu đã bị xoá trước đó. */
+export async function removeWorktree(project: Pick<Project, 'id' | 'repoPath'>, taskId: number, opts: { keepBranch?: boolean } = {}) {
   const path = worktreeDir(project.id, taskId)
   await git(project.repoPath, ['worktree', 'remove', '--force', path])
-  await git(project.repoPath, ['branch', '-D', taskBranch(taskId)])
+  if (!opts.keepBranch) await git(project.repoPath, ['branch', '-D', taskBranch(taskId)])
   await git(project.repoPath, ['worktree', 'prune'])
   // Thư mục còn sót (không được git đăng ký) nằm trong DATA_DIR của mình nên xoá được an toàn
   try {
@@ -194,11 +194,22 @@ export async function mergeBranch(repoPath: string, branch: string, message: str
   return { ok: false, conflicts, error: errText(m) }
 }
 
+type DiffProject = Pick<Project, 'repoPath' | 'mainBranch'> & { id?: string }
+
 /**
- * Diff của nhánh task so với mainBranch (PLAN 2.3): `git diff <main>...claude/task-<id>`.
- * Nhánh không tồn tại (task chưa chạy hoặc đã dọn) → [].
+ * Diff output của task:
+ * - mode worktree: nhánh task so với mainBranch (PLAN 2.3): `git diff <main>...claude/task-<id>`.
+ *   Nhánh không tồn tại (task chưa chạy hoặc đã dọn) → [].
+ * - mode direct (task có baseRef): snapshot thư mục project trước run đầu tiên so với hiện tại.
  */
-export async function taskDiff(project: Pick<Project, 'repoPath' | 'mainBranch'>, taskId: number): Promise<FileDiff[]> {
+export async function taskDiff(project: DiffProject, taskId: number): Promise<FileDiff[]> {
+  const task = tasks.get(taskId)
+  if (task?.baseRef) {
+    if (!project.id || !existsSync(project.repoPath)) return []
+    // Đang chạy: so với thư mục hiện tại. Đã xong: so với snapshot lúc run xong (không lẫn task chạy sau).
+    const head = task.status === 'running' ? undefined : task.headRef
+    return snapshotDiff({ id: project.id, repoPath: project.repoPath }, task.baseRef, head)
+  }
   const branch = taskBranch(taskId)
   const repo = project.repoPath
   if (!existsSync(repo)) return []
@@ -211,4 +222,61 @@ export async function taskDiff(project: Pick<Project, 'repoPath' | 'mainBranch'>
   ])
   if (r.code !== 0) throw new Error(`git diff thất bại: ${errText(r)}`)
   return parseGitDiff(r.stdout)
+}
+
+// ---------------------------------------------------------------- snapshot (mode direct)
+//
+// Mode direct: Claude sửa thẳng thư mục project, không tạo nhánh/commit nào trong repo của người dùng.
+// Để vẫn review được diff, mình chụp thư mục vào một kho git riêng nằm trong DATA_DIR
+// (`--git-dir` riêng, `--work-tree` = thư mục project). Thư mục project không cần là git repo;
+// nếu là git repo thì .gitignore của nó vẫn được tôn trọng. Repo của người dùng không bị đụng tới.
+
+type SnapProject = Pick<Project, 'id' | 'repoPath'>
+
+export const snapshotGitDir = (projectId: string) => resolve(join(DATA_DIR, 'snapshots', `${projectId}.git`))
+
+/** Bỏ qua mặc định khi chụp (thư mục không có .gitignore vẫn không chụp các thư mục phụ thuộc nặng). */
+const SNAPSHOT_EXCLUDES = ['node_modules/', '.venv/', 'venv/', '__pycache__/', '.DS_Store', 'Thumbs.db', '~$*'].join('\n') + '\n'
+
+function snapArgs(project: SnapProject, args: string[]) {
+  return ['--git-dir', snapshotGitDir(project.id), '--work-tree', resolve(project.repoPath), '-c', 'core.quotePath=false', ...args]
+}
+
+async function ensureSnapshotRepo(project: SnapProject) {
+  const dir = snapshotGitDir(project.id)
+  if (existsSync(join(dir, 'HEAD'))) return
+  mkdirSync(dir, { recursive: true })
+  const init = await git(DATA_DIR, ['init', '--quiet', '--bare', dir])
+  if (init.code !== 0) throw new Error(`Không tạo được kho snapshot: ${errText(init)}`)
+  // Tree snapshot không có ref trỏ tới: tắt gc tự động để git không dọn mất baseRef của task đang review.
+  for (const [k, v] of [['gc.auto', '0'], ['core.autocrlf', 'false'], ['core.safecrlf', 'false']])
+    await git(DATA_DIR, ['--git-dir', dir, 'config', k, v])
+  mkdirSync(join(dir, 'info'), { recursive: true })
+  writeFileSync(join(dir, 'info', 'exclude'), SNAPSHOT_EXCLUDES)
+}
+
+/** Chụp toàn bộ thư mục project, trả về hash của git tree. */
+export async function snapshotTree(project: SnapProject): Promise<string> {
+  if (!existsSync(project.repoPath)) throw new Error(`Không tìm thấy thư mục project: ${project.repoPath}`)
+  await ensureSnapshotRepo(project)
+  const cwd = resolve(project.repoPath)
+  const add = await git(cwd, snapArgs(project, ['add', '-A', '--ignore-errors', '.']))
+  // --ignore-errors: file bị khoá (Office đang mở...) chỉ bị bỏ qua, các file khác vẫn được chụp
+  if (add.code !== 0 && !/error: unable to index file|warning:/i.test(add.stderr)) throw new Error(`Không chụp được thư mục project: ${errText(add)}`)
+  const tree = await git(cwd, snapArgs(project, ['write-tree']))
+  if (tree.code !== 0) throw new Error(`Không chụp được thư mục project: ${errText(tree)}`)
+  return tree.stdout.trim()
+}
+
+/** Diff giữa snapshot `base` và `head` (không có: thư mục project hiện tại). */
+export async function snapshotDiff(project: SnapProject, base: string, head?: string): Promise<FileDiff[]> {
+  const cur = head ?? (await snapshotTree(project))
+  const r = await git(resolve(project.repoPath), snapArgs(project, ['diff', '--no-color', '--no-ext-diff', '-M', base, cur, '--']))
+  if (r.code !== 0) throw new Error(`git diff thất bại: ${errText(r)}`)
+  return parseGitDiff(r.stdout)
+}
+
+/** Bytes của file `rel` trong snapshot `base` (bản "trước" khi review mode direct). */
+export function snapshotShow(project: SnapProject, base: string, rel: string, maxBuffer: number) {
+  return gitBuffer(resolve(project.repoPath), snapArgs(project, ['show', `${base}:${rel}`]), maxBuffer)
 }

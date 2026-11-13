@@ -7,6 +7,7 @@ import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import readline from 'node:readline'
 import { claudeEnv, findClaudeBin } from './claude.ts'
+import { nodeCommand } from './runtime.ts'
 import { DATA_DIR, claudeApiKey, events, projects, runs, settings, taskDeps, tasks, testRuns } from './db.ts'
 import { authFailureHint, resolveCredentials } from './claudeAuth.ts'
 import { broadcast } from './bus.ts'
@@ -17,6 +18,7 @@ import { cleanupHookSettings, formatNotification, removeHookSettings, writeHookS
 import { captureChanges, ensureWorktree, runNumber } from './capture.ts'
 import { taskDiff } from './git.ts'
 import { MAX_RATE_LIMIT_RETRIES, decideRateLimit, detectRateLimit, orderQueue, type RateLimitEvent } from './rateLimit.ts'
+import { buildClaudeLimit, clearClaudeLimit, setClaudeLimit } from './claudeLimit.ts'
 import { CONTINUE_NOTE, CONTINUE_PROMPT, STOP_REASON } from '../../web/src/lib/resume.ts'
 import { autoModelNote, chooseRunModel, fallbackModelFor } from './model.ts'
 import { applyEscalation, escalationPrompt, maxTierForProject } from './escalation.ts'
@@ -82,8 +84,12 @@ function activeCount(projectId?: string) {
  * Còn slot để chạy thêm một task của project này không (giới hạn chung và giới hạn project, NFR-03).
  * Project đang tạm dừng vì vượt budget (P6 B3) coi như hết slot: Tiếp tục / Yêu cầu sửa sẽ vào hàng đợi chờ.
  */
-export function hasSlot(project: Pick<Project, 'id' | 'maxParallel'>) {
-  return activeCount() < settings.get().maxParallel && activeCount(project.id) < project.maxParallel && !isProjectBlocked(project.id)
+/** Mode direct: mọi task cùng sửa một thư mục nên mỗi lúc chỉ chạy một task để output không giẫm lên nhau. */
+export const projectParallel = (project: Pick<Project, 'maxParallel'> & { deliveryMode?: Project['deliveryMode'] }) =>
+  project.deliveryMode === 'direct' ? 1 : project.maxParallel
+
+export function hasSlot(project: Pick<Project, 'id' | 'maxParallel'> & { deliveryMode?: Project['deliveryMode'] }) {
+  return activeCount() < settings.get().maxParallel && activeCount(project.id) < projectParallel(project) && !isProjectBlocked(project.id)
 }
 
 // ---------------------------------------------------------------- hàng đợi
@@ -144,7 +150,7 @@ export function pump() {
           updateTask(t.id, { status: 'failed', failReason: 'Project không còn tồn tại' })
           continue
         }
-        if (activeCount(p.id) >= p.maxParallel) continue
+        if (activeCount(p.id) >= projectParallel(p)) continue
         // P6 B3: project pause + vượt budget → task giữ ở Queued (blockedReason tính lúc gửi ra web).
         if (isProjectBlocked(p.id)) continue
         // FR-08 (R3): còn chờ task chưa Done → để lại hàng đợi; task được chờ Done thì pump() chạy lại.
@@ -262,12 +268,13 @@ export function startRun(task: Task, kind: RunKind, feedback?: string) {
   })
   preparing.set(task.id, run.id)
 
-  // PLAN 2.1: Claude luôn làm việc trong worktree riêng (nhánh claude/task-<id>), không đụng repo chính.
+  // Mode worktree (PLAN 2.1): Claude làm trong worktree riêng (nhánh claude/task-<id>), không đụng repo chính.
+  // Mode direct: Claude làm thẳng trong thư mục project, output nằm ngay chỗ người dùng cấu hình.
   ensureWorktree(task, project).then(
     (wt) => {
       if (preparing.get(task.id) !== run.id) return // đã bị dừng trong lúc tạo worktree
       preparing.delete(task.id)
-      if (wt.created) updateTask(task.id, { branch: wt.branch, worktreePath: wt.path })
+      if (wt.created) updateTask(task.id, { branch: wt.branch, worktreePath: wt.path, baseRef: wt.baseRef ?? null })
       spawnClaude({
         task,
         project,
@@ -285,7 +292,7 @@ export function startRun(task: Task, kind: RunKind, feedback?: string) {
     (err) => {
       if (preparing.get(task.id) !== run.id) return
       preparing.delete(task.id)
-      finish(task.id, run.id, { exitCode: -1, error: `Không tạo được worktree cho task: ${(err as Error).message}` })
+      finish(task.id, run.id, { exitCode: -1, error: `Không chuẩn bị được thư mục làm việc cho task: ${(err as Error).message}` })
     },
   )
 }
@@ -352,7 +359,7 @@ function spawnClaude(o: {
   // P3 (PLAN 3.6): file settings tạm khai báo hook Notification gọi về /api/hooks/notification.
   let hookSettings: string | undefined
   try {
-    hookSettings = writeHookSettings(RUN_LOG_DIR, run.id, { taskId: task.id, port: PORT, token: INTERNAL_TOKEN })
+    hookSettings = writeHookSettings(RUN_LOG_DIR, run.id, { taskId: task.id, port: PORT, token: INTERNAL_TOKEN, nodePath: nodeCommand(DATA_DIR) })
   } catch (err) {
     removeTempFiles({ mcpConfig })
     finish(task.id, run.id, { exitCode: -1, error: `Không ghi được cấu hình hook: ${(err as Error).message}` })
@@ -443,6 +450,8 @@ function finish(
 
   const ok = exitCode === 0 && result && !result.isError
   if (ok) {
+    // Claude đã chạy được: gói có lượt lại, bỏ banner hết lượt.
+    clearClaudeLimit()
     // Chạy được trọn vẹn: bộ đếm tự thử lại do giới hạn sử dụng về 0 (broadcast cùng lần đổi trạng thái sau).
     if (tasks.get(taskId)?.rateLimitRetries) tasks.patch(taskId, { rateLimitRetries: 0 })
     // FR-08 nguồn ④ (R6): Claude báo bị chặn bởi task khác → thêm phụ thuộc, đưa về hàng đợi thay vì Review.
@@ -469,7 +478,13 @@ function finish(
     }
   }
   // Rủi ro chung (PLAN): lỗi giới hạn sử dụng → tự đưa lại hàng đợi, chạy tiếp sau giờ reset (tối đa N lần).
-  if (!error && handleRateLimit(taskId, runId, detectRateLimit({ result, stderr, rateLimitEvent }), !result)) {
+  const limitHit = error ? undefined : detectRateLimit({ result, stderr, rateLimitEvent })
+  if (limitHit) {
+    // Banner "gói Claude hết lượt" trên mọi trang của web
+    const text = (result?.isError ? result.text : undefined) ?? stderr
+    setClaudeLimit(buildClaudeLimit({ hit: limitHit, event: rateLimitEvent, text }))
+  }
+  if (limitHit && handleRateLimit(taskId, runId, limitHit, !result)) {
     setFailKind(runId, 'rate_limit')
     pump()
     return
@@ -586,7 +601,8 @@ export async function handleBlocked(taskId: number, runId: string, d: NonNullabl
 
 /**
  * Run thành công: commit thay đổi trong worktree rồi chuyển task sang Review để người dùng duyệt output,
- * dù có thay đổi code hay không (G3). Approve → Done (có commit thì merge), Request changes → Claude chạy tiếp.
+ * dù có thay đổi code hay không (G3). Mode direct: không commit, chỉ chụp snapshot "sau" (headRef).
+ * Approve → Done (chấp nhận output, không merge), Request changes → Claude chạy tiếp.
  */
 async function completeRun(taskId: number, runId: string) {
   const task = tasks.get(taskId)
@@ -597,9 +613,10 @@ async function completeRun(taskId: number, runId: string) {
     return
   }
   let failReason: string | undefined
+  let headRef: string | undefined
   try {
     const n = runNumber(runs.byTask(taskId), runId)
-    await captureChanges({ id: task.id, title: task.title, worktreePath: task.worktreePath }, project, n)
+    ;({ headRef } = await captureChanges({ id: task.id, title: task.title, baseRef: task.baseRef, worktreePath: task.worktreePath }, project, n))
   } catch (err) {
     failReason = `Không ghi nhận được thay đổi của Claude: ${(err as Error).message}`
   }
@@ -609,7 +626,7 @@ async function completeRun(taskId: number, runId: string) {
     setFailKind(runId, 'infra') // Claude đã chạy xong, chỉ lỗi commit
     addEvent(runId, { type: 'result', isError: true, text: failReason })
     updateTask(taskId, { status: 'failed', failReason: failReason.slice(0, 1000) })
-  } else updateTask(taskId, { status: 'review' })
+  } else updateTask(taskId, headRef ? { status: 'review', headRef } : { status: 'review' })
 }
 
 // ---------------------------------------------------------------- dừng & phục hồi
@@ -638,6 +655,9 @@ export async function stopTask(taskId: number) {
 }
 
 export const isRunning = (taskId: number) => procs.has(taskId) || preparing.has(taskId)
+
+/** Còn tiến trình Claude đang chạy hoặc đang chuẩn bị (dùng cho tự tắt khi rảnh). */
+export const hasActiveRuns = () => procs.size > 0 || preparing.size > 0
 
 /** Run đang chạy của task (dùng cho hooks/MCP gọi về theo TASKBOARD_TASK_ID). */
 export function currentRunId(taskId: number): string | undefined {

@@ -27,7 +27,23 @@ export const BLANK_PROJECT: Project = {
   allowedTools: ['Read', 'Edit', 'Write', 'Glob', 'Grep'],
   maxParallel: 1,
   budgetAction: 'warn',
+  // Mặc định: Claude ghi output thẳng vào thư mục project, thấy ngay, không cần git
+  deliveryMode: 'direct',
 }
+
+/** Lựa chọn "Nơi lưu output" trên form project. */
+const DELIVERY_MODES: { value: Project['deliveryMode']; label: string; desc: string }[] = [
+  {
+    value: 'direct',
+    label: 'Ghi thẳng vào thư mục project',
+    desc: 'Output nằm ngay trong thư mục trên máy bạn, không cần git. Mỗi lúc chạy 1 task để các task không ghi đè nhau.',
+  },
+  {
+    value: 'worktree',
+    label: 'Nhánh git riêng cho từng task',
+    desc: 'Cần git repo. Mỗi task làm trên nhánh claude/task-<id> ở local, chạy song song được. Bạn tự merge/PR theo quy trình riêng.',
+  },
+]
 
 export function Projects() {
   const s = useStore()
@@ -74,7 +90,7 @@ export function Projects() {
                   <span className="inline-flex items-center gap-1">
                     <ShieldCheck size={12} /> {p.permissionMode}
                   </span>
-                  <span>Song song tối đa: {p.maxParallel}</span>
+                  <span>{p.deliveryMode === 'direct' ? 'Ghi thẳng vào thư mục' : `Nhánh riêng · song song tối đa: ${p.maxParallel}`}</span>
                   {p.testCommand && (
                     <span className="inline-flex items-center gap-1 font-mono">
                       <FlaskConical size={12} /> {p.testCommand}
@@ -135,9 +151,9 @@ export function ProjectModal({ project, onClose, onSaved }: { project: Project |
     setPresetNote(null)
     setServerError(null)
   }
-  // Kiểm tra cơ bản ở client; việc có phải git repo hay không do server kiểm tra
+  // Kiểm tra cơ bản ở client; việc có phải git repo hay không (mode worktree) do server kiểm tra
   const pathError = !p.repoPath.trim()
-    ? 'Nhập đường dẫn repo'
+    ? 'Nhập đường dẫn thư mục project'
     : !/^[A-Za-z]:[\\/]/.test(p.repoPath) && !p.repoPath.startsWith('/')
       ? 'Đường dẫn phải là đường dẫn tuyệt đối'
       : serverError ?? undefined
@@ -181,12 +197,52 @@ export function ProjectModal({ project, onClose, onSaved }: { project: Project |
             <input className={inputCls} value={p.mainBranch} onChange={(e) => setP({ ...p, mainBranch: e.target.value })} />
           </Field>
         </div>
-        <Field label="Đường dẫn repo" error={touched ? pathError : undefined} hint="Thư mục gốc chứa .git, ví dụ D:\Projects\my-repo">
+        <Field
+          label="Thư mục project"
+          error={touched ? pathError : undefined}
+          hint={p.deliveryMode === 'direct' ? 'Thư mục trên máy bạn, nơi Claude ghi output, ví dụ D:\Projects\my-repo' : 'Thư mục gốc chứa .git, ví dụ D:\Projects\my-repo'}
+        >
           <input className={`${inputCls} font-mono`} value={p.repoPath} onChange={(e) => {
               setP({ ...p, repoPath: e.target.value })
               setServerError(null)
             }} placeholder="D:\Projects\my-repo" />
         </Field>
+        <fieldset className="space-y-1">
+          <legend className="text-sm font-medium text-slate-700 dark:text-slate-200">Nơi lưu output</legend>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {DELIVERY_MODES.map((m) => {
+              const active = p.deliveryMode === m.value
+              return (
+                <label
+                  key={m.value}
+                  className={`flex cursor-pointer items-start gap-2 rounded-lg border p-2.5 text-sm transition ${
+                    active
+                      ? 'border-indigo-500 bg-indigo-50 dark:border-indigo-400 dark:bg-indigo-950/40'
+                      : 'border-slate-200 hover:border-slate-300 dark:border-slate-700 dark:hover:border-slate-600'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="deliveryMode"
+                    className="mt-1"
+                    checked={active}
+                    onChange={() => {
+                      setP({ ...p, deliveryMode: m.value })
+                      setServerError(null)
+                    }}
+                  />
+                  <span>
+                    <span className="block font-medium">{m.label}</span>
+                    <span className="block text-xs text-slate-500 dark:text-slate-400">{m.desc}</span>
+                  </span>
+                </label>
+              )
+            })}
+          </div>
+          <span className="block text-xs text-slate-500 dark:text-slate-400">
+            Duyệt task chỉ là chấp nhận output; Task Board không tự merge. Đổi lựa chọn chỉ áp dụng cho task chưa chạy.
+          </span>
+        </fieldset>
         <fieldset className="space-y-1">
           <legend className="text-sm font-medium text-slate-700 dark:text-slate-200">Mức quyền mặc định</legend>
           <div className="grid gap-2 sm:grid-cols-2">
@@ -219,8 +275,16 @@ export function ProjectModal({ project, onClose, onSaved }: { project: Project |
           <span className="block text-xs text-slate-500 dark:text-slate-400">Task mới của project sẽ dùng mức quyền này (có thể đổi riêng từng task).</span>
         </fieldset>
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Số task song song tối đa">
-            <input type="number" min={1} max={5} className={inputCls} value={p.maxParallel} onChange={(e) => setP({ ...p, maxParallel: Number(e.target.value) || 1 })} />
+          <Field label="Số task song song tối đa" hint={p.deliveryMode === 'direct' ? 'Ghi thẳng vào thư mục: luôn chạy 1 task mỗi lúc' : undefined}>
+            <input
+              type="number"
+              min={1}
+              max={5}
+              disabled={p.deliveryMode === 'direct'}
+              className={inputCls}
+              value={p.deliveryMode === 'direct' ? 1 : p.maxParallel}
+              onChange={(e) => setP({ ...p, maxParallel: Number(e.target.value) || 1 })}
+            />
           </Field>
           <Field
             label="Model mặc định"

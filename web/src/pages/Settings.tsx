@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
-import { Bell, CalendarClock, Cpu, FileText, Info, KeyRound, Timer } from 'lucide-react'
+import { Bell, CalendarClock, Cpu, FileText, Info, KeyRound, Languages, Timer } from 'lucide-react'
 import { IS_MOCK, notify, saveClaudeAuth, saveTelegram, testClaudeAuth, testTelegram, toast, updateSettings, useStore } from '../store/store'
 import type { ClaudeAuthMode } from '../types'
 import { MODEL_OPTIONS } from '../lib/model'
 import { Button, Field, inputCls } from '../components/ui'
 import { TemplateManager } from '../components/TemplateManager'
 import { ScheduleManager } from '../components/ScheduleManager'
+import { LANG, LANGS, setLang, tr, type Lang } from '../lib/i18n'
 
 function Section({ icon, title, children }: { icon: JSX.Element; title: string; children: React.ReactNode }) {
   return (
@@ -224,7 +225,19 @@ export function Settings() {
 
   return (
     <div className="mx-auto max-w-3xl space-y-4">
-      <h1 className="text-lg font-semibold">Cài đặt</h1>
+      <h1 className="text-lg font-semibold">{tr('Cài đặt')}</h1>
+
+      <Section icon={<Languages size={18} />} title={tr('Ngôn ngữ')}>
+        <Field label="Language / Ngôn ngữ" hint={tr('Ngôn ngữ giao diện. Trong VS Code, mặc định theo ngôn ngữ của VS Code.')}>
+          <select className={inputCls} value={LANG} onChange={(e) => setLang(e.target.value as Lang)}>
+            {LANGS.map((l) => (
+              <option key={l.id} value={l.id}>
+                {l.label}
+              </option>
+            ))}
+          </select>
+        </Field>
+      </Section>
 
       <Section icon={<Cpu size={18} />} title="Thực thi">
         <Field label="Số task chạy song song tối đa (toàn hệ thống)" hint="Task ở Needs Input vẫn chiếm slot. Nên để 2 để tránh vượt giới hạn sử dụng của gói Claude.">

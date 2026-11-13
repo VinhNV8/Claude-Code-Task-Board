@@ -54,6 +54,7 @@ projects.upsert({
   allowedTools: [],
   maxParallel: 3,
   budgetAction: 'warn' as const,
+  deliveryMode: 'worktree' as const,
 })
 
 async function api<T>(method: 'GET' | 'POST' | 'PUT' | 'PATCH', url: string, payload?: object): Promise<T> {

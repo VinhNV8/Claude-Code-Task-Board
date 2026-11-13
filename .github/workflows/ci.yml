@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: Test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # node:sqlite có sẵn (không cần cờ) từ Node 22.13
+          node-version: 22
+          cache: npm
+
+      # Một số test tạo commit trong repo tạm
+      - name: Git identity
+        run: |
+          git config --global user.name "CI"
+          git config --global user.email "ci@example.com"
+          git config --global init.defaultBranch main
+
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test -w server
+
+      - name: Build extension
+        run: npm run build -w vscode-extension
+      - name: Test extension
+        run: npm test -w vscode-extension
+
+      - name: Package extension
+        if: matrix.os == 'ubuntu-latest'
+        working-directory: vscode-extension
+        run: npx vsce package --no-dependencies
+      - uses: actions/upload-artifact@v4
+        if: matrix.os == 'ubuntu-latest'
+        with:
+          name: vsix
+          path: vscode-extension/*.vsix

@@ -21,6 +21,7 @@ const project: Project = {
   allowedTools: [],
   maxParallel: 1,
   budgetAction: 'warn' as const,
+  deliveryMode: 'worktree' as const,
 }
 
 async function ok(cwd: string, args: string[]) {

@@ -27,6 +27,7 @@ import {
 import { Markdown, stripMarkdown } from './Markdown'
 import {
   approveTask,
+  mergeTask,
   deleteTask,
   ensureDiff,
   ensureEvents,
@@ -103,17 +104,19 @@ export function TaskView({
 
   const [runId, setRunId] = useState<string | undefined>()
   const [edit, setEdit] = useState(false)
-  const [confirm, setConfirm] = useState<null | 'delete' | 'reject' | 'stop' | 'retry' | 'approve'>(null)
+  const [confirm, setConfirm] = useState<null | 'delete' | 'reject' | 'stop' | 'retry' | 'approve' | 'merge'>(null)
   const [feedbackOpen, setFeedbackOpen] = useState(false)
   const [feedback, setFeedback] = useState('')
   // Đang gửi approve/request changes/reject: khoá cả thanh hành động để không bấm hai lần
-  const [busy, setBusy] = useState<null | 'approve' | 'request_changes' | 'reject'>(null)
+  const [busy, setBusy] = useState<null | 'approve' | 'merge' | 'request_changes' | 'reject'>(null)
   const [diffLoading, setDiffLoading] = useState(false)
   const [diffError, setDiffError] = useState<string | null>(null)
   // Nhận xét theo file/dòng chưa gửi + file đã đánh dấu "Đã xem" (G3)
   const draft = useReviewDraft(task?.id)
-  // B.2: trạng thái repo chính trước khi merge (chỉ khi task ở Review và có thay đổi code)
-  const merge = useMergeCheck(task?.id, task?.status === 'review' && diffs.length > 0, diffs.map((d) => d.path + d.additions + d.deletions).join())
+  // Mode worktree: output nằm trên nhánh task. Merge là thao tác tuỳ chọn, tách khỏi việc duyệt output.
+  const canMerge = !!task?.branch && !task?.baseRef && diffs.length > 0
+  // B.2: trạng thái repo chính, chỉ kiểm tra khi người dùng mở hộp thoại Merge
+  const merge = useMergeCheck(task?.id, task?.status === 'review' && canMerge && confirm === 'merge', diffs.map((d) => d.path + d.additions + d.deletions).join())
 
   // Diff có sẵn trong state (task Review hoặc broadcast); chưa có thì tải khi mở task (PLAN 2.9)
   const wantDiff = !!task && needsDiffFetch(task, s.diffs)
@@ -137,13 +140,15 @@ export function TaskView({
     if (wantDiff) return loadDiff()
   }, [task?.id, wantDiff])
 
-  const submitReview = async (action: 'approve' | 'request_changes' | 'reject') => {
+  const submitReview = async (action: 'approve' | 'merge' | 'request_changes' | 'reject') => {
     if (!task || busy) return
     setBusy(action)
     try {
       if (action === 'approve') {
         if (await approveTask(task.id)) draft.clear()
-        else void merge.refresh() // bị chặn: cập nhật danh sách file trên thanh Review
+      } else if (action === 'merge') {
+        if (await mergeTask(task.id)) draft.clear()
+        else void merge.refresh() // bị chặn: cập nhật trạng thái repo chính trong hộp thoại
       } else if (action === 'reject') {
         if (await rejectTask(task.id)) draft.clear()
       } else if (await requestChanges(task.id, feedback.trim(), draft.comments)) {
@@ -523,15 +528,18 @@ export function TaskView({
                   </div>
                 ) : (
                   <div className="space-y-2">
-                  {diffs.length > 0 && <MergeStatus check={merge.check} loading={merge.loading} onRefresh={() => void merge.refresh()} />}
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="mr-auto text-sm text-slate-500 dark:text-slate-400">
-                      {diffs.length > 0 ? (
+                      {diffs.length === 0 ? (
+                        'Không có file nào thay đổi: Chấp nhận sẽ chuyển task sang Done'
+                      ) : task.baseRef ? (
                         <>
-                          Merge <span className="font-mono">{task.branch}</span> → <span className="font-mono">{project?.mainBranch}</span>
+                          Output đã nằm trong thư mục project <span className="font-mono text-xs">{project?.repoPath}</span>
                         </>
                       ) : (
-                        'Không có thay đổi code: Approve sẽ chuyển task sang Done'
+                        <>
+                          Output ở nhánh <span className="font-mono">{task.branch}</span> (local). Bạn tự merge/PR theo quy trình riêng.
+                        </>
                       )}
                     </span>
                     <Button variant="ghost" className="text-rose-600" disabled={!!busy} onClick={() => setConfirm('reject')}>
@@ -540,20 +548,18 @@ export function TaskView({
                     <Button disabled={!!busy} onClick={() => setFeedbackOpen(true)}>
                       <MessageSquareReply size={16} /> Request changes{draft.comments.length > 0 && ` (${draft.comments.length} nhận xét)`}
                     </Button>
+                    {canMerge && (
+                      <Button disabled={!!busy} title={`Tuỳ chọn: merge ${task.branch} vào ${project?.mainBranch}`} onClick={() => setConfirm('merge')}>
+                        {busy === 'merge' ? <Loader2 size={16} className="animate-spin" /> : <GitMerge size={16} />} Merge…
+                      </Button>
+                    )}
                     <Button
                       variant="success"
-                      disabled={!!busy || mergeBlocked}
-                      title={mergeBlocked ? 'Repo chính chưa sẵn sàng để merge, xem chi tiết ở trên' : undefined}
+                      disabled={!!busy}
+                      title="Output đạt yêu cầu: chuyển task sang Done (không merge)"
                       onClick={() => (draft.comments.length ? setConfirm('approve') : submitReview('approve'))}
                     >
-                      {busy === 'approve' ? (
-                        <Loader2 size={16} className="animate-spin" />
-                      ) : diffs.length > 0 ? (
-                        <GitMerge size={16} />
-                      ) : (
-                        <Check size={16} />
-                      )}{' '}
-                      {diffs.length > 0 ? <>Approve &amp; Merge</> : 'Approve'}
+                      {busy === 'approve' ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />} Chấp nhận output
                     </Button>
                   </div>
                 </div>
@@ -622,9 +628,9 @@ export function TaskView({
                 )
               return (
                 <li key={rv.id} className="relative">
-                  <span className={`absolute -left-[31px] top-1 h-3 w-3 rounded-full ring-4 ring-slate-50 dark:ring-slate-950 ${rv.action === 'approve' ? 'bg-emerald-500' : 'bg-rose-500'}`} />
+                  <span className={`absolute -left-[31px] top-1 h-3 w-3 rounded-full ring-4 ring-slate-50 dark:ring-slate-950 ${rv.action === 'approve' || rv.action === 'merge' ? 'bg-emerald-500' : 'bg-rose-500'}`} />
                   <p className="text-sm">
-                    {rv.action === 'approve' ? 'Bạn đã Approve & Merge' : 'Bạn đã Reject'} · <span className="text-xs text-slate-500">{timeAgo(rv.createdAt, now)}</span>
+                    {rv.action === 'approve' ? 'Bạn đã chấp nhận output' : rv.action === 'merge' ? 'Bạn đã chấp nhận và merge' : 'Bạn đã Reject'} · <span className="text-xs text-slate-500">{timeAgo(rv.createdAt, now)}</span>
                   </p>
                   {rv.feedback && <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{rv.feedback}</p>}
                 </li>
@@ -728,10 +734,30 @@ export function TaskView({
       <ConfirmDialog
         open={confirm === 'approve'}
         onClose={() => setConfirm(null)}
-        title={`Approve task #${task.id}?`}
-        message={`Bạn còn ${draft.comments.length} nhận xét chưa gửi cho Claude. Approve sẽ bỏ các nhận xét này. Muốn Claude sửa theo nhận xét thì chọn Request changes.`}
-        confirmLabel="Vẫn Approve"
+        title={`Chấp nhận output task #${task.id}?`}
+        message={`Bạn còn ${draft.comments.length} nhận xét chưa gửi cho Claude. Chấp nhận sẽ bỏ các nhận xét này. Muốn Claude sửa theo nhận xét thì chọn Request changes.`}
+        confirmLabel="Vẫn chấp nhận"
         onConfirm={() => void submitReview('approve')}
+      />
+      <ConfirmDialog
+        open={confirm === 'merge'}
+        onClose={() => setConfirm(null)}
+        title={`Merge task #${task.id} vào ${project?.mainBranch ?? 'nhánh chính'}?`}
+        message={
+          <div className="space-y-2">
+            <p>
+              Không bắt buộc: dùng khi bạn muốn Task Board merge luôn nhánh <span className="font-mono">{task.branch}</span> vào{' '}
+              <span className="font-mono">{project?.mainBranch}</span> trong repo local. Nếu team merge qua PR/quy trình riêng, hãy dùng{' '}
+              <b>Chấp nhận output</b> thay vì nút này.
+            </p>
+            {draft.comments.length > 0 && <p>Bạn còn {draft.comments.length} nhận xét chưa gửi, merge sẽ bỏ các nhận xét này.</p>}
+            <MergeStatus check={merge.check} loading={merge.loading} onRefresh={() => void merge.refresh()} />
+          </div>
+        }
+        confirmLabel={mergeBlocked ? 'Repo chưa sẵn sàng' : 'Merge'}
+        onConfirm={() => {
+          if (!mergeBlocked) void submitReview('merge')
+        }}
       />
       <ConfirmDialog
         open={confirm === 'reject'}
@@ -739,7 +765,15 @@ export function TaskView({
         title={`Reject task #${task.id}?`}
         message={
           <>
-            Toàn bộ thay đổi sẽ bị huỷ, worktree và nhánh <span className="font-mono">{task.branch}</span> sẽ bị xoá. Không thể hoàn tác.
+            Task chuyển sang Failed. Output <b>không bị xoá</b>
+            {task.baseRef ? (
+              <>: các file vẫn nằm trong thư mục project, bạn tự giữ hoặc xoá.</>
+            ) : (
+              <>
+                : vẫn còn trên nhánh <span className="font-mono">{task.branch}</span>.
+              </>
+            )}{' '}
+            Có thể bấm Chạy lại để Claude làm lại từ đầu.
           </>
         }
         confirmLabel="Reject"
@@ -759,7 +793,11 @@ export function TaskView({
         open={confirm === 'retry'}
         onClose={() => setConfirm(null)}
         title={`Chạy lại task #${task.id} từ đầu?`}
-        message="Toàn bộ thay đổi đang dở trong worktree sẽ bị bỏ và Claude bắt đầu phiên mới trên nhánh chính. Muốn giữ thay đổi và làm tiếp, hãy chọn Tiếp tục."
+        message={
+          task.baseRef
+            ? 'Claude bắt đầu phiên mới trong thư mục project. File hiện có không bị xoá hay hoàn tác; diff khi review vẫn so với trước lần giao task đầu tiên.'
+            : 'Toàn bộ thay đổi đang dở trong worktree sẽ bị bỏ và Claude bắt đầu phiên mới trên nhánh chính. Muốn giữ thay đổi và làm tiếp, hãy chọn Tiếp tục.'
+        }
         confirmLabel="Chạy lại từ đầu"
         danger
         onConfirm={() => retryTask(task.id)}

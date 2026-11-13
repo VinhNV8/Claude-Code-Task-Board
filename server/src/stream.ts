@@ -24,7 +24,7 @@ export interface Parsed {
   /** ID model thực tế từ event `system/init`. */
   model?: string
   /** Dòng `rate_limit_event`: status ('allowed', 'allowed_warning', 'rejected'...) và giờ reset (epoch ms). */
-  rateLimit?: { status: string; resetsAt?: number }
+  rateLimit?: { status: string; resetsAt?: number; rateLimitType?: string }
 }
 
 const MAX_OUTPUT = 4000
@@ -188,6 +188,7 @@ export class StreamParser {
       out.rateLimit = {
         status: String(info.status ?? ''),
         resetsAt: typeof info.resetsAt === 'number' ? info.resetsAt * 1000 : undefined,
+        rateLimitType: typeof info.rateLimitType === 'string' ? info.rateLimitType : undefined,
       }
       return out
     }

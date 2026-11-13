@@ -38,6 +38,7 @@ import type {
   Toast,
 } from '../types'
 import { showBrowserNotification, transitionNotice, type Notice } from '../lib/notify'
+import type { ClaudeLimit } from '../lib/claudeLimit'
 
 export interface State {
   projects: Project[]
@@ -51,6 +52,7 @@ export interface State {
   reviews: ReviewAction[]
   testRuns: TestRun[]
   testOutputs: Record<number, TestOutput>
+  claudeLimit: ClaudeLimit | null
   toasts: Toast[]
   settings: Settings
   demo: DemoFlags
@@ -80,6 +82,7 @@ function initialState(empty = false): State {
     reviews: empty ? [] : seed.reviews,
     testRuns: [],
     testOutputs: {},
+    claudeLimit: null,
     toasts: [],
     settings: defaultSettings,
     demo: defaultDemo,
@@ -608,6 +611,14 @@ function addReview(taskId: number, action: ReviewAction['action'], feedback?: st
 
 export function approveTask(id: number): boolean {
   const task = state.tasks.find((t) => t.id === id)!
+  addReview(id, 'approve')
+  patchTask(id, { status: 'done', reviewWarning: undefined })
+  toast({ kind: 'success', title: `Đã chấp nhận output #${id}`, body: task.title })
+  return true
+}
+
+export function mergeTask(id: number): boolean {
+  const task = state.tasks.find((t) => t.id === id)!
   const project = state.projects.find((p) => p.id === task.projectId)!
   if (state.demo.dirtyMainRepo) {
     patchTask(id, {
@@ -624,7 +635,7 @@ export function approveTask(id: number): boolean {
     toast({ kind: 'error', title: 'Merge bị conflict', body: `#${id} ${task.title}` })
     return false
   }
-  addReview(id, 'approve')
+  addReview(id, 'merge')
   patchTask(id, { status: 'done', reviewWarning: undefined })
   toast({ kind: 'success', title: `Đã merge #${id} vào ${project.mainBranch}`, body: task.title })
   return true
@@ -891,6 +902,12 @@ export function onScheduleRun(_fn: (r: ScheduleRun) => void) {
 
 export function setDemo(patch: Partial<DemoFlags>) {
   set((s) => ({ demo: { ...s.demo, ...patch } }))
+  // Giả lập gói Claude hết lượt khung 5 giờ, có lại sau 1 giờ 20 phút
+  if (patch.claudeLimited !== undefined) {
+    const now = Date.now()
+    const resetAt = now + 80 * 60_000
+    set(() => ({ claudeLimit: patch.claudeLimited ? { kind: 'five_hour', resetAt, until: resetAt, since: now } : null }))
+  }
 }
 
 export function resetDemo(mode: 'seed' | 'empty' | 'many') {

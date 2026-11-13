@@ -1,10 +1,13 @@
-// Approve & Merge (PLAN 2.4) và lịch sử review (PLAN 2.8).
-// Merge nhánh claude/task-<id> vào nhánh chính của repo; mỗi project chỉ một lệnh merge chạy tại một thời điểm.
+// Review output (PLAN 2.4) và lịch sử review (PLAN 2.8).
+// - Approve = chấp nhận output: task Done, KHÔNG merge. Output giữ nguyên chỗ (thư mục project ở mode direct,
+//   nhánh claude/task-<id> ở local với mode worktree); người dùng tự merge/PR theo quy trình riêng.
+// - Merge (tuỳ chọn, chỉ mode worktree): chấp nhận + merge nhánh task vào nhánh chính.
+// Mỗi project chỉ một thao tác review chạy tại một thời điểm.
 import { broadcast } from './bus.ts'
 import { projects, reviews, tasks } from './db.ts'
 import { branchChangedFiles, git, mainRepoStatus, mergeBranch, removeWorktree, taskBranch } from './git.ts'
 import { isTesting, stopTests } from './testRunner.ts'
-import { MIN_FEEDBACK } from '../../web/src/lib/review.ts'
+import { MIN_FEEDBACK, REJECT_REASON } from '../../web/src/lib/review.ts'
 import { formatReviewFeedback, parseComments } from '../../web/src/lib/reviewComments.ts'
 import type { MergeCheck, Project, ReviewAction, ReviewComment, Task } from './types.ts'
 
@@ -106,23 +109,56 @@ function recordReview(r: Pick<ReviewAction, 'taskId' | 'action' | 'feedback' | '
 }
 
 /**
- * Approve: repo chính phải ở mainBranch, không có file đã stage và không có file chưa commit trùng với task
- * (xem mergeReadiness), sau đó `git merge --no-ff claude/task-<id>`.
- * Thành công → task Done, xoá worktree + nhánh. Conflict → `git merge --abort`, task giữ Review kèm cảnh báo.
+ * Approve = chấp nhận output: task Done, không động vào git của người dùng.
+ * Mode worktree: dọn thư mục worktree nhưng GIỮ nhánh claude/task-<id> ở local để người dùng tự merge/PR.
+ * Mode direct: file đã nằm sẵn trong thư mục project, chỉ cần đánh dấu Done.
  */
 export async function approveTask(taskId: number): Promise<{ task: Task; review: ReviewAction }> {
   const first = tasks.get(taskId)
   if (!first) throw new ReviewError(404, `Không tìm thấy task #${taskId}`)
-  return withLock(first.projectId, () => approveLocked(taskId))
+  return withLock(first.projectId, async () => {
+    const { task, project } = reviewable(taskId)
+    if (isTesting(task.id)) await stopTests(task.id, 'Task đã được duyệt.')
+    if (task.baseRef) {
+      const review = recordReview({ taskId: task.id, action: 'approve' })
+      const done = patchTask(task.id, { status: 'done', reviewWarning: null })!
+      return { task: done, review }
+    }
+    await removeWorktree(project, task.id, { keepBranch: true })
+    // Nhánh chỉ còn ý nghĩa khi có commit chưa vào nhánh chính
+    const keep = await branchHasChanges(project.repoPath, taskBranch(task.id), project.mainBranch).catch(() => true)
+    if (!keep) await git(project.repoPath, ['branch', '-D', taskBranch(task.id)])
+    const review = recordReview({ taskId: task.id, action: 'approve' })
+    const done = patchTask(task.id, { status: 'done', reviewWarning: null, branch: keep ? (task.branch ?? null) : null, worktreePath: null })!
+    return { task: done, review }
+  })
 }
 
-async function approveLocked(taskId: number) {
-  // Đọc lại trong khoá: lệnh approve trước có thể vừa đổi trạng thái task
+/** Task đang Review cùng project của nó (đọc lại trong khoá). */
+function reviewable(taskId: number): { task: Task; project: Project } {
   const task = tasks.get(taskId)
   if (!task) throw new ReviewError(404, `Không tìm thấy task #${taskId}`)
   if (task.status !== 'review') throw new ReviewError(409, `Task #${taskId} không ở trạng thái Review`)
-  const project: Project | undefined = projects.get(task.projectId)
+  const project = projects.get(task.projectId)
   if (!project) throw new ReviewError(404, `Không tìm thấy project của task #${taskId}`)
+  return { task, project }
+}
+
+/**
+ * Merge (tuỳ chọn, mode worktree): repo chính phải ở mainBranch, không có file đã stage và không có file chưa commit trùng với task
+ * (xem mergeReadiness), sau đó `git merge --no-ff claude/task-<id>`.
+ * Thành công → task Done, xoá worktree + nhánh. Conflict → `git merge --abort`, task giữ Review kèm cảnh báo.
+ */
+export async function mergeTask(taskId: number): Promise<{ task: Task; review: ReviewAction }> {
+  const first = tasks.get(taskId)
+  if (!first) throw new ReviewError(404, `Không tìm thấy task #${taskId}`)
+  return withLock(first.projectId, () => mergeLocked(taskId))
+}
+
+async function mergeLocked(taskId: number) {
+  // Đọc lại trong khoá: lệnh trước có thể vừa đổi trạng thái task
+  const { task, project } = reviewable(taskId)
+  if (task.baseRef) throw new ReviewError(409, 'Task giao output thẳng vào thư mục project, không có nhánh để merge')
 
   const branch = taskBranch(taskId)
   const repo = project.repoPath
@@ -192,11 +228,11 @@ export async function branchHasChanges(repo: string, branch: string, mainBranch:
   return Number(r.stdout.trim()) > 0
 }
 
-/** Đã duyệt (đã merge, hoặc không có gì để merge): dừng test đang chạy, dọn worktree + nhánh, task Done. */
+/** Đã merge (hoặc không có gì để merge): dừng test đang chạy, dọn worktree + nhánh, task Done. */
 async function finishApproved(task: Task, project: Project) {
   if (isTesting(task.id)) await stopTests(task.id, 'Task đã được duyệt.')
   await removeWorktree(project, task.id)
-  const review = recordReview({ taskId: task.id, action: 'approve' })
+  const review = recordReview({ taskId: task.id, action: 'merge' })
   const done = patchTask(task.id, { status: 'done', reviewWarning: null, branch: null, worktreePath: null })!
   return { task: done, review }
 }
@@ -271,9 +307,12 @@ export async function requestChanges(
 
 // ---------------------------------------------------------------- reject (PLAN 2.6)
 
-export const REJECT_REASON = 'Bị từ chối khi review'
+export { REJECT_REASON }
 
-/** Reject: ghi review, xoá worktree + nhánh claude/task-<id>, task Failed. */
+/**
+ * Reject: ghi review, task Failed. KHÔNG xoá output: mode direct giữ file trong thư mục project,
+ * mode worktree giữ worktree + nhánh để người dùng xem lại, Tiếp tục hoặc Chạy lại.
+ */
 export async function rejectTask(taskId: number, feedback?: unknown): Promise<{ task: Task; review: ReviewAction }> {
   const first = tasks.get(taskId)
   if (!first) throw new ReviewError(404, `Không tìm thấy task #${taskId}`)
@@ -285,7 +324,6 @@ export async function rejectTask(taskId: number, feedback?: unknown): Promise<{ 
     if (!project) throw new ReviewError(404, `Không tìm thấy project của task #${taskId}`)
 
     if (isTesting(taskId)) await stopTests(taskId, 'Task đã bị từ chối.')
-    await removeWorktree(project, taskId)
 
     const note = typeof feedback === 'string' ? feedback.trim() : ''
     const review = recordReview({ taskId, action: 'reject', feedback: note || undefined })
@@ -294,8 +332,6 @@ export async function rejectTask(taskId: number, feedback?: unknown): Promise<{ 
       failReason: REJECT_REASON,
       reviewWarning: null,
       pendingFeedback: null,
-      branch: null,
-      worktreePath: null,
     })!
     return { task: failed, review }
   })

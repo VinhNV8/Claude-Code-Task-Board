@@ -1,6 +1,7 @@
 // Resume (Tiếp tục) task bị gián đoạn: khác với Retry (Chạy lại), Resume giữ nguyên worktree đang làm dở
 // và chạy tiếp đúng phiên Claude cũ (`--resume <sessionId>`). Dùng chung cho server và giao diện.
 import type { Task } from '../types.ts'
+import { REJECT_REASON } from './review.ts'
 
 /** failReason khi người dùng bấm Tạm dừng (Dừng) một task đang chạy. */
 export const STOP_REASON = 'Đã dừng bởi người dùng'
@@ -26,12 +27,14 @@ export function isWaitingRateLimit(task: Pick<Task, 'status' | 'notBefore'>, now
  * - Failed (tạm dừng, lỗi, hết lượt tự thử lại do giới hạn sử dụng, server khởi động lại): cần còn worktree.
  * - Queued đang chờ giới hạn sử dụng: Tiếp tục = chạy ngay, không chờ tới giờ reset.
  */
-export function resumeBlocker(task: Pick<Task, 'status' | 'worktreePath' | 'notBefore'>, now = Date.now()): string | undefined {
+export function resumeBlocker(task: Pick<Task, 'status' | 'worktreePath' | 'notBefore' | 'failReason'>, now = Date.now()): string | undefined {
   if (isWaitingRateLimit(task, now)) return undefined
   if (task.status !== 'failed') return 'Chỉ tiếp tục được task đã tạm dừng, thất bại hoặc đang chờ giới hạn sử dụng'
+  // Output đã bị từ chối: chạy tiếp phiên cũ không có ý nghĩa, phải Chạy lại (hoặc giao task mới).
+  if (task.failReason === REJECT_REASON) return 'Output của task đã bị từ chối, hãy dùng Chạy lại'
   if (!task.worktreePath) return 'Task không còn worktree của lần chạy trước, hãy dùng Chạy lại'
   return undefined
 }
 
-export const canResume = (task: Pick<Task, 'status' | 'worktreePath' | 'notBefore'>, now = Date.now()) =>
+export const canResume = (task: Pick<Task, 'status' | 'worktreePath' | 'notBefore' | 'failReason'>, now = Date.now()) =>
   resumeBlocker(task, now) === undefined

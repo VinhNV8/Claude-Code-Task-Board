@@ -2,7 +2,7 @@
 import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { isAbsolute, relative, resolve, sep } from 'node:path'
 import { projects, tasks } from './db.ts'
-import { commitAll, git, gitBuffer, taskBranch } from './git.ts'
+import { commitAll, git, gitBuffer, snapshotShow, snapshotTree, taskBranch } from './git.ts'
 import { ReviewError, withLock } from './review.ts'
 import { isMarkdownPath } from '../../web/src/lib/reviewComments.ts'
 import { imageMime } from '../../web/src/lib/diff.ts'
@@ -93,6 +93,21 @@ export async function readTaskBlob(taskId: number, path: unknown, side: 'old' | 
     return readFileSync(abs)
   }
 
+  // Mode direct: bản "cũ" nằm trong snapshot trước khi giao task, bản "mới" là file trong thư mục project.
+  if (task.baseRef) {
+    if (side === 'new') {
+      const abs = resolveInWorktree(project.repoPath, rel)
+      if (!existsSync(abs) || !statSync(abs).isFile()) throw new ReviewError(404, `Không tìm thấy file ${rel}`)
+      if (statSync(abs).size > maxBytes) throw tooBig()
+      return readFileSync(abs)
+    }
+    const r = await snapshotShow(project, task.baseRef, rel, maxBytes + 1)
+    if (r.code !== 0 && /maxBuffer/i.test(r.stderr)) throw tooBig()
+    if (r.code !== 0) throw new ReviewError(404, `Không tìm thấy file ${rel} trong bản trước khi giao task`)
+    if (r.stdout.length > maxBytes) throw tooBig()
+    return r.stdout
+  }
+
   let rev = branch
   if (side === 'old') {
     const base = await git(project.repoPath, ['merge-base', project.mainBranch, branch])
@@ -124,6 +139,12 @@ export async function saveTaskFile(taskId: number, path: unknown, content: unkno
     const abs = resolveInWorktree(worktree, rel)
     if (!existsSync(abs)) throw new ReviewError(404, `Không tìm thấy file ${rel}`)
     writeFileSync(abs, content, 'utf8')
+    // Mode direct: không commit vào repo người dùng; chụp lại snapshot "sau" để diff có phần sửa tay.
+    if (task.baseRef) {
+      const project = projects.get(task.projectId)!
+      tasks.patch(task.id, { headRef: await snapshotTree(project) })
+      return { committed: false }
+    }
     const committed = await commitAll(worktree, `task #${task.id}: sửa tay khi review (${rel})`)
     return { committed }
   })

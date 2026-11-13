@@ -27,6 +27,7 @@ projects.upsert({
   allowedTools: [],
   maxParallel: 0, // không còn slot: /run phải đưa task vào hàng đợi thay vì chạy
   budgetAction: 'warn' as const,
+  deliveryMode: 'worktree' as const,
 })
 
 const mk = (status: TaskStatus) =>

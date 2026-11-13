@@ -31,6 +31,7 @@ import type {
   Toast,
 } from '../types'
 import { EMPTY_TEST_OUTPUT, appendTestOutput } from '../lib/testOutput'
+import type { ClaudeLimit } from '../lib/claudeLimit'
 import { checkStillAuthenticated, onUnauthorized } from '../lib/auth'
 import { showBrowserNotification, transitionNotice, type Notice } from '../lib/notify'
 
@@ -51,6 +52,8 @@ export interface State {
   testOutputs: Record<number, TestOutput>
   /** Chi tiêu tháng hiện tại theo project (PLAN P6, ước tính) */
   budgets: Record<string, ProjectBudget>
+  /** Gói Claude hết lượt (5 giờ / tuần): banner trên mọi trang. null = còn lượt */
+  claudeLimit: ClaudeLimit | null
   toasts: Toast[]
   settings: Settings
   demo: DemoFlags
@@ -77,6 +80,7 @@ let state: State = {
   testRuns: [],
   testOutputs: {},
   budgets: {},
+  claudeLimit: null,
   toasts: [],
   settings: {
     maxParallel: 2,
@@ -193,11 +197,11 @@ async function act<T>(fn: () => Promise<T>, errorTitle = 'Thao tác thất bại
 
 async function loadState() {
   const s = await api<
-    Pick<State, 'projects' | 'templates' | 'schedules' | 'tasks' | 'runs' | 'settings' | 'permissions' | 'reviews' | 'diffs' | 'testRuns' | 'budgets'>
+    Pick<State, 'projects' | 'templates' | 'schedules' | 'tasks' | 'runs' | 'settings' | 'permissions' | 'reviews' | 'diffs' | 'testRuns' | 'budgets' | 'claudeLimit'>
   >('GET', '/state')
   loadedRuns.clear()
   loadedTests.clear()
-  set(() => ({ ...s, schedules: s.schedules ?? [], testRuns: s.testRuns ?? [], budgets: s.budgets ?? {}, testOutputs: {}, events: [], loaded: true }))
+  set(() => ({ ...s, schedules: s.schedules ?? [], testRuns: s.testRuns ?? [], budgets: s.budgets ?? {}, claudeLimit: s.claudeLimit ?? null, testOutputs: {}, events: [], loaded: true }))
 }
 
 // ------------------------------------------------------------ output chạy test (FR-34, tải khi mở panel)
@@ -299,6 +303,7 @@ type ServerMessage =
   | { type: 'budgets'; budgets: Record<string, ProjectBudget> }
   | { type: 'budget_alert'; projectId: string; level: 'warn' | 'over'; month: string; message: string }
   | { type: 'rule_suggestions'; projectId: string; suggestions: RuleSuggestion[] }
+  | { type: 'claude_limit'; limit: ClaudeLimit | null }
 
 const upsert = <T extends { id: unknown }>(list: T[], item: T) =>
   list.some((x) => x.id === item.id) ? list.map((x) => (x.id === item.id ? item : x)) : [...list, item]
@@ -326,6 +331,9 @@ function onMessage(m: ServerMessage) {
       break
     case 'diff':
       set((s) => ({ diffs: { ...s.diffs, [m.taskId]: m.files } }))
+      break
+    case 'claude_limit':
+      set(() => ({ claudeLimit: m.limit }))
       break
     case 'test_run': {
       const r = m.testRun
@@ -531,15 +539,23 @@ function applyReview(r: ReviewResult) {
   onMessage({ type: 'task', task: r.task })
 }
 
+/** Chấp nhận output: task Done, không merge (output giữ nguyên trong thư mục project hoặc nhánh task ở local). */
 export async function approveTask(id: number): Promise<boolean> {
-  // Task không thay đổi code thì Approve chỉ chuyển Done, không merge
-  const hadChanges = (state.diffs[id]?.length ?? 0) > 0
-  const r = await act(() => api<ReviewResult>('POST', `/tasks/${id}/review`, { action: 'approve' }), hadChanges ? 'Không merge được' : 'Không duyệt được')
+  const r = await act(() => api<ReviewResult>('POST', `/tasks/${id}/review`, { action: 'approve' }), 'Không duyệt được')
+  if (!r) return false
+  applyReview(r)
+  const body = r.task.branch ? `${r.task.title} · output ở nhánh ${r.task.branch}` : r.task.title
+  toast({ kind: 'success', title: `Đã chấp nhận output #${id}`, body })
+  return true
+}
+
+/** Tuỳ chọn (mode worktree): chấp nhận và merge nhánh task vào nhánh chính. */
+export async function mergeTask(id: number): Promise<boolean> {
+  const r = await act(() => api<ReviewResult>('POST', `/tasks/${id}/review`, { action: 'merge' }), 'Không merge được')
   if (!r) return false
   applyReview(r)
   const main = state.projects.find((p) => p.id === r.task.projectId)?.mainBranch
-  const title = hadChanges ? `Đã merge #${id}${main ? ` vào ${main}` : ''}` : `Đã duyệt #${id}, chuyển Done`
-  toast({ kind: 'success', title, body: r.task.title })
+  toast({ kind: 'success', title: `Đã merge #${id}${main ? ` vào ${main}` : ''}`, body: r.task.title })
   return true
 }
 
@@ -555,7 +571,7 @@ export async function requestChanges(id: number, feedback: string, comments: Rev
 }
 
 /** Nội dung hiện tại của file trong worktree (Preview Markdown khi review). `null` nếu lỗi (đã báo toast). */
-/** Kiểm tra trước khi Approve & Merge. Lỗi mạng thì trả null (giao diện hiện "chưa kiểm tra được"). */
+/** Kiểm tra trước khi Merge (tuỳ chọn). Lỗi mạng thì trả null (giao diện hiện "chưa kiểm tra được"). */
 export async function fetchMergeCheck(id: number): Promise<MergeCheck | null> {
   try {
     return await api<MergeCheck>('GET', `/tasks/${id}/merge-check`)

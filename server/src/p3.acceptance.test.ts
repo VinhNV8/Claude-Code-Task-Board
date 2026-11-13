@@ -46,6 +46,7 @@ projects.upsert({
   allowedTools: ['Read', 'Bash(npm test:*)', 'Bash(git status:*)'],
   maxParallel: 2,
   budgetAction: 'warn' as const,
+  deliveryMode: 'worktree' as const,
 })
 
 function runningTask(title: string) {

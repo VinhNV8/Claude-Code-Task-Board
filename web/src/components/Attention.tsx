@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { AlertTriangle, Check, ChevronDown, ChevronUp, Eye, GitMerge, Layers, Loader2, Pause, RotateCcw, StepForward, Timer, X } from 'lucide-react'
+import { AlertTriangle, Check, ChevronDown, ChevronUp, Eye, Layers, Loader2, Pause, RotateCcw, StepForward, Timer, X } from 'lucide-react'
 import { approveTask, decidePermission, decidePermissionsBatch, ensureDiff, resumeTask, retryTask, useStore } from '../store/store'
 import { DenyReasonBox, PermissionCard } from './PermissionCard'
 import { stripMarkdown } from './Markdown'
@@ -108,7 +108,7 @@ const TONE = {
 } as const
 
 /**
- * Một việc cần bạn, xử lý ngay trên thẻ: cho phép/từ chối quyền, duyệt & merge, tiếp tục/chạy lại.
+ * Một việc cần bạn, xử lý ngay trên thẻ: cho phép/từ chối quyền, chấp nhận output, tiếp tục/chạy lại.
  * Việc cần xem kỹ (lệnh rủi ro cao, còn nhận xét chưa gửi) thì mở khung chi tiết.
  */
 export function AttentionCard({ item, task, project, onOpen, className = '' }: { item: AttentionItem; task: Task; project?: Project; onOpen: (id: number) => void; className?: string }) {
@@ -217,10 +217,10 @@ export function AttentionCard({ item, task, project, onOpen, className = '' }: {
           size="sm"
           variant="success"
           disabled={busy}
-          title={`Merge ${task.branch ?? ''} vào ${project?.mainBranch ?? 'nhánh chính'}`}
-          onClick={() => (hasDraftComments(task.id) || task.reviewWarning ? onOpen(task.id) : run(() => approveTask(task.id)))}
+          title="Chấp nhận output, chuyển task sang Done (không merge)"
+          onClick={() => (hasDraftComments(task.id) ? onOpen(task.id) : run(() => approveTask(task.id)))}
         >
-          {busy ? <Loader2 size={13} className="animate-spin" /> : <GitMerge size={13} />} Duyệt &amp; merge
+          {busy ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />} Chấp nhận
         </Button>
         <Button size="sm" onClick={() => onOpen(task.id)}>
           <Eye size={13} /> Xem thay đổi

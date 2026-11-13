@@ -5,11 +5,14 @@ import { createServer } from 'node:http'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { findClaudeBin } from './claude.ts'
-import { routes } from './routes.ts'
-import { pump, recover, shutdown } from './runner.ts'
+import { openClients, routes } from './routes.ts'
+import { hasActiveRuns, pump, recover, shutdown } from './runner.ts'
+import { hasActiveTests } from './testRunner.ts'
+import { idleExitMinutes, startIdleExit } from './idle.ts'
+import { isElectron } from './runtime.ts'
 import { bus, type ServerMessage } from './bus.ts'
 import { startScheduler, stopScheduler } from './scheduler.ts'
-import { kv, projects, settings, tasks, telegramToken } from './db.ts'
+import { kv, projects, schedules, settings, tasks, telegramToken } from './db.ts'
 import { createTelegramNotifier, sendTelegram, type FetchLike } from './telegram.ts'
 import { activeConfig, createTelegramApprover, createTelegramPoller } from './telegramApprove.ts'
 import { decidePermission, listPermissions } from './permissions.ts'
@@ -19,6 +22,11 @@ import { PREVIEW_MAX_BYTES, PREVIEW_PORT, createPreviewHandler, isPreviewOrigin 
 import { readTaskBlob } from './reviewFiles.ts'
 
 const ROOT = join(import.meta.dirname, '..', '..')
+
+// Bản đóng gói trong VS Code: server chạy bằng file thực thi Electron với ELECTRON_RUN_AS_NODE=1.
+// Bỏ biến này khỏi môi trường của chính server để Claude và các lệnh nó chạy (vd. app Electron của người dùng)
+// không bị ép chạy ở chế độ Node; tiến trình nào cần thì tự thêm lại (runtime.ts).
+if (isElectron()) delete process.env.ELECTRON_RUN_AS_NODE
 
 // NFR-04: mặc định chỉ lắng nghe 127.0.0.1; mở thêm địa chỉ (REMOTE_HOST) thì bắt buộc token đăng nhập.
 let listen: ListenConfig
@@ -43,9 +51,9 @@ app.addHook('onRequest', async (req, reply) => {
 })
 await app.register(routes)
 
-// Production: phục vụ giao diện đã build trên cùng một port
-const dist = join(ROOT, 'web', 'dist')
-if (PROD && existsSync(dist)) {
+// Production: phục vụ giao diện đã build trên cùng một port (bản đóng gói chỉ định thư mục qua TASKBOARD_WEB_DIST)
+const dist = process.env.TASKBOARD_WEB_DIST || join(ROOT, 'web', 'dist')
+if ((PROD || process.env.TASKBOARD_WEB_DIST) && existsSync(dist)) {
   await app.register(fastifyStatic, { root: dist })
   app.setNotFoundHandler((req, reply) =>
     req.url.startsWith('/api') ? reply.code(404).send({ error: 'Not found' }) : reply.sendFile('index.html'),
@@ -138,15 +146,37 @@ pump()
 // PLAN 4.6: lịch cron. Lỡ giờ khi server tắt thì chỉ tạo bù 1 task cho mỗi lịch.
 startScheduler()
 
-for (const sig of ['SIGINT', 'SIGTERM'] as const)
-  process.on(sig, async () => {
-    stopScheduler()
-    await poller.stop()
-    await shutdown()
-    for (const s of [...extraServers, ...previewServers]) {
-      s.closeAllConnections()
-      s.close()
-    }
-    await app.close()
-    process.exit(0)
+let stopping = false
+async function stop() {
+  if (stopping) return
+  stopping = true
+  stopScheduler()
+  await poller.stop()
+  await shutdown()
+  for (const s of [...extraServers, ...previewServers]) {
+    s.closeAllConnections()
+    s.close()
+  }
+  await app.close()
+  process.exit(0)
+}
+for (const sig of ['SIGINT', 'SIGTERM'] as const) process.on(sig, () => void stop())
+
+// Bản đóng gói: tự tắt khi không còn giao diện nào mở và không còn việc (idle.ts)
+const idleMin = idleExitMinutes()
+if (idleMin)
+  startIdleExit({
+    minutes: idleMin,
+    state: () => ({
+      clients: openClients(),
+      busy:
+        hasActiveRuns() ||
+        hasActiveTests() ||
+        tasks.all().some((t) => t.status === 'queued' || t.status === 'running' || t.status === 'needs_input') ||
+        schedules.all().some((s) => s.enabled),
+    }),
+    onIdle: () => {
+      console.log(`Không có ai dùng trong ${idleMin} phút: tự tắt server.`)
+      void stop()
+    },
   })

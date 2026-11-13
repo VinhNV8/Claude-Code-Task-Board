@@ -30,7 +30,16 @@ export interface Project {
   monthlyBudgetUsd?: number
   /** Khi vượt budget: chỉ cảnh báo, hoặc tạm dừng chạy task mới (B3). */
   budgetAction: BudgetAction
+  /**
+   * Cách Claude giao output:
+   * - `direct`: làm thẳng trong thư mục project (repoPath), thấy file ngay, không cần git. Duyệt = chấp nhận output.
+   * - `worktree`: làm trong worktree riêng (nhánh `claude/task-<id>`, giữ ở local). Duyệt = chấp nhận output;
+   *   merge vào nhánh chính là thao tác riêng, tuỳ chọn.
+   */
+  deliveryMode: DeliveryMode
 }
+
+export type DeliveryMode = 'direct' | 'worktree'
 
 export type BudgetAction = 'warn' | 'pause'
 
@@ -75,7 +84,12 @@ export interface Task {
   permissionMode: PermissionMode
   tags: string[]
   branch?: string
+  /** Thư mục Claude làm việc: worktree (mode worktree) hoặc chính repoPath (mode direct). */
   worktreePath?: string
+  /** Mode direct: tree snapshot thư mục project trước run đầu tiên, dùng để tính diff khi review. */
+  baseRef?: string
+  /** Mode direct: snapshot ngay khi run gần nhất xong, để diff khi review không lẫn thay đổi của task chạy sau. */
+  headRef?: string
   sessionId?: string
   createdAt: number
   updatedAt: number
@@ -196,14 +210,15 @@ export interface PermissionRequest {
 export interface ReviewAction {
   id: string
   taskId: number
-  action: 'approve' | 'request_changes' | 'reject'
+  /** approve: chấp nhận output · merge: chấp nhận và merge nhánh task vào nhánh chính (mode worktree) */
+  action: 'approve' | 'merge' | 'request_changes' | 'reject'
   feedback?: string
   /** Nhận xét theo file/dòng gửi kèm "Request changes" */
   comments?: ReviewComment[]
   createdAt: number
 }
 
-/** Kiểm tra trước khi Approve & Merge (GET /api/tasks/:id/merge-check). */
+/** Kiểm tra trước khi Merge (tuỳ chọn) (GET /api/tasks/:id/merge-check). */
 export interface MergeCheck {
   /** Nhánh task có commit cần merge; false thì Approve chỉ chuyển Done */
   hasChanges: boolean
@@ -425,6 +440,8 @@ export interface DemoFlags {
   dirtyMainRepo: boolean
   /** Lần chạy tiếp theo sẽ thất bại */
   nextRunFails: boolean
+  /** Giả lập gói Claude hết lượt (banner trên mọi trang) */
+  claudeLimited?: boolean
   /** Lần chạy tiếp theo sẽ xin quyền */
   nextRunAsksPermission: boolean
 }

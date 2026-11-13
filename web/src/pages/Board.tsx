@@ -54,7 +54,7 @@ const HINT: Partial<Record<TaskStatus, string>> = {
   backlog: 'Chưa chạy hoặc đã dừng',
   queued: 'Tới lượt sẽ tự chạy',
   running: 'Claude đang làm',
-  review: 'Duyệt để merge',
+  review: 'Chờ review output',
 }
 
 /** Cột Kanban: task Cần bạn nằm ở dải phía trên nên không có cột riêng. */
@@ -306,19 +306,27 @@ export function Board() {
       </>
     )
 
-  if (s.tasks.length === 0)
-    return (
+  // Chưa có task: vẫn giữ khung trang (bộ lọc, cách xem), nội dung là lời mời giao việc đầu tiên
+  const noTasks = s.tasks.length === 0
+  const firstTask = (
+    <div className="flex flex-1 items-center justify-center rounded-lg border border-dashed border-slate-300 bg-white py-10 dark:border-slate-700 dark:bg-slate-900">
       <EmptyState
         icon={<KanbanSquare size={48} />}
         title="Chưa có task nào"
-        body="Giao việc đầu tiên cho Claude. Task sẽ chạy tự động và hiện lên đây để bạn theo dõi và review."
+        body="Giao việc đầu tiên cho Claude. Task sẽ tự chạy và hiện lên đây để bạn theo dõi, duyệt kết quả."
         action={
-          <Button variant="primary" onClick={() => openNew()}>
-            <Plus size={16} /> Giao việc đầu tiên
-          </Button>
+          <div className="flex flex-col items-center gap-2">
+            <Button variant="primary" onClick={() => openNew(singleProject)}>
+              <Plus size={16} /> Giao việc đầu tiên
+            </Button>
+            <span className="text-xs text-slate-400">
+              hoặc nhấn phím <kbd className="rounded border border-slate-300 px-1 font-mono dark:border-slate-600">N</kbd> ở bất kỳ trang nào
+            </span>
+          </div>
         }
       />
-    )
+    </div>
+  )
 
   const kanban = (
     <>
@@ -460,13 +468,15 @@ export function Board() {
           right={<ViewSwitcher view={view} onChange={setView} />}
         />
 
-        {view === 'board' && kanban}
+        {noTasks && firstTask}
 
-        {view === 'ops' && (
+        {!noTasks && view === 'board' && kanban}
+
+        {!noTasks && view === 'ops' && (
           <OpsView tasks={tasks} attention={attnOps} projects={s.projects} hideOld={hideOld} taskLink={taskLink} onOpen={(id) => openTask(id)} />
         )}
 
-        {view === 'triage' && (
+        {!noTasks && view === 'triage' && (
           <div className="flex min-h-[480px] overflow-hidden rounded-lg border border-slate-200 bg-white md:h-[calc(100vh-10rem)] dark:border-slate-800 dark:bg-slate-900">
             <div className="flex w-full min-w-0 flex-col md:w-[340px] md:shrink-0 md:border-r md:border-slate-200 lg:w-[380px] md:dark:border-slate-800">
               <TriageList

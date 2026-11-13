@@ -1,0 +1,23 @@
+{
+  "\"{0}\" is already on the Task Board.": "\"{0}\" đã có trong Task Board.",
+  "Add": "Thêm",
+  "Add \"{0}\" to the Task Board so you can assign work to Claude?": "Thêm \"{0}\" vào Task Board để giao việc cho Claude?",
+  "Added project \"{0}\". You can adjust permissions and budget on the Projects page.": "Đã thêm project \"{0}\". Có thể chỉnh quyền, budget trong trang Dự án.",
+  "Agent Task Board requires VS Code 1.101 or later (Node with node:sqlite). This version uses Node {0}.": "Agent Task Board cần VS Code 1.101 trở lên (Node có node:sqlite). Bản hiện tại dùng Node {0}.",
+  "Claude Code is not signed in. Sign in with your Claude account (Pro/Max), or use an API key.": "Claude Code chưa đăng nhập. Đăng nhập bằng tài khoản Claude (Pro/Max), hoặc dùng API key.",
+  "Claude Code was not found on this machine. Install the Claude Code extension (it includes the CLI), or use an Anthropic API key.": "Chưa tìm thấy Claude Code trên máy. Cài extension Claude Code (có sẵn CLI), hoặc dùng API key của Anthropic.",
+  "Claude Code was not found. Install the Claude Code extension first.": "Chưa tìm thấy Claude Code. Hãy cài extension Claude Code trước.",
+  "Claude Code: sign in": "Claude Code: đăng nhập",
+  "Could not add the project: {0}": "Không thêm được project: {0}",
+  "Could not start Task Board: {0}": "Không khởi động được Task Board: {0}",
+  "Install Claude Code": "Cài Claude Code",
+  "No": "Không",
+  "Open Agent Task Board": "Mở Agent Task Board",
+  "Restart": "Khởi động lại",
+  "Restart the Task Board server? Running tasks will be stopped (you can resume them later).": "Khởi động lại server Task Board? Task đang chạy sẽ bị dừng (có thể bấm Tiếp tục sau).",
+  "Show log": "Xem log",
+  "Sign in": "Đăng nhập",
+  "Starting Task Board…": "Đang khởi động Task Board…",
+  "Use API key": "Dùng API key",
+  "Open a folder in VS Code first.": "Hãy mở một thư mục trong VS Code trước."
+}

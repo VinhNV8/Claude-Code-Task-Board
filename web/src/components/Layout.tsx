@@ -22,10 +22,13 @@ import {
   XCircle,
 } from 'lucide-react'
 import { CommandPalette } from './CommandPalette'
+import { ClaudeLimitBanner } from './ClaudeLimitBanner'
+import { ErrorBoundary } from './ErrorBoundary'
 import { IS_MOCK, closeDepsConfirm, dismissToast, getState, resetDemo, runTaskNow, setDemo, updateSettings, useStore } from '../store/store'
 import { askPermissionOnce } from '../lib/notify'
 import { TaskFormModal } from './TaskFormModal'
 import { fetchAuthStatus, logout } from '../lib/auth'
+import { tr } from '../lib/i18n'
 import { compactBadge, isSidebarShortcut, loadCollapsed, saveCollapsed } from '../lib/sidebar'
 import { attentionCounts } from '../lib/review'
 
@@ -167,18 +170,18 @@ export function Layout() {
   }
 
   const nav: { to: string; label: string; icon: ReactNode; active: boolean; badge?: number; urgent?: boolean }[] = [
-    { to: '/', label: 'Công việc', icon: <KanbanSquare size={18} />, active: onWork && workView !== 'ops' },
+    { to: '/', label: tr('Công việc'), icon: <KanbanSquare size={18} />, active: onWork && workView !== 'ops' },
     {
       to: '/?view=ops',
-      label: 'Cần bạn',
+      label: tr('Cần bạn'),
       icon: <Radar size={18} />,
       active: onWork && workView === 'ops',
       badge: attention,
       urgent: needsInput > 0,
     },
     { to: '/projects', label: 'Projects', icon: <FolderGit2 size={18} />, active: loc.pathname.startsWith('/projects') },
-    { to: '/stats', label: 'Thống kê', icon: <ChartColumn size={18} />, active: loc.pathname.startsWith('/stats') },
-    { to: '/settings', label: 'Cài đặt', icon: <SettingsIcon size={18} />, active: loc.pathname.startsWith('/settings') },
+    { to: '/stats', label: tr('Thống kê'), icon: <ChartColumn size={18} />, active: loc.pathname.startsWith('/stats') },
+    { to: '/settings', label: tr('Cài đặt'), icon: <SettingsIcon size={18} />, active: loc.pathname.startsWith('/settings') },
   ]
 
   return (
@@ -230,32 +233,32 @@ export function Layout() {
           <div className="ml-auto flex items-center gap-1 md:ml-0 md:mt-auto md:flex-col md:items-stretch">
             <button
               onClick={() => setDark(!dark)}
-              title={collapsed ? (dark ? 'Giao diện sáng' : 'Giao diện tối') : undefined}
+              title={collapsed ? (dark ? tr('Giao diện sáng') : tr('Giao diện tối')) : undefined}
               className="flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
             >
               {dark ? <Sun size={18} /> : <Moon size={18} />}
-              <span className={`hidden whitespace-nowrap ${collapsed ? '' : 'md:inline'}`}>{dark ? 'Giao diện sáng' : 'Giao diện tối'}</span>
+              <span className={`hidden whitespace-nowrap ${collapsed ? '' : 'md:inline'}`}>{dark ? tr('Giao diện sáng') : tr('Giao diện tối')}</span>
             </button>
             {authRequired && (
               <button
                 onClick={() => void logout()}
                 className="flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
-                title="Đăng xuất"
+                title={tr('Đăng xuất')}
               >
                 <LogOut size={18} />
-                <span className={`hidden whitespace-nowrap ${collapsed ? '' : 'md:inline'}`}>Đăng xuất</span>
+                <span className={`hidden whitespace-nowrap ${collapsed ? '' : 'md:inline'}`}>{tr('Đăng xuất')}</span>
               </button>
             )}
             {/* Nút mở rộng/thu nhỏ menu — chỉ có trên md+ (mobile là thanh ngang) */}
             <button
               onClick={() => setCollapsed(!collapsed)}
               aria-expanded={!collapsed}
-              aria-label={collapsed ? 'Mở rộng menu' : 'Thu nhỏ menu'}
-              title={`${collapsed ? 'Mở rộng menu' : 'Thu nhỏ menu'} (phím tắt: [)`}
+              aria-label={collapsed ? tr('Mở rộng menu') : tr('Thu nhỏ menu')}
+              title={`${collapsed ? tr('Mở rộng menu') : tr('Thu nhỏ menu')} (${tr('phím tắt')}: [)`}
               className="hidden items-center gap-2.5 rounded-md px-2.5 py-2 text-sm text-slate-600 hover:bg-slate-100 md:flex dark:text-slate-300 dark:hover:bg-slate-800"
             >
               {collapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
-              <span className={`whitespace-nowrap ${collapsed ? 'hidden' : ''}`}>Thu nhỏ menu</span>
+              <span className={`whitespace-nowrap ${collapsed ? 'hidden' : ''}`}>{tr('Thu nhỏ menu')}</span>
             </button>
           </div>
         </aside>
@@ -268,13 +271,13 @@ export function Layout() {
               <button
                 onClick={() => setPaletteOpen(true)}
                 className="hidden w-56 items-center gap-2 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-sm text-slate-400 hover:border-slate-300 hover:text-slate-600 md:flex dark:border-slate-700 dark:bg-slate-900 dark:hover:text-slate-300"
-                title="Tìm task hoặc chạy lệnh (Ctrl K)"
+                title={tr('Tìm task hoặc chạy lệnh (Ctrl K)')}
               >
                 <Search size={15} />
-                <span className="flex-1 text-left">Tìm task, lệnh…</span>
+                <span className="flex-1 text-left">{tr('Tìm task, lệnh…')}</span>
                 <kbd className="rounded border border-slate-300 px-1 font-mono text-[10px] dark:border-slate-600">Ctrl K</kbd>
               </button>
-              <button onClick={() => setPaletteOpen(true)} className="rounded-md p-2 text-slate-500 hover:bg-slate-100 md:hidden dark:hover:bg-slate-800" aria-label="Tìm task hoặc lệnh">
+              <button onClick={() => setPaletteOpen(true)} className="rounded-md p-2 text-slate-500 hover:bg-slate-100 md:hidden dark:hover:bg-slate-800" aria-label={tr('Tìm task hoặc lệnh')}>
                 <Search size={18} />
               </button>
               {attention > 0 && (
@@ -286,24 +289,28 @@ export function Layout() {
                       : 'bg-violet-100 text-violet-800 dark:bg-violet-950 dark:text-violet-300'
                   }`}
                 >
-                  <Bell size={13} /> {attention} việc cần bạn xử lý
+                  <Bell size={13} /> {tr('{n} việc cần bạn xử lý', { n: attention })}
                 </Link>
               )}
-              <Button variant="primary" onClick={() => openNew()} title="Phím tắt: N">
-                <Plus size={16} /> Giao việc
+              <Button variant="primary" onClick={() => openNew()} title={`${tr('Phím tắt')}: N`}>
+                <Plus size={16} /> {tr('Giao việc')}
               </Button>
             </div>
           </header>
+          <ClaudeLimitBanner />
           {(s as { connection?: string }).connection === 'offline' && (
             <div className="flex items-center gap-2 border-b border-rose-200 bg-rose-50 px-4 py-2 text-sm text-rose-800 md:px-6 dark:border-rose-900 dark:bg-rose-950/50 dark:text-rose-300">
-              <XCircle size={16} /> Mất kết nối tới backend. Đang thử kết nối lại… (kiểm tra <span className="font-mono">npm run dev</span> còn chạy không)
+              <XCircle size={16} /> {tr('Mất kết nối tới server. Đang thử kết nối lại…')}
             </div>
           )}
           <main className="flex-1 px-4 py-5 md:px-6">
             {(s as { loaded?: boolean }).loaded === false ? (
-              <p className="py-12 text-center text-sm text-slate-400">Đang tải dữ liệu…</p>
+              <p className="py-12 text-center text-sm text-slate-400">{tr('Đang tải dữ liệu…')}</p>
             ) : (
-              <Outlet />
+              // Lỗi hiển thị trong một trang không làm trắng cả ứng dụng; đổi trang thì thử lại
+              <ErrorBoundary resetKey={loc.pathname}>
+                <Outlet />
+              </ErrorBoundary>
             )}
           </main>
         </div>
@@ -328,7 +335,7 @@ function RunningIndicator() {
     <Link
       to="/?view=ops"
       className="flex items-center gap-2.5 rounded-full border border-slate-200 px-2.5 py-1 text-xs tabular-nums text-slate-500 hover:border-slate-300 hover:text-slate-800 dark:border-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
-      title={`${running} đang chạy, ${slots - running} chờ quyền, ${queued} trong hàng đợi. Bấm để mở Điều phối`}
+      title={tr('{running} đang chạy, {waiting} chờ quyền, {queued} trong hàng đợi. Bấm để mở Điều phối', { running, waiting: slots - running, queued })}
     >
       <span className="inline-flex gap-0.5" aria-hidden="true">
         {Array.from({ length: max }, (_, i) => (
@@ -336,9 +343,9 @@ function RunningIndicator() {
         ))}
       </span>
       <span>
-        {slots}/{s.settings.maxParallel} slot
+        {slots}/{s.settings.maxParallel} {tr('slot')}
       </span>
-      <span className="hidden sm:inline">· {queued} chờ</span>
+      <span className="hidden sm:inline">· {tr('{n} chờ', { n: queued })}</span>
     </Link>
   )
 }
@@ -374,7 +381,7 @@ function Toasts() {
               dismissToast(t.id)
             }}
             className="self-start text-slate-400 hover:text-slate-600"
-            aria-label="Đóng"
+            aria-label={tr('Đóng')}
           >
             <X size={14} />
           </button>
@@ -389,7 +396,7 @@ function DemoPanel() {
   const [open, setOpen] = useState(false)
   const toggle = (k: keyof typeof demo, label: string, hint: string) => (
     <label className="flex cursor-pointer items-start gap-2 py-1">
-      <input type="checkbox" className="mt-0.5" checked={demo[k] as boolean} onChange={(e) => setDemo({ [k]: e.target.checked })} />
+      <input type="checkbox" className="mt-0.5" checked={!!demo[k]} onChange={(e) => setDemo({ [k]: e.target.checked })} />
       <span>
         <span className="block text-xs font-medium">{label}</span>
         <span className="block text-[11px] text-slate-500 dark:text-slate-400">{hint}</span>
@@ -402,37 +409,38 @@ function DemoPanel() {
         <div className="w-72 rounded-lg border border-fuchsia-300 bg-white p-3 shadow-xl dark:border-fuchsia-800 dark:bg-slate-900">
           <div className="mb-2 flex items-center justify-between">
             <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-fuchsia-700 dark:text-fuchsia-400">
-              <FlaskConical size={15} /> Bảng điều khiển demo
+              <FlaskConical size={15} /> {tr('Bảng điều khiển demo')}
             </span>
-            <button onClick={() => setOpen(false)} className="text-slate-400" aria-label="Đóng">
+            <button onClick={() => setOpen(false)} className="text-slate-400" aria-label={tr('Đóng')}>
               <X size={15} />
             </button>
           </div>
-          <p className="mb-2 text-[11px] text-slate-500">Chỉ có trong prototype, dùng để thử các tình huống.</p>
+          <p className="mb-2 text-[11px] text-slate-500">{tr('Chỉ có trong prototype, dùng để thử các tình huống.')}</p>
 
           <div className="mb-2">
-            <span className="text-xs font-medium">Tốc độ giả lập: {demo.speed}×</span>
+            <span className="text-xs font-medium">{tr('Tốc độ giả lập: {n}×', { n: demo.speed })}</span>
             <input type="range" min={0.5} max={5} step={0.5} value={demo.speed} onChange={(e) => setDemo({ speed: Number(e.target.value) })} className="w-full" />
           </div>
 
           <div className="border-t border-slate-200 pt-1 dark:border-slate-700">
-            {toggle('nextRunAsksPermission', 'Lần chạy tới: Claude xin quyền', 'Cho mỗi task mới đi qua trạng thái Needs Input')}
-            {toggle('nextRunFails', 'Lần chạy tới: bị lỗi', 'Task sẽ kết thúc ở Failed')}
-            {toggle('mergeConflict', 'Lần Approve tới: conflict', 'Merge thất bại, task giữ ở Review')}
-            {toggle('dirtyMainRepo', 'Repo chính chưa sạch', 'Approve bị chặn cho tới khi bỏ chọn')}
+            {toggle('nextRunAsksPermission', tr('Lần chạy tới: Claude xin quyền'), tr('Cho mỗi task mới đi qua trạng thái Needs Input'))}
+            {toggle('nextRunFails', tr('Lần chạy tới: bị lỗi'), tr('Task sẽ kết thúc ở Failed'))}
+            {toggle('mergeConflict', tr('Lần Merge tới: conflict'), tr('Merge thất bại, task giữ ở Review'))}
+            {toggle('dirtyMainRepo', tr('Repo chính chưa sạch'), tr('Merge bị chặn cho tới khi bỏ chọn'))}
+            {toggle('claudeLimited', tr('Gói Claude hết lượt'), tr('Hiện thông báo hết lượt 5 giờ trên mọi trang'))}
           </div>
 
           <div className="mt-2 border-t border-slate-200 pt-2 dark:border-slate-700">
-            <span className="mb-1 block text-xs font-medium">Nạp dữ liệu</span>
+            <span className="mb-1 block text-xs font-medium">{tr('Nạp dữ liệu')}</span>
             <div className="flex flex-wrap gap-1">
               <Button size="sm" onClick={() => resetDemo('seed')}>
-                <RotateCcw size={12} /> Mẫu
+                <RotateCcw size={12} /> {tr('Mẫu')}
               </Button>
               <Button size="sm" onClick={() => resetDemo('empty')}>
-                Trống
+                {tr('Trống')}
               </Button>
               <Button size="sm" onClick={() => resetDemo('many')}>
-                Nhiều task
+                {tr('Nhiều task')}
               </Button>
             </div>
           </div>
@@ -441,7 +449,7 @@ function DemoPanel() {
         <button
           onClick={() => setOpen(true)}
           className="flex items-center gap-1.5 rounded-full bg-fuchsia-600 px-3 py-2 text-xs font-medium text-white shadow-lg hover:bg-fuchsia-500"
-          title="Bảng điều khiển demo"
+          title={tr('Bảng điều khiển demo')}
         >
           <FlaskConical size={14} /> Demo
         </button>
@@ -457,14 +465,14 @@ function DepsConfirm() {
     <ConfirmDialog
       open={!!c}
       onClose={closeDepsConfirm}
-      title={c ? `Chạy ngay #${c.taskId}?` : ''}
+      title={c ? tr('Chạy ngay #{id}?', { id: c.taskId }) : ''}
       message={
         <>
           <p>{c?.message}</p>
-          <p className="mt-2">Chạy ngay sẽ gỡ toàn bộ phụ thuộc của task này. Phần việc của các task đang chờ có thể chưa có trên nhánh chính.</p>
+          <p className="mt-2">{tr('Chạy ngay sẽ gỡ toàn bộ phụ thuộc của task này. Phần việc của các task đang chờ có thể chưa có trên nhánh chính.')}</p>
         </>
       }
-      confirmLabel="Gỡ phụ thuộc và chạy"
+      confirmLabel={tr('Gỡ phụ thuộc và chạy')}
       danger
       onConfirm={() => c && runTaskNow(c.taskId, true)}
     />

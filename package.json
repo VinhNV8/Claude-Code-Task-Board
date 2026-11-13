@@ -4,13 +4,14 @@
   "version": "0.1.0",
   "workspaces": [
     "web",
-    "server"
+    "server",
+    "vscode-extension"
   ],
   "scripts": {
     "dev": "concurrently -n server,web -c blue,magenta \"npm run dev -w server\" \"npm run dev -w web\"",
     "build": "npm run build -w web",
     "start": "npm run build && npm run start -w server",
-    "typecheck": "npm run typecheck -w server && npx tsc --noEmit -p web",
+    "typecheck": "npm run typecheck -w server && npx tsc --noEmit -p web && npm run typecheck -w vscode-extension",
     "dev:mock": "npm run dev:mock -w web",
     "seed:backlog": "node scripts/seed-backlog.mjs",
     "uat:deploy": "node scripts/uat.mjs deploy",
@@ -19,7 +20,9 @@
     "uat:restart": "node scripts/uat.mjs restart",
     "uat:status": "node scripts/uat.mjs status",
     "uat:logs": "node scripts/uat.mjs logs",
-    "uat:copy-db": "node scripts/uat.mjs copy-db"
+    "uat:copy-db": "node scripts/uat.mjs copy-db",
+    "ext:build": "npm run build -w vscode-extension",
+    "ext:package": "npm run package -w vscode-extension"
   },
   "devDependencies": {
     "concurrently": "9.1.0"

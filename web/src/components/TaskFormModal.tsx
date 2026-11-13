@@ -238,7 +238,7 @@ export function TaskFormModal({
             </select>
           </Field>
           <div className="sm:col-span-2">
-            <Field label="Chờ task" hint="Task chỉ chạy khi các task này Done (đã merge). Để trống nếu task chạy độc lập.">
+            <Field label="Chờ task" hint="Task chỉ chạy khi các task này Done (đã chấp nhận output). Để trống nếu task chạy độc lập.">
               <div className="flex flex-wrap items-center gap-1.5">
                 {deps.map((id) => {
                   const t = taskById(id)

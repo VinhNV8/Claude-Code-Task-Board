@@ -40,7 +40,7 @@ for (const id of ['p1', 'p2'])
     permissionMode: 'acceptEdits',
     allowedTools: [],
     maxParallel: 5,
-    budgetAction: 'warn',
+    budgetAction: 'warn', deliveryMode: 'worktree',
   })
 
 const mk = (title: string, status: Task['status'] = 'backlog', projectId = 'p1') =>

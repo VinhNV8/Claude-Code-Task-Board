@@ -25,6 +25,7 @@ const project: Project = {
   allowedTools: [],
   maxParallel: 1,
   budgetAction: 'warn' as const,
+  deliveryMode: 'worktree' as const,
 }
 
 async function ok(cwd: string, args: string[]) {
@@ -129,16 +130,16 @@ test('withLock chạy tuần tự theo key, key khác chạy song song, lỗi kh
 
 // ---------------------------------------------------------------- approve với repo thật
 
-test('approve: merge sạch → Done, ghi review, xoá worktree + nhánh', async () => {
+test('merge: merge sạch → Done, ghi review, xoá worktree + nhánh', async () => {
   const t = await reviewTask('Thêm feature', { 'feature.txt': 'new feature\n' })
   db.tasks.patch(t.id, { reviewWarning: 'cảnh báo cũ' })
   messages.length = 0
 
-  const res = await r.approveTask(t.id)
+  const res = await r.mergeTask(t.id)
   assert.equal(res.task.status, 'done')
   assert.equal(res.task.reviewWarning, undefined)
   assert.equal(res.task.worktreePath, undefined)
-  assert.equal(res.review.action, 'approve')
+  assert.equal(res.review.action, 'merge')
 
   assert.equal(await ok(repo, ['log', '-1', '--format=%s']), `Merge task #${t.id}: Thêm feature`)
   assert.equal(await ok(repo, ['rev-list', '--count', '--merges', 'HEAD']), '1')
@@ -147,10 +148,42 @@ test('approve: merge sạch → Done, ghi review, xoá worktree + nhánh', async
   assert.notEqual((await g.git(repo, ['rev-parse', '--verify', '--quiet', `refs/heads/claude/task-${t.id}`])).code, 0)
   assert.ok(!existsSync(t.worktreePath!))
 
-  assert.deepEqual(db.reviews.byTask(t.id).map((x) => x.action), ['approve'])
+  assert.deepEqual(db.reviews.byTask(t.id).map((x) => x.action), ['merge'])
   assert.ok(db.reviews.all().some((x) => x.id === res.review.id))
   assert.ok(messages.some((m) => m.type === 'review' && m.review.id === res.review.id))
   assert.ok(messages.some((m) => m.type === 'task' && m.task.id === t.id && m.task.status === 'done'))
+})
+
+test('approve (worktree): chấp nhận output → Done, KHÔNG merge, giữ nhánh ở local, repo chính bẩn vẫn duyệt được', async () => {
+  const t = await reviewTask('Chấp nhận', { 'accept.txt': 'output\n' })
+  const head = await ok(repo, ['rev-parse', 'HEAD'])
+  writeFileSync(join(repo, 'dang-sua.txt'), 'chưa commit\n')
+  await ok(repo, ['checkout', '-q', '-b', 'nhanh-khac']) // repo chính ở nhánh khác vẫn không chặn
+
+  const res = await r.approveTask(t.id)
+  assert.equal(res.task.status, 'done')
+  assert.equal(res.review.action, 'approve')
+  assert.equal(res.task.branch, `claude/task-${t.id}`)
+  assert.equal(res.task.worktreePath, undefined)
+  assert.ok(!existsSync(t.worktreePath!))
+  assert.equal(await ok(repo, ['rev-parse', 'HEAD']), head) // không merge
+  assert.ok(!existsSync(join(repo, 'accept.txt')))
+  assert.equal((await g.git(repo, ['rev-parse', '--verify', '--quiet', `refs/heads/claude/task-${t.id}`])).code, 0)
+  assert.equal(await ok(repo, ['show', `claude/task-${t.id}:accept.txt`]), 'output')
+
+  await ok(repo, ['checkout', '-q', project.mainBranch])
+  await ok(repo, ['branch', '-q', '-D', 'nhanh-khac'])
+  rmSync(join(repo, 'dang-sua.txt'))
+})
+
+test('merge: task mode direct (có baseRef) → 409, không có nhánh để merge', async () => {
+  const t = db.tasks.create({
+    projectId: project.id, title: 'Direct', prompt: 'prompt đủ dài', status: 'review',
+    priority: 'normal', permissionMode: 'acceptEdits', tags: [],
+  })
+  db.tasks.patch(t.id, { baseRef: '4b825dc642cb6eb9a060e54bf8d69288fbee4904', worktreePath: repo })
+  await rejects(r.mergeTask(t.id), 409, /không có nhánh để merge/)
+  assert.equal((await r.approveTask(t.id)).task.status, 'done')
 })
 
 test('approve: output không kèm thay đổi code → Done, không merge, không cần repo chính sạch', async () => {
@@ -200,7 +233,7 @@ test('approve: task không ở Review → 409', async () => {
   await r.approveTask(t.id) // dọn cho các test sau
 })
 
-test('approve: file chưa commit không liên quan → vẫn merge, file đang sửa giữ nguyên, không lọt vào merge commit', async () => {
+test('merge: file chưa commit không liên quan → vẫn merge, file đang sửa giữ nguyên, không lọt vào merge commit', async () => {
   const t = await reviewTask('Repo bẩn không trùng', { 'other-feature.txt': 'y\n' })
   writeFileSync(join(repo, 'README.md'), 'hello\nđang sửa dở\n')
   writeFileSync(join(repo, 'untracked-wip.txt'), 'chưa track')
@@ -208,7 +241,7 @@ test('approve: file chưa commit không liên quan → vẫn merge, file đang s
     const check = await r.checkMerge(t.id)
     assert.equal(check.ready, true)
     assert.equal(check.dirty.length, 2)
-    const res = await r.approveTask(t.id)
+    const res = await r.mergeTask(t.id)
     assert.equal(res.task.status, 'done')
     assert.equal(readFileSync(join(repo, 'other-feature.txt'), 'utf8'), 'y\n')
     assert.equal(readFileSync(join(repo, 'README.md'), 'utf8'), 'hello\nđang sửa dở\n')
@@ -220,22 +253,22 @@ test('approve: file chưa commit không liên quan → vẫn merge, file đang s
   }
 })
 
-test('approve: file đã stage trong repo chính → 409, không merge', async () => {
+test('merge: file đã stage trong repo chính → 409, không merge', async () => {
   const t = await reviewTask('Repo có staged', { 'staged-feature.txt': 'y\n' })
   const head = await ok(repo, ['rev-parse', 'HEAD'])
   writeFileSync(join(repo, 'README.md'), 'hello\nstaged\n')
   await ok(repo, ['add', 'README.md'])
   try {
-    await rejects(r.approveTask(t.id), 409, /1 file đã stage.*README\.md/)
+    await rejects(r.mergeTask(t.id), 409, /1 file đã stage.*README\.md/)
     assert.equal(await ok(repo, ['rev-parse', 'HEAD']), head)
   } finally {
     await ok(repo, ['reset', '-q', 'HEAD', 'README.md'])
     await ok(repo, ['checkout', '--', 'README.md'])
   }
-  assert.equal((await r.approveTask(t.id)).task.status, 'done')
+  assert.equal((await r.mergeTask(t.id)).task.status, 'done')
 })
 
-test('approve: file chưa commit trùng với file task sửa → 409, không merge', async () => {
+test('merge: file chưa commit trùng với file task sửa → 409, không merge', async () => {
   const t = await reviewTask('Repo bẩn', { 'wip.txt': 'bản của task\n' })
   const head = await ok(repo, ['rev-parse', 'HEAD'])
   writeFileSync(join(repo, 'wip.txt'), 'đang sửa dở')
@@ -243,7 +276,7 @@ test('approve: file chưa commit trùng với file task sửa → 409, không me
     const check = await r.checkMerge(t.id)
     assert.equal(check.ready, false)
     assert.deepEqual(check.overlap, ['wip.txt'])
-    await rejects(r.approveTask(t.id), 409, /1 file chưa commit trùng với file task đã sửa: wip\.txt/)
+    await rejects(r.mergeTask(t.id), 409, /1 file chưa commit trùng với file task đã sửa: wip\.txt/)
     const after = db.tasks.get(t.id)!
     assert.equal(after.status, 'review')
     assert.match(after.reviewWarning!, /wip\.txt/)
@@ -254,32 +287,32 @@ test('approve: file chưa commit trùng với file task sửa → 409, không me
     rmSync(join(repo, 'wip.txt'))
   }
   // Repo sạch lại thì approve được và cảnh báo bị xoá
-  const res = await r.approveTask(t.id)
+  const res = await r.mergeTask(t.id)
   assert.equal(res.task.status, 'done')
   assert.equal(res.task.reviewWarning, undefined)
 })
 
-test('approve: repo chính không ở mainBranch → 409 nêu tên nhánh', async () => {
+test('merge: repo chính không ở mainBranch → 409 nêu tên nhánh', async () => {
   const t = await reviewTask('Sai nhánh', { 'branch-feature.txt': 'z\n' })
   await ok(repo, ['checkout', '-q', '-b', 'dev'])
   try {
-    await rejects(r.approveTask(t.id), 409, /đang ở nhánh "dev"/)
+    await rejects(r.mergeTask(t.id), 409, /đang ở nhánh "dev"/)
     assert.match(db.tasks.get(t.id)!.reviewWarning!, /"dev".*"main"/)
     assert.equal(db.tasks.get(t.id)!.status, 'review')
   } finally {
     await ok(repo, ['checkout', '-q', 'main'])
     await ok(repo, ['branch', '-D', 'dev'])
   }
-  await r.approveTask(t.id)
+  await r.mergeTask(t.id)
 })
 
-test('approve: conflict → merge --abort, task giữ Review, repo chính sạch', async () => {
+test('merge: conflict → merge --abort, task giữ Review, repo chính sạch', async () => {
   const t = await reviewTask('Sửa README', { 'README.md': 'từ task\n' })
   writeFileSync(join(repo, 'README.md'), 'từ main\n')
   assert.equal(await g.commitAll(repo, 'main sửa README'), true)
   const head = await ok(repo, ['rev-parse', 'HEAD'])
 
-  await rejects(r.approveTask(t.id), 409, /conflict ở 1 file: README\.md/)
+  await rejects(r.mergeTask(t.id), 409, /conflict ở 1 file: README\.md/)
   const after = db.tasks.get(t.id)!
   assert.equal(after.status, 'review')
   assert.match(after.reviewWarning!, /README\.md/)
@@ -293,13 +326,13 @@ test('approve: conflict → merge --abort, task giữ Review, repo chính sạch
   assert.deepEqual(db.reviews.byTask(t.id), [])
 })
 
-test('approve đồng thời: hai lệnh trên cùng repo không chạy chồng', async () => {
+test('merge đồng thời: hai lệnh trên cùng repo không chạy chồng', async () => {
   const a = await reviewTask('Song song A', { 'a.txt': 'a\n' })
   const b = await reviewTask('Song song B', { 'b.txt': 'b\n' })
   const merges = Number(await ok(repo, ['rev-list', '--count', '--merges', 'HEAD']))
 
   // Cùng task hai lần + task khác: đúng một lệnh cho task A thành công, B cũng merge được
-  const results = await Promise.allSettled([r.approveTask(a.id), r.approveTask(a.id), r.approveTask(b.id)])
+  const results = await Promise.allSettled([r.mergeTask(a.id), r.mergeTask(a.id), r.mergeTask(b.id)])
   assert.equal(results[0].status, 'fulfilled')
   assert.equal(results[1].status, 'rejected')
   assert.match((results[1] as PromiseRejectedResult).reason.message, /không ở trạng thái Review/)
@@ -308,7 +341,7 @@ test('approve đồng thời: hai lệnh trên cùng repo không chạy chồng'
   assert.equal(Number(await ok(repo, ['rev-list', '--count', '--merges', 'HEAD'])), merges + 2)
   assert.equal(await ok(repo, ['status', '--porcelain']), '')
   assert.ok(existsSync(join(repo, 'a.txt')) && existsSync(join(repo, 'b.txt')))
-  assert.deepEqual(db.reviews.byTask(a.id).map((x) => x.action), ['approve'])
+  assert.deepEqual(db.reviews.byTask(a.id).map((x) => x.action), ['merge'])
 })
 
 // ---------------------------------------------------------------- request changes (PLAN 2.5)
@@ -405,7 +438,7 @@ test('AC-03 (phần git): run resume thêm commit mới lên nhánh, diff tính 
 
 // ---------------------------------------------------------------- reject (PLAN 2.6)
 
-test('reject: ghi review, xoá worktree + nhánh, task Failed với lý do', async () => {
+test('reject: ghi review, task Failed với lý do, GIỮ worktree + nhánh (output không bị mất)', async () => {
   const t = await reviewTask('Bị từ chối', { 'rej.txt': 'x\n' })
   db.tasks.patch(t.id, { reviewWarning: 'cảnh báo' })
   const head = await ok(repo, ['rev-parse', 'HEAD'])
@@ -414,12 +447,12 @@ test('reject: ghi review, xoá worktree + nhánh, task Failed với lý do', asy
   const res = await r.rejectTask(t.id)
   assert.equal(res.task.status, 'failed')
   assert.equal(res.task.failReason, 'Bị từ chối khi review')
-  assert.equal(res.task.branch, undefined)
-  assert.equal(res.task.worktreePath, undefined)
+  assert.equal(res.task.branch, `claude/task-${t.id}`)
+  assert.equal(res.task.worktreePath, t.worktreePath)
   assert.equal(res.task.reviewWarning, undefined)
   assert.equal(res.review.action, 'reject')
-  assert.ok(!existsSync(t.worktreePath!))
-  assert.notEqual((await g.git(repo, ['rev-parse', '--verify', '--quiet', `refs/heads/claude/task-${t.id}`])).code, 0)
+  assert.ok(existsSync(join(t.worktreePath!, 'rej.txt')))
+  assert.equal((await g.git(repo, ['rev-parse', '--verify', '--quiet', `refs/heads/claude/task-${t.id}`])).code, 0)
   assert.equal(await ok(repo, ['rev-parse', 'HEAD']), head) // repo chính không bị đụng
   assert.ok(!existsSync(join(repo, 'rej.txt')))
   assert.ok(messages.some((m) => m.type === 'review' && m.review.id === res.review.id))

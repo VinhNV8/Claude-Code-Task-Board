@@ -1,5 +1,6 @@
 // Kênh sự kiện nội bộ: mọi thay đổi trạng thái đều phát ra đây, WebSocket đẩy xuống giao diện.
 import { EventEmitter } from 'node:events'
+import type { ClaudeLimit } from '../../web/src/lib/claudeLimit.ts'
 import type { FileDiff, LogEvent, PermissionRequest, Project, ProjectBudget, PromptTemplate, ReviewAction, RuleSuggestion, Run, Schedule, ScheduleRun, Settings, Task, TestRun } from './types.ts'
 
 export type ServerMessage =
@@ -31,6 +32,8 @@ export type ServerMessage =
   | { type: 'budget_alert'; projectId: string; level: 'warn' | 'over'; month: string; message: string }
   // Gợi ý rule allowlist của project đã đổi (FR-44): web cập nhật khối gợi ý
   | { type: 'rule_suggestions'; projectId: string; suggestions: RuleSuggestion[] }
+  // Gói Claude hết lượt (5 giờ / tuần): web hiện banner trên mọi trang; null = đã có lượt lại
+  | { type: 'claude_limit'; limit: ClaudeLimit | null }
 
 export const bus = new EventEmitter()
 bus.setMaxListeners(100)
