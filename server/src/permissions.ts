@@ -252,6 +252,11 @@ export async function requestPermission(a: PermissionAsk, waitMs = POLL_WAIT_MS)
     logToRun(task.id, `Tự động cho phép ${a.toolName}(${describeInput(a.toolName, a.input)}) theo quy tắc của project`)
     return { decision: 'allow', updatedInput: a.input }
   }
+  // Mode Auto: mọi thao tác qua được kiểm tra an toàn đều được duyệt tự động, không cần người
+  if (task.permissionMode === 'auto' && !highRisk) {
+    logToRun(task.id, `Tự động cho phép ${a.toolName}(${describeInput(a.toolName, a.input)}) (mode Auto)`)
+    return { decision: 'allow', updatedInput: a.input }
+  }
 
   const createdAt = now()
   const row: Row = {

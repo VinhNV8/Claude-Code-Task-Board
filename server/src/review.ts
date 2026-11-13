@@ -2,11 +2,11 @@
 // Merge nhánh claude/task-<id> vào nhánh chính của repo; mỗi project chỉ một lệnh merge chạy tại một thời điểm.
 import { broadcast } from './bus.ts'
 import { projects, reviews, tasks } from './db.ts'
-import { git, mainRepoStatus, mergeBranch, removeWorktree, taskBranch } from './git.ts'
+import { branchChangedFiles, git, mainRepoStatus, mergeBranch, removeWorktree, taskBranch } from './git.ts'
 import { isTesting, stopTests } from './testRunner.ts'
 import { MIN_FEEDBACK } from '../../web/src/lib/review.ts'
 import { formatReviewFeedback, parseComments } from '../../web/src/lib/reviewComments.ts'
-import type { Project, ReviewAction, ReviewComment, Task } from './types.ts'
+import type { MergeCheck, Project, ReviewAction, ReviewComment, Task } from './types.ts'
 
 /** Lỗi có mã HTTP (Fastify dùng `statusCode`). */
 export class ReviewError extends Error {
@@ -43,8 +43,23 @@ export function listFiles(files: string[], max = 5) {
   return files.length > max ? `${shown} và ${files.length - max} file khác` : shown
 }
 
-/** Lý do repo chính chưa sẵn sàng để merge; `undefined` nếu đã sẵn sàng. */
-export function repoNotReadyWarning(st: { branch: string; changes: string[] }, mainBranch: string): string | undefined {
+/**
+ * Repo chính có merge được nhánh task không (G3, đã kiểm chứng với git):
+ * - phải đang ở mainBranch;
+ * - không có file đã stage (`git add`): git từ chối merge khi index khác HEAD;
+ * - file chưa commit (đã sửa hoặc chưa track) **trùng** với file task sửa thì chặn, vì merge sẽ ghi đè.
+ * File chưa commit không liên quan được giữ nguyên, merge vẫn an toàn.
+ * `caseInsensitive`: so tên file không phân biệt hoa thường (Windows / macOS).
+ */
+export function mergeReadiness(
+  st: { branch: string; changes: string[]; staged: string[] },
+  mainBranch: string,
+  taskFiles: string[],
+  caseInsensitive = process.platform === 'win32' || process.platform === 'darwin',
+): { ready: boolean; overlap: string[]; warning?: string } {
+  const norm = (f: string) => (caseInsensitive ? f.toLowerCase() : f)
+  const touched = new Set(taskFiles.map(norm))
+  const overlap = [...new Set(st.changes)].filter((f) => touched.has(norm(f)))
   const parts: string[] = []
   if (st.branch !== mainBranch) {
     parts.push(
@@ -53,9 +68,11 @@ export function repoNotReadyWarning(st: { branch: string; changes: string[] }, m
         : `Repo chính đang ở nhánh "${st.branch}", cần chuyển về nhánh "${mainBranch}"`,
     )
   }
-  if (st.changes.length)
-    parts.push(`Repo chính có ${st.changes.length} file chưa commit: ${listFiles(st.changes)}. Hãy commit hoặc stash`)
-  return parts.length ? `${parts.join('. ')} trước khi merge.` : undefined
+  if (overlap.length)
+    parts.push(`Repo chính có ${overlap.length} file chưa commit trùng với file task đã sửa: ${listFiles(overlap)}. Hãy commit hoặc bỏ thay đổi ở các file này`)
+  if (st.staged.length)
+    parts.push(`Repo chính có ${st.staged.length} file đã stage (git add) nhưng chưa commit: ${listFiles(st.staged)}. Hãy commit hoặc unstage (git restore --staged)`)
+  return { ready: parts.length === 0, overlap, warning: parts.length ? `${parts.join('. ')} trước khi merge.` : undefined }
 }
 
 export function conflictWarning(conflicts: string[], mainBranch: string) {
@@ -89,7 +106,8 @@ function recordReview(r: Pick<ReviewAction, 'taskId' | 'action' | 'feedback' | '
 }
 
 /**
- * Approve: repo chính phải ở mainBranch và sạch, sau đó `git merge --no-ff claude/task-<id>`.
+ * Approve: repo chính phải ở mainBranch, không có file đã stage và không có file chưa commit trùng với task
+ * (xem mergeReadiness), sau đó `git merge --no-ff claude/task-<id>`.
  * Thành công → task Done, xoá worktree + nhánh. Conflict → `git merge --abort`, task giữ Review kèm cảnh báo.
  */
 export async function approveTask(taskId: number): Promise<{ task: Task; review: ReviewAction }> {
@@ -112,14 +130,13 @@ async function approveLocked(taskId: number) {
   // Output không kèm thay đổi code (hoặc nhánh đã mất): duyệt là xong, không có gì để merge.
   if (!(await branchHasChanges(repo, branch, project.mainBranch))) return finishApproved(task, project)
 
-  let st: Awaited<ReturnType<typeof mainRepoStatus>>
+  let check: MergeCheck
   try {
-    st = await mainRepoStatus(project)
+    check = await inspectMerge(project, branch)
   } catch (e) {
     blocked(taskId, `Không đọc được repo chính (${repo}): ${(e as Error).message}`)
   }
-  const notReady = repoNotReadyWarning(st, project.mainBranch)
-  if (notReady) blocked(taskId, notReady)
+  if (check.warning) blocked(taskId, check.warning)
 
   const m = await mergeBranch(repo, branch, mergeMessage(task))
   if (!m.ok) {
@@ -129,6 +146,42 @@ async function approveLocked(taskId: number) {
     throw new ReviewError(500, warning)
   }
   return finishApproved(task, project)
+}
+
+/** Trạng thái repo chính so với nhánh task (dùng cho Approve và cho kiểm tra trước trên giao diện). */
+async function inspectMerge(project: Project, branch: string): Promise<MergeCheck> {
+  const [st, taskFiles] = await Promise.all([mainRepoStatus(project), branchChangedFiles(project.repoPath, branch, project.mainBranch)])
+  const r = mergeReadiness(st, project.mainBranch, taskFiles)
+  return {
+    hasChanges: true,
+    ready: r.ready,
+    mainBranch: project.mainBranch,
+    currentBranch: st.branch,
+    dirty: st.changes,
+    overlap: r.overlap,
+    staged: st.staged,
+    warning: r.warning,
+    checkedAt: Date.now(),
+  }
+}
+
+/**
+ * Kiểm tra trước khi Approve (không thay đổi gì): có cần merge không, repo chính có sẵn sàng không,
+ * file chưa commit nào trùng với task. Task không có thay đổi code thì luôn sẵn sàng.
+ */
+export async function checkMerge(taskId: number): Promise<MergeCheck> {
+  const task = tasks.get(taskId)
+  if (!task) throw new ReviewError(404, `Không tìm thấy task #${taskId}`)
+  const project = projects.get(task.projectId)
+  if (!project) throw new ReviewError(404, `Không tìm thấy project của task #${taskId}`)
+  const branch = taskBranch(taskId)
+  const base = { mainBranch: project.mainBranch, currentBranch: '', dirty: [], overlap: [], staged: [], checkedAt: Date.now() }
+  try {
+    if (!(await branchHasChanges(project.repoPath, branch, project.mainBranch))) return { ...base, hasChanges: false, ready: true }
+    return await inspectMerge(project, branch)
+  } catch (e) {
+    return { ...base, hasChanges: true, ready: false, warning: `Không đọc được repo chính (${project.repoPath}): ${(e as Error).message}` }
+  }
 }
 
 /** Nhánh task còn tồn tại và có commit chưa vào mainBranch. */

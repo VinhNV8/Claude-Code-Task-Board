@@ -129,4 +129,6 @@ test('effectivePermissionMode: chỉ đổi manual khi không có prompt tool', 
   assert.equal(effectivePermissionMode('manual', true), 'manual')
   assert.equal(effectivePermissionMode('plan', false), 'plan')
   assert.equal(effectivePermissionMode('acceptEdits', false), 'acceptEdits')
+  assert.equal(effectivePermissionMode('auto', true), 'acceptEdits')
+  assert.equal(effectivePermissionMode('auto', false), 'acceptEdits')
 })

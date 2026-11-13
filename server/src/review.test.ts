@@ -78,13 +78,29 @@ after(() => {
 
 // ---------------------------------------------------------------- hàm thuần
 
-test('repoNotReadyWarning: nhánh sai, detached HEAD, file chưa commit', () => {
-  assert.equal(r.repoNotReadyWarning({ branch: 'main', changes: [] }, 'main'), undefined)
-  assert.match(r.repoNotReadyWarning({ branch: 'dev', changes: [] }, 'main')!, /đang ở nhánh "dev".*"main"/)
-  assert.match(r.repoNotReadyWarning({ branch: 'HEAD', changes: [] }, 'main')!, /detached HEAD/)
-  const w = r.repoNotReadyWarning({ branch: 'dev', changes: ['a.txt', 'b.txt'] }, 'main')!
-  assert.match(w, /nhánh "dev"/)
-  assert.match(w, /2 file chưa commit: a\.txt, b\.txt/)
+test('mergeReadiness: nhánh sai, detached HEAD, file trùng với task, file đã stage', () => {
+  const st = (o: Partial<{ branch: string; changes: string[]; staged: string[] }>) => ({ branch: 'main', changes: [], staged: [], ...o })
+  assert.deepEqual(r.mergeReadiness(st({}), 'main', ['a.txt']), { ready: true, overlap: [], warning: undefined })
+  assert.match(r.mergeReadiness(st({ branch: 'dev' }), 'main', []).warning!, /đang ở nhánh "dev".*"main"/)
+  assert.match(r.mergeReadiness(st({ branch: 'HEAD' }), 'main', []).warning!, /detached HEAD/)
+
+  // File chưa commit không liên quan: vẫn merge được
+  assert.equal(r.mergeReadiness(st({ changes: ['docs/x.md', 'wip.txt'] }), 'main', ['src/a.ts']).ready, true)
+
+  const w = r.mergeReadiness(st({ branch: 'dev', changes: ['a.txt', 'b.txt', 'c.txt'] }), 'main', ['b.txt', 'a.txt', 'z.txt'], false)
+  assert.equal(w.ready, false)
+  assert.deepEqual(w.overlap, ['a.txt', 'b.txt'])
+  assert.match(w.warning!, /nhánh "dev"/)
+  assert.match(w.warning!, /2 file chưa commit trùng với file task đã sửa: a\.txt, b\.txt/)
+
+  // Không phân biệt hoa thường (Windows/macOS)
+  assert.deepEqual(r.mergeReadiness(st({ changes: ['Docs/A.md'] }), 'main', ['docs/a.md'], true).overlap, ['Docs/A.md'])
+  assert.deepEqual(r.mergeReadiness(st({ changes: ['Docs/A.md'] }), 'main', ['docs/a.md'], false).overlap, [])
+
+  // Có file đã stage: git từ chối merge
+  const staged = r.mergeReadiness(st({ changes: ['s.txt'], staged: ['s.txt'] }), 'main', ['a.txt'])
+  assert.equal(staged.ready, false)
+  assert.match(staged.warning!, /1 file đã stage.*s\.txt.*git restore --staged/)
 })
 
 test('listFiles rút gọn danh sách dài', () => {
@@ -184,12 +200,50 @@ test('approve: task không ở Review → 409', async () => {
   await r.approveTask(t.id) // dọn cho các test sau
 })
 
-test('approve: repo chính có file chưa commit → 409, không merge', async () => {
-  const t = await reviewTask('Repo bẩn', { 'dirty-feature.txt': 'y\n' })
+test('approve: file chưa commit không liên quan → vẫn merge, file đang sửa giữ nguyên, không lọt vào merge commit', async () => {
+  const t = await reviewTask('Repo bẩn không trùng', { 'other-feature.txt': 'y\n' })
+  writeFileSync(join(repo, 'README.md'), 'hello\nđang sửa dở\n')
+  writeFileSync(join(repo, 'untracked-wip.txt'), 'chưa track')
+  try {
+    const check = await r.checkMerge(t.id)
+    assert.equal(check.ready, true)
+    assert.equal(check.dirty.length, 2)
+    const res = await r.approveTask(t.id)
+    assert.equal(res.task.status, 'done')
+    assert.equal(readFileSync(join(repo, 'other-feature.txt'), 'utf8'), 'y\n')
+    assert.equal(readFileSync(join(repo, 'README.md'), 'utf8'), 'hello\nđang sửa dở\n')
+    assert.ok(existsSync(join(repo, 'untracked-wip.txt')))
+    assert.equal(await ok(repo, ['diff', '--name-only', 'HEAD^1', 'HEAD']), 'other-feature.txt')
+  } finally {
+    await ok(repo, ['checkout', '--', 'README.md'])
+    rmSync(join(repo, 'untracked-wip.txt'))
+  }
+})
+
+test('approve: file đã stage trong repo chính → 409, không merge', async () => {
+  const t = await reviewTask('Repo có staged', { 'staged-feature.txt': 'y\n' })
+  const head = await ok(repo, ['rev-parse', 'HEAD'])
+  writeFileSync(join(repo, 'README.md'), 'hello\nstaged\n')
+  await ok(repo, ['add', 'README.md'])
+  try {
+    await rejects(r.approveTask(t.id), 409, /1 file đã stage.*README\.md/)
+    assert.equal(await ok(repo, ['rev-parse', 'HEAD']), head)
+  } finally {
+    await ok(repo, ['reset', '-q', 'HEAD', 'README.md'])
+    await ok(repo, ['checkout', '--', 'README.md'])
+  }
+  assert.equal((await r.approveTask(t.id)).task.status, 'done')
+})
+
+test('approve: file chưa commit trùng với file task sửa → 409, không merge', async () => {
+  const t = await reviewTask('Repo bẩn', { 'wip.txt': 'bản của task\n' })
   const head = await ok(repo, ['rev-parse', 'HEAD'])
   writeFileSync(join(repo, 'wip.txt'), 'đang sửa dở')
   try {
-    await rejects(r.approveTask(t.id), 409, /1 file chưa commit: wip\.txt/)
+    const check = await r.checkMerge(t.id)
+    assert.equal(check.ready, false)
+    assert.deepEqual(check.overlap, ['wip.txt'])
+    await rejects(r.approveTask(t.id), 409, /1 file chưa commit trùng với file task đã sửa: wip\.txt/)
     const after = db.tasks.get(t.id)!
     assert.equal(after.status, 'review')
     assert.match(after.reviewWarning!, /wip\.txt/)

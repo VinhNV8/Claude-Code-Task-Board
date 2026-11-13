@@ -14,6 +14,7 @@ import { Button, ConfirmDialog, EmptyState, Field, Modal, inputCls } from '../co
 import { STATUS_META } from '../lib/format'
 import { MODEL_OPTIONS, modelLabel } from '../lib/model'
 import { mergeRules } from '../lib/rules'
+import { PERMISSION_MODES } from '../lib/permissionMode'
 import type { PermissionMode, PermissionPreset, Project, RuleSuggestion } from '../types'
 
 const blank: Project = {
@@ -185,14 +186,38 @@ export function ProjectModal({ project, onClose }: { project: Project | null; on
               setServerError(null)
             }} placeholder="D:\Projects\my-repo" />
         </Field>
+        <fieldset className="space-y-1">
+          <legend className="text-sm font-medium text-slate-700 dark:text-slate-200">Mức quyền mặc định</legend>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {PERMISSION_MODES.map((m) => {
+              const active = p.permissionMode === m.value
+              return (
+                <label
+                  key={m.value}
+                  className={`flex cursor-pointer items-start gap-2 rounded-lg border p-2.5 text-sm transition ${
+                    active
+                      ? 'border-indigo-500 bg-indigo-50 dark:border-indigo-400 dark:bg-indigo-950/40'
+                      : 'border-slate-200 hover:border-slate-300 dark:border-slate-700 dark:hover:border-slate-600'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="permissionMode"
+                    className="mt-0.5"
+                    checked={active}
+                    onChange={() => setP({ ...p, permissionMode: m.value as PermissionMode })}
+                  />
+                  <span>
+                    <span className="block font-medium text-slate-800 dark:text-slate-100">{m.label}</span>
+                    <span className="block text-xs text-slate-500 dark:text-slate-400">{m.description}</span>
+                  </span>
+                </label>
+              )
+            })}
+          </div>
+          <span className="block text-xs text-slate-500 dark:text-slate-400">Task mới của project sẽ dùng mức quyền này (có thể đổi riêng từng task).</span>
+        </fieldset>
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Mức quyền mặc định">
-            <select className={inputCls} value={p.permissionMode} onChange={(e) => setP({ ...p, permissionMode: e.target.value as PermissionMode })}>
-              <option value="acceptEdits">acceptEdits: tự sửa file</option>
-              <option value="manual">manual: xin quyền mọi thao tác ghi</option>
-              <option value="plan">plan: chỉ lập kế hoạch</option>
-            </select>
-          </Field>
           <Field label="Số task song song tối đa">
             <input type="number" min={1} max={5} className={inputCls} value={p.maxParallel} onChange={(e) => setP({ ...p, maxParallel: Number(e.target.value) || 1 })} />
           </Field>

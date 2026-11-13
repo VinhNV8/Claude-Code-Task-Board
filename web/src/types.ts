@@ -12,7 +12,7 @@ export type TaskStatus =
 
 export type Priority = 'low' | 'normal' | 'high' | 'urgent'
 
-export type PermissionMode = 'manual' | 'acceptEdits' | 'plan'
+export type PermissionMode = 'manual' | 'acceptEdits' | 'auto' | 'plan'
 
 export interface Project {
   id: string
@@ -199,6 +199,26 @@ export interface ReviewAction {
   /** Nhận xét theo file/dòng gửi kèm "Request changes" */
   comments?: ReviewComment[]
   createdAt: number
+}
+
+/** Kiểm tra trước khi Approve & Merge (GET /api/tasks/:id/merge-check). */
+export interface MergeCheck {
+  /** Nhánh task có commit cần merge; false thì Approve chỉ chuyển Done */
+  hasChanges: boolean
+  /** Merge được ngay */
+  ready: boolean
+  mainBranch: string
+  /** Nhánh repo chính đang checkout */
+  currentBranch: string
+  /** Mọi file chưa commit trong repo chính */
+  dirty: string[]
+  /** File chưa commit trùng với file task đã sửa (chặn merge) */
+  overlap: string[]
+  /** File đã stage nhưng chưa commit (chặn merge) */
+  staged: string[]
+  /** Lý do chưa merge được */
+  warning?: string
+  checkedAt: number
 }
 
 /** Nhận xét khi review: cho một dòng của diff, hoặc cả file khi không có `line`. */

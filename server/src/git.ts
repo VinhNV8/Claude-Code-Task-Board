@@ -126,14 +126,41 @@ export async function commitsAhead(worktreePath: string, mainBranch: string): Pr
 export async function mainRepoStatus(project: Pick<Project, 'repoPath'>) {
   const b = await git(project.repoPath, ['rev-parse', '--abbrev-ref', 'HEAD'])
   if (b.code !== 0) throw new Error(`Không đọc được nhánh của repo chính: ${errText(b)}`)
-  const s = await git(project.repoPath, ['status', '--porcelain'])
+  // -z: tên file không bị quote/escape; liệt kê từng file chưa track (không gộp thành thư mục)
+  const s = await git(project.repoPath, ['status', '--porcelain', '-z', '--untracked-files=all'])
   if (s.code !== 0) throw new Error(`Không đọc được trạng thái repo chính: ${errText(s)}`)
-  // Mỗi dòng dạng "XY path" (không trim cả chuỗi vì X có thể là dấu cách)
-  const changes = s.stdout
-    .split(/\r?\n/)
-    .filter((l) => l.trim())
-    .map((l) => l.slice(3))
-  return { branch: b.stdout.trim(), clean: changes.length === 0, changes }
+  return { branch: b.stdout.trim(), ...parsePorcelainZ(s.stdout) }
+}
+
+/**
+ * Phân tích `git status --porcelain -z`: mỗi mục "XY path\0"; đổi tên/copy có thêm "đường dẫn cũ\0" ngay sau.
+ * `changes`: mọi file chưa commit (kể cả tên cũ khi đổi tên); `staged`: file đã `git add` (cột X).
+ */
+export function parsePorcelainZ(out: string) {
+  const parts = out.split('\0')
+  const changes: string[] = []
+  const staged: string[] = []
+  for (let i = 0; i < parts.length; i++) {
+    const e = parts[i]
+    if (e.length < 4) continue
+    const x = e[0]
+    const y = e[1]
+    const path = e.slice(3)
+    changes.push(path)
+    if (x !== ' ' && x !== '?' && x !== '!') staged.push(path)
+    if (x === 'R' || x === 'C' || y === 'R' || y === 'C') {
+      const old = parts[++i]
+      if (old) changes.push(old)
+    }
+  }
+  return { clean: changes.length === 0, changes, staged }
+}
+
+/** File nhánh task thay đổi so với điểm rẽ nhánh từ mainBranch (đổi tên tính cả tên cũ lẫn tên mới). */
+export async function branchChangedFiles(repoPath: string, branch: string, mainBranch: string): Promise<string[]> {
+  const r = await git(repoPath, ['diff', '--name-only', '-z', '--no-renames', `${mainBranch}...${branch}`])
+  if (r.code !== 0) throw new Error(`Không đọc được danh sách file của nhánh "${branch}": ${errText(r)}`)
+  return r.stdout.split('\0').filter(Boolean)
 }
 
 export type MergeResult = { ok: true } | { ok: false; conflicts: string[]; error: string }

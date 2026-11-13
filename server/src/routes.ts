@@ -4,7 +4,7 @@ import { existsSync } from 'node:fs'
 import { isAbsolute } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { bus, broadcast, type ServerMessage } from './bus.ts'
-import { approveTask, rejectTask, requestChanges } from './review.ts'
+import { approveTask, checkMerge, rejectTask, requestChanges } from './review.ts'
 import { readTaskFile, saveTaskFile } from './reviewFiles.ts'
 import { retryTask } from './retry.ts'
 import { resumeTask } from './resume.ts'
@@ -34,7 +34,7 @@ import type { FileDiff, PermissionMode, Priority, Project, PromptTemplate, Sched
 
 const PRIORITIES: Priority[] = ['urgent', 'high', 'normal', 'low']
 // Không cho phép bypassPermissions (SPEC Mục 9)
-const MODES: PermissionMode[] = ['acceptEdits', 'manual', 'plan']
+const MODES: PermissionMode[] = ['acceptEdits', 'manual', 'auto', 'plan']
 
 
 function gitToplevel(path: string) {
@@ -109,6 +109,9 @@ export async function routes(app: FastifyInstance) {
       throw new HttpError(500, `Không lấy được diff của task #${t.id}: ${(e as Error).message}`)
     }
   })
+
+  // G3: kiểm tra trước khi Approve & Merge (không thay đổi gì): repo chính có file trùng/đã stage, sai nhánh...
+  app.get<{ Params: { id: string } }>('/api/tasks/:id/merge-check', async (req) => checkMerge(getTask(req.params.id).id))
 
   // G3: Preview / Edit file Markdown khi review (đọc từ worktree của task)
   app.get<{ Params: { id: string }; Querystring: { path?: string } }>('/api/tasks/:id/file', async (req) => {

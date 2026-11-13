@@ -4,9 +4,10 @@
 |---|---|
 | Phiên bản | 0.3 |
 | Ngày | 2026-11-12 |
-| Trạng thái | v0.2 ✅ đã duyệt. Phần mới của v0.3 (FR-43..46, FR-70..76, FR-80..83): ⏳ **chờ duyệt** |
+| Trạng thái | v0.2 ✅ đã duyệt. Phần mới của v0.3 (FR-43..47, FR-70..76, FR-80..83): ⏳ **chờ duyệt** |
 | Thay đổi 0.2 | Cập nhật theo [P0-SPIKE.md](P0-SPIKE.md): dò file `claude.exe` của extension VSCode; mode `default` đổi thành `manual`; prompt truyền qua stdin; P3 dùng `--permission-prompt-tool` (đã kiểm chứng); SQLite dùng `node:sqlite` có sẵn trong Node 24 |
 | Thay đổi 0.3 | **FR-08/09 Phụ thuộc giữa task.** Bổ sung yêu cầu từ [Ideas Improvement.md](Ideas%20Improvement.md): **3.8 Chọn model** (tự chọn theo độ khó, hiển thị model đang dùng), **3.9 Chi phí và budget theo project**, cải tiến **3.5 Needs Input** (preset, gợi ý rule, Telegram, rủi ro, lý do từ chối). Cập nhật 5.2, 5.3, 7, 8, 9, 10. Thiết kế chi tiết ở PLAN mục P5–P7 |
+| Thay đổi 0.3.1 | **FR-47 Mức quyền Auto** (2026-11-13): thêm mode `auto` cho project/task, tự duyệt thao tác qua kiểm tra an toàn, chỉ dừng chờ người với lệnh rủi ro cao. Cập nhật FR-61, 5.2, 6, 8 (AC-12), 9 |
 | Thư mục dự án | `d:\Projects\AI Project\AI-Interface` |
 
 ---
@@ -108,7 +109,7 @@ Backlog ─► Queued ─► Running ─┬─► Review ─┬─► Done (Appr
 |---|---|---|
 | FR-29 | Mọi task chạy xong đều chuyển **Review**, kể cả khi không sửa code (task phân tích, trả lời, báo cáo…). Trang Review hiển thị **output của Claude** để duyệt | Must |
 | FR-30 | Xem danh sách file thay đổi và diff từng file (side-by-side hoặc unified) | Must |
-| FR-31 | **Approve**: task chuyển **Done**. Có thay đổi code thì merge nhánh task vào nhánh chính (Approve & Merge); không có thì chỉ dọn worktree | Must |
+| FR-31 | **Approve**: task chuyển **Done**. Có thay đổi code thì merge nhánh task vào nhánh chính (Approve & Merge); không có thì chỉ dọn worktree. Điều kiện merge: repo chính đang ở nhánh chính, không có file đã stage, và **không có file chưa commit trùng với file task sửa** (file chưa commit không liên quan được giữ nguyên, không chặn). Thanh Review hiển thị sẵn trạng thái này kèm danh sách file, tự kiểm tra lại khi quay lại tab | Must |
 | FR-32 | **Request changes**: nhập feedback, task chạy tiếp bằng `--resume` | Must |
 | FR-33 | **Reject**: hủy thay đổi, xóa worktree/nhánh | Must |
 | FR-34 | Chạy lệnh kiểm tra (ví dụ `npm test`) và hiển thị kết quả trên trang review | Could |
@@ -124,6 +125,7 @@ Backlog ─► Queued ─► Running ─┬─► Review ─┬─► Done (Appr
 | FR-43 | Bộ quy tắc mẫu (preset) cho allowlist: Node/npm, Python, git chỉ đọc, chỉ đọc file. Preset không chứa lệnh có tác dụng phụ (`npm install`, `git push`, `git commit`) | Should |
 | FR-44 | Gợi ý thêm rule vào allowlist từ lịch sử: rule được cho phép ≥ 3 lần trong 30 ngày, chưa bị từ chối lần nào, không phải lệnh rủi ro; người dùng có thể Thêm hoặc Bỏ qua | Should |
 | FR-45 | Phân loại rủi ro yêu cầu quyền (xoá đệ quy, `git push`, `reset --hard`, tải script về chạy, ghi file ngoài thư mục task…): hiển thị cảnh báo đỏ kèm lý do, **không** cho "Luôn cho phép", và allowlist không được tự duyệt các lệnh này | Should |
+| FR-47 | **Mức quyền Auto** (v0.3.1): ngoài `manual` / `acceptEdits` / `plan`, project và task có thêm mode `auto`. Ở mode Auto, mọi yêu cầu quyền (sửa file, chạy lệnh, kể cả lệnh ngoài allowlist) được **tự động cho phép, không cần người duyệt**: không tạo yêu cầu chờ, task không chuyển Needs Input, log ghi "Tự động cho phép … (mode Auto)". **Ngoại lệ:** lệnh rủi ro cao theo FR-45 vẫn dừng chờ duyệt tay. CLI chạy `--permission-mode acceptEdits`; các thao tác khác đi qua permission prompt tool và backend tự duyệt. Ở phương án dự phòng (tắt prompt tool), Auto hoạt động như `acceptEdits` + whitelist. Mode được chép từ project sang task **lúc tạo task**; đổi mode project không ảnh hưởng task đã có. Không dùng `bypassPermissions` (mục 9) | Should |
 | FR-46 | Từ chối kèm lý do (lý do được gửi cho Claude để đổi cách làm); duyệt hàng loạt các yêu cầu giống hệt nhau ở Inbox; duyệt bằng nút trên Telegram (chỉ nhận từ đúng chat đã cấu hình) | Could |
 
 ### 3.6 Thông báo
@@ -136,7 +138,7 @@ Backlog ─► Queued ─► Running ─┬─► Review ─┬─► Done (Appr
 | ID | Yêu cầu | Ưu tiên |
 |---|---|---|
 | FR-60 | Khai báo một hoặc nhiều project (đường dẫn repo git, nhánh chính) | Must |
-| FR-61 | Cấu hình mặc định theo từng project: mức quyền, allowedTools, số task chạy song song | Should |
+| FR-61 | Cấu hình mặc định theo từng project: mức quyền (Manual / Edit automatically / Plan / Auto, xem FR-47), allowedTools, số task chạy song song | Should |
 
 ### 3.8 Chọn model
 Bối cảnh: người dùng thường không tự chọn model, nên mặc định là **Tự động**. Hệ thống chọn model, giải thích lý do, và người dùng chỉ đổi khi muốn.
@@ -204,6 +206,7 @@ AI-Interface/
 ### 5.2 Mô hình dữ liệu
 ```
 projects(id, name, repo_path, main_branch, default_permission_mode, allowed_tools, max_parallel)
+         -- permission_mode ∈ manual | acceptEdits | auto | plan (v0.3.1: thêm auto, FR-47)
 tasks(id, project_id, title, prompt, status, priority, permission_mode, branch, worktree_path,
       session_id, created_at, updated_at)
 runs(id, task_id, session_id, kind[initial|resume|retry], started_at, ended_at, exit_code,
@@ -234,6 +237,7 @@ settings   + defaultModel (mặc định 'auto'), autoEscalate (mặc định tr
 | POST | `/api/tasks/:id/retry` | Chạy lại |
 | GET | `/api/tasks/:id/diff` | Lấy diff |
 | POST | `/api/tasks/:id/review` | `{action, feedback, comments?}` (comments: `[{path, line?, side?, snippet?, text}]`) |
+| GET | `/api/tasks/:id/merge-check` | Kiểm tra trước khi merge: nhánh hiện tại, file chưa commit, file trùng với task, file đã stage |
 | GET | `/api/tasks/:id/file?path=` | Nội dung file trong worktree (Preview Markdown) |
 | PUT | `/api/tasks/:id/file` | `{path, content}`: lưu file Markdown và commit trên nhánh task |
 | POST | `/api/tasks/:id/input` | Trả lời hoặc cấp quyền |
@@ -256,10 +260,10 @@ Cấu hình trong `.claude/settings.json` của worktree hoặc project:
 ## 6. Giao diện (UI)
 
 1. **Dashboard / Kanban**: các cột trạng thái, badge "Cần xử lý", bộ lọc theo project.
-2. **Form tạo task**: modal gồm tiêu đề, prompt (textarea lớn), project, template, mức quyền, ưu tiên.
+2. **Form tạo task**: modal gồm tiêu đề, prompt (textarea lớn), project, template, mức quyền, ưu tiên. Mức quyền hiển thị tên dễ đọc (Manual / Edit automatically / Plan / Auto) kèm mô tả.
 3. **Chi tiết task**: tab *Log* (realtime), tab *Diff*, tab *Lịch sử runs*, cùng các nút hành động.
 4. **Trang Review**: diff và 3 nút **Approve & Merge / Request changes / Reject**.
-5. **Settings**: quản lý project, giới hạn song song, thông báo.
+5. **Settings**: quản lý project, giới hạn song song, thông báo. Mức quyền mặc định của project chọn bằng nhóm thẻ (giống bộ chọn mode của Claude Code), mỗi thẻ có tên và mô tả ngắn (FR-47).
 
 ---
 
@@ -291,6 +295,7 @@ Cấu hình trong `.claude/settings.json` của worktree hoặc project:
 - **AC-09** (v0.3): Project đặt budget ở chế độ "Tạm dừng": khi vượt budget thì task mới không chạy và có lý do hiển thị, cảnh báo 80%/100% chỉ gửi một lần trong tháng.
 - **AC-11** (v0.3): B chờ A: B không chạy khi A chưa Done (kể cả còn slot), A Done thì B tự chạy; C độc lập chạy song song với A. Claude báo `BLOCKED_BY: #A` trong lúc chạy B thì B tự về Queued, chờ A.
 - **AC-10** (v0.3): Lệnh rủi ro cao luôn phải duyệt tay (kể cả khi khớp allowlist) và không có nút "Luôn cho phép".
+- **AC-12** (v0.3.1): Task ở mode Auto chạy `npm install x` (ngoài allowlist) thì được cho phép ngay, không tạo yêu cầu quyền và task không vào Needs Input; cùng task chạy `git push` thì vẫn dừng ở Needs Input chờ duyệt tay. Task ở mode Manual với cùng lệnh `npm install x` thì phải chờ duyệt.
 
 ---
 
@@ -300,6 +305,7 @@ Cấu hình trong `.claude/settings.json` của worktree hoặc project:
 |---|---|
 | Vượt giới hạn sử dụng của gói Claude khi chạy nhiều task | Giới hạn song song, hiển thị thông báo lỗi rate limit, tự retry sau |
 | Claude chạy lệnh nguy hiểm khi tự động | `--allowedTools` whitelist, mặc định `acceptEdits`, không bật bypass permissions |
+| Mode Auto tự duyệt thao tác ngoài ý muốn (cài package, xoá file trong worktree) | Auto không phải mặc định, người dùng phải tự chọn; lệnh rủi ro cao (FR-45) vẫn duyệt tay; mọi thao tác tự duyệt đều ghi log; thay đổi nằm trong worktree riêng và vẫn qua Review trước khi merge |
 | Merge conflict khi nhiều task sửa cùng file | Phát hiện conflict khi merge, chuyển task về Review kèm cảnh báo |
 | Định dạng output CLI thay đổi theo phiên bản | Gom phần parse vào một module, ghi lại phiên bản `claude` đã test |
 | Worktree tích tụ chiếm dung lượng | Tự dọn worktree khi task Done/Rejected |

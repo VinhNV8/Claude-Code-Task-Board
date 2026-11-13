@@ -43,6 +43,7 @@ import {
 import { Button, ConfirmDialog, EmptyState, StatusBadge, inputCls, useNow } from '../components/ui'
 import { LogView } from '../components/LogView'
 import { DiffView, type DiffReview } from '../components/DiffView'
+import { MergeStatus, useMergeCheck } from '../components/MergeStatus'
 import { TestPanel } from '../components/TestPanel'
 import { PermissionCard } from '../components/PermissionCard'
 import { TaskFormModal } from '../components/TaskFormModal'
@@ -51,6 +52,7 @@ import { MIN_FEEDBACK, buildHistory, needsDiffFetch } from '../lib/review'
 import { commentLocation, sortComments } from '../lib/reviewComments'
 import { useReviewDraft } from '../lib/reviewDraft'
 import { STOP_REASON, canResume, isWaitingRateLimit } from '../lib/resume'
+import { permissionModeOf } from '../lib/permissionMode'
 import type { ReviewComment, Run, Task } from '../types'
 
 type Tab = 'log' | 'review' | 'result' | 'history' | 'prompt'
@@ -88,6 +90,8 @@ export function TaskDetail() {
   const [diffError, setDiffError] = useState<string | null>(null)
   // Nhận xét theo file/dòng chưa gửi + file đã đánh dấu "Đã xem" (G3)
   const draft = useReviewDraft(task?.id)
+  // B.2: trạng thái repo chính trước khi merge (chỉ khi task ở Review và có thay đổi code)
+  const merge = useMergeCheck(task?.id, task?.status === 'review' && diffs.length > 0, diffs.map((d) => d.path + d.additions + d.deletions).join())
 
   // Diff có sẵn trong state (task Review hoặc broadcast); chưa có thì tải khi mở task (PLAN 2.9)
   const wantDiff = !!task && needsDiffFetch(task, s.diffs)
@@ -117,6 +121,7 @@ export function TaskDetail() {
     try {
       if (action === 'approve') {
         if (await approveTask(task.id)) draft.clear()
+        else void merge.refresh() // bị chặn: cập nhật danh sách file trên thanh Review
       } else if (action === 'reject') {
         if (await rejectTask(task.id)) draft.clear()
       } else if (await requestChanges(task.id, feedback.trim(), draft.comments)) {
@@ -165,6 +170,8 @@ export function TaskDetail() {
   const resumable = canResume(task, now)
   const paused = task.status === 'failed' && task.failReason === STOP_REASON
 
+  // Chỉ khoá nút khi đã kiểm tra xong và chắc chắn bị chặn; chưa kiểm tra được thì để server quyết định
+  const mergeBlocked = diffs.length > 0 && !!merge.check && merge.check.hasChanges && !merge.check.ready
   const feedbackValid = feedback.trim().length >= MIN_FEEDBACK || (draft.comments.length > 0 && !feedback.trim())
   const diffReview: DiffReview = {
     draft,
@@ -401,76 +408,84 @@ export function TaskDetail() {
             <div className="sticky bottom-0 -mx-1 rounded-lg border border-slate-200 bg-white/95 p-3 shadow-lg backdrop-blur dark:border-slate-800 dark:bg-slate-900/95">
               {feedbackOpen ? (
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">
-                    Feedback chung cho Claude (Claude sẽ tiếp tục trong cùng phiên)
-                    {draft.comments.length > 0 && <span className="font-normal text-slate-500">, không bắt buộc khi đã có nhận xét theo dòng</span>}
-                  </label>
-                  <textarea
-                    autoFocus
-                    className={`${inputCls} min-h-[90px]`}
-                    value={feedback}
-                    onChange={(e) => setFeedback(e.target.value)}
-                    placeholder="VD: Thông báo lỗi cần có role=&quot;alert&quot;; đổi tên biến cho rõ nghĩa…"
-                  />
-                  {draft.comments.length > 0 && (
-                    <div className="rounded-md border border-slate-200 p-2 text-xs dark:border-slate-800">
-                      <p className="mb-1 font-medium text-slate-600 dark:text-slate-300">Gửi kèm {draft.comments.length} nhận xét theo file/dòng:</p>
-                      <ul className="max-h-40 space-y-1 overflow-y-auto">
-                        {sortComments(draft.comments).map((c) => (
-                          <li key={c.id} className="flex gap-2">
-                            <span className="shrink-0 font-mono text-indigo-600 dark:text-indigo-400">{commentLocation(c)}</span>
-                            <span className="min-w-0 flex-1 truncate text-slate-600 dark:text-slate-300" title={c.text}>
-                              {c.text}
-                            </span>
-                            <button title="Bỏ nhận xét này" className="shrink-0 text-slate-400 hover:text-rose-600" onClick={() => draft.removeComment(c.id)}>
-                              <X size={13} />
-                            </button>
-                          </li>
-                        ))}
-                      </ul>
+                    <label className="text-sm font-medium">
+                      Feedback chung cho Claude (Claude sẽ tiếp tục trong cùng phiên)
+                      {draft.comments.length > 0 && <span className="font-normal text-slate-500">, không bắt buộc khi đã có nhận xét theo dòng</span>}
+                    </label>
+                    <textarea
+                      autoFocus
+                      className={`${inputCls} min-h-[90px]`}
+                      value={feedback}
+                      onChange={(e) => setFeedback(e.target.value)}
+                      placeholder="VD: Thông báo lỗi cần có role=&quot;alert&quot;; đổi tên biến cho rõ nghĩa…"
+                    />
+                    {draft.comments.length > 0 && (
+                      <div className="rounded-md border border-slate-200 p-2 text-xs dark:border-slate-800">
+                        <p className="mb-1 font-medium text-slate-600 dark:text-slate-300">Gửi kèm {draft.comments.length} nhận xét theo file/dòng:</p>
+                        <ul className="max-h-40 space-y-1 overflow-y-auto">
+                          {sortComments(draft.comments).map((c) => (
+                            <li key={c.id} className="flex gap-2">
+                              <span className="shrink-0 font-mono text-indigo-600 dark:text-indigo-400">{commentLocation(c)}</span>
+                              <span className="min-w-0 flex-1 truncate text-slate-600 dark:text-slate-300" title={c.text}>
+                                {c.text}
+                              </span>
+                              <button title="Bỏ nhận xét này" className="shrink-0 text-slate-400 hover:text-rose-600" onClick={() => draft.removeComment(c.id)}>
+                                <X size={13} />
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    <div className="flex justify-end gap-2">
+                      <Button variant="ghost" disabled={!!busy} onClick={() => setFeedbackOpen(false)}>
+                        Huỷ
+                      </Button>
+                      <Button
+                        variant="primary"
+                        disabled={!!busy || !feedbackValid}
+                        title={!feedbackValid ? `Nhập ít nhất ${MIN_FEEDBACK} ký tự hoặc thêm nhận xét theo dòng` : undefined}
+                        onClick={() => submitReview('request_changes')}
+                      >
+                        {busy === 'request_changes' ? <Loader2 size={16} className="animate-spin" /> : <MessageSquareReply size={16} />} Gửi feedback
+                      </Button>
                     </div>
-                  )}
-                  <div className="flex justify-end gap-2">
-                    <Button variant="ghost" disabled={!!busy} onClick={() => setFeedbackOpen(false)}>
-                      Huỷ
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                  {diffs.length > 0 && <MergeStatus check={merge.check} loading={merge.loading} onRefresh={() => void merge.refresh()} />}
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="mr-auto text-sm text-slate-500 dark:text-slate-400">
+                      {diffs.length > 0 ? (
+                        <>
+                          Merge <span className="font-mono">{task.branch}</span> → <span className="font-mono">{project?.mainBranch}</span>
+                        </>
+                      ) : (
+                        'Không có thay đổi code: Approve sẽ chuyển task sang Done'
+                      )}
+                    </span>
+                    <Button variant="ghost" className="text-rose-600" disabled={!!busy} onClick={() => setConfirm('reject')}>
+                      {busy === 'reject' ? <Loader2 size={16} className="animate-spin" /> : <X size={16} />} Reject
+                    </Button>
+                    <Button disabled={!!busy} onClick={() => setFeedbackOpen(true)}>
+                      <MessageSquareReply size={16} /> Request changes{draft.comments.length > 0 && ` (${draft.comments.length} nhận xét)`}
                     </Button>
                     <Button
-                      variant="primary"
-                      disabled={!!busy || !feedbackValid}
-                      title={!feedbackValid ? `Nhập ít nhất ${MIN_FEEDBACK} ký tự hoặc thêm nhận xét theo dòng` : undefined}
-                      onClick={() => submitReview('request_changes')}
+                      variant="success"
+                      disabled={!!busy || mergeBlocked}
+                      title={mergeBlocked ? 'Repo chính chưa sẵn sàng để merge, xem chi tiết ở trên' : undefined}
+                      onClick={() => (draft.comments.length ? setConfirm('approve') : submitReview('approve'))}
                     >
-                      {busy === 'request_changes' ? <Loader2 size={16} className="animate-spin" /> : <MessageSquareReply size={16} />} Gửi feedback
+                      {busy === 'approve' ? (
+                        <Loader2 size={16} className="animate-spin" />
+                      ) : diffs.length > 0 ? (
+                        <GitMerge size={16} />
+                      ) : (
+                        <Check size={16} />
+                      )}{' '}
+                      {diffs.length > 0 ? <>Approve &amp; Merge</> : 'Approve'}
                     </Button>
                   </div>
-                </div>
-              ) : (
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="mr-auto text-sm text-slate-500 dark:text-slate-400">
-                    {diffs.length > 0 ? (
-                      <>
-                        Merge <span className="font-mono">{task.branch}</span> → <span className="font-mono">{project?.mainBranch}</span>
-                      </>
-                    ) : (
-                      'Không có thay đổi code: Approve sẽ chuyển task sang Done'
-                    )}
-                  </span>
-                  <Button variant="ghost" className="text-rose-600" disabled={!!busy} onClick={() => setConfirm('reject')}>
-                    {busy === 'reject' ? <Loader2 size={16} className="animate-spin" /> : <X size={16} />} Reject
-                  </Button>
-                  <Button disabled={!!busy} onClick={() => setFeedbackOpen(true)}>
-                    <MessageSquareReply size={16} /> Request changes{draft.comments.length > 0 && ` (${draft.comments.length} nhận xét)`}
-                  </Button>
-                  <Button variant="success" disabled={!!busy} onClick={() => (draft.comments.length ? setConfirm('approve') : submitReview('approve'))}>
-                    {busy === 'approve' ? (
-                      <Loader2 size={16} className="animate-spin" />
-                    ) : diffs.length > 0 ? (
-                      <GitMerge size={16} />
-                    ) : (
-                      <Check size={16} />
-                    )}{' '}
-                    {diffs.length > 0 ? <>Approve &amp; Merge</> : 'Approve'}
-                  </Button>
                 </div>
               )}
             </div>
@@ -600,7 +615,7 @@ export function TaskDetail() {
           <pre className="whitespace-pre-wrap rounded-lg border border-slate-200 bg-white p-4 font-sans text-sm dark:border-slate-800 dark:bg-slate-900">{task.prompt}</pre>
           <div className="grid gap-2 text-sm sm:grid-cols-2">
             <p>
-              <span className="text-slate-500">Mức quyền:</span> <span className="font-mono">{task.permissionMode}</span>
+              <span className="text-slate-500">Mức quyền:</span> <span>{permissionModeOf(task.permissionMode).label}</span>
             </p>
             <p>
               <span className="text-slate-500">Repo:</span> <span className="font-mono text-xs">{project?.repoPath}</span>

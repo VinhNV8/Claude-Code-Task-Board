@@ -5,14 +5,10 @@ import { createTask, fetchDepSuggestions, updateTask, useStore, type DepSuggesti
 import { collectTags, normalizeTags } from '../lib/taskFilter'
 import { MODEL_OPTIONS, inheritedModelHint, modelLabel } from '../lib/model'
 import type { PermissionMode, Priority, PromptTemplate, Task } from '../types'
+import { PERMISSION_MODES, permissionModeOf } from '../lib/permissionMode'
 import { TagInput } from './TagInput'
 import { Button, Field, Modal, inputCls } from './ui'
 
-const PERMISSION_LABEL: Record<PermissionMode, string> = {
-  acceptEdits: 'Tự sửa file, lệnh ngoài whitelist phải xin quyền',
-  manual: 'Mọi thao tác ghi đều phải xin quyền',
-  plan: 'Chỉ lập kế hoạch, không sửa file',
-}
 
 export function TaskFormModal({
   open,
@@ -216,11 +212,13 @@ export function TaskFormModal({
               <option value="low">Thấp</option>
             </select>
           </Field>
-          <Field label="Mức quyền" hint={PERMISSION_LABEL[mode]}>
+          <Field label="Mức quyền" hint={permissionModeOf(mode).description}>
             <select className={inputCls} value={mode} onChange={(e) => setMode(e.target.value as PermissionMode)}>
-              <option value="acceptEdits">acceptEdits</option>
-              <option value="manual">manual</option>
-              <option value="plan">plan</option>
+              {PERMISSION_MODES.map((m) => (
+                <option key={m.value} value={m.value}>
+                  {m.label}
+                </option>
+              ))}
             </select>
           </Field>
           <TagInput label="Tag" value={tags} onChange={setTags} suggestions={tagSuggestions} />

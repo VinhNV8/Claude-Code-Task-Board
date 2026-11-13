@@ -120,6 +120,9 @@ export interface ClaudeArgsOptions {
  * nên quay về `acceptEdits` + whitelist như PLAN (rủi ro P3). `plan` giữ nguyên vì không sửa gì.
  */
 export function effectivePermissionMode(mode: string, promptTool: boolean) {
+  // `auto` là mode của Task Board, không phải của CLI: CLI chạy acceptEdits, phần còn lại
+  // đi qua prompt tool và được backend tự duyệt nếu không rủi ro cao (permissions.ts).
+  if (mode === 'auto') return 'acceptEdits'
   return !promptTool && mode === 'manual' ? 'acceptEdits' : mode
 }
 

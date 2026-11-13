@@ -170,6 +170,21 @@ test('Luôn cho phép → thêm quy tắc vào project, lần sau tự cho phép
   assert.equal(((await requestPermission({ taskId: t.id, toolName: 'Bash', input: cmd }, 20)) as { decision: string }).decision, 'allow')
 })
 
+test('mode Auto: tự duyệt lệnh ngoài allowlist, lệnh rủi ro cao vẫn chờ người', async () => {
+  const t = runningTask()
+  updateTask(t.id, { permissionMode: 'auto' })
+  const cmd = bash('npm install lodash')
+  assert.deepEqual(await requestPermission({ taskId: t.id, toolName: 'Bash', input: cmd }), { decision: 'allow', updatedInput: cmd })
+  assert.equal(listPermissions().filter((p) => p.taskId === t.id).length, 0)
+  const logged = events.byRun(`run-${t.id}`).map((e) => (e as { text?: string }).text ?? '')
+  assert.ok(logged.some((s) => /mode Auto/.test(s)), logged.join('\n'))
+
+  const risky = await requestPermission({ taskId: t.id, toolName: 'Bash', input: bash('git push') }, 20)
+  assert.ok('status' in risky && risky.status === 'pending')
+  assert.equal(tasks.get(t.id)!.status, 'needs_input')
+  decidePermission((risky as { requestId: string }).requestId, 'deny')
+})
+
 test('rủi ro cao: khớp allowlist vẫn chờ duyệt tay, không cho "Luôn cho phép" (AC-10)', async () => {
   const t = runningTask()
   const cmd = bash('npm test && git push')

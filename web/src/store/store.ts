@@ -4,6 +4,7 @@ import { useSyncExternalStore } from 'react'
 import type {
   DemoFlags,
   FileDiff,
+  MergeCheck,
   LogEvent,
   PermissionMode,
   PermissionPreset,
@@ -552,6 +553,15 @@ export async function requestChanges(id: number, feedback: string, comments: Rev
 }
 
 /** Nội dung hiện tại của file trong worktree (Preview Markdown khi review). `null` nếu lỗi (đã báo toast). */
+/** Kiểm tra trước khi Approve & Merge. Lỗi mạng thì trả null (giao diện hiện "chưa kiểm tra được"). */
+export async function fetchMergeCheck(id: number): Promise<MergeCheck | null> {
+  try {
+    return await api<MergeCheck>('GET', `/tasks/${id}/merge-check`)
+  } catch {
+    return null
+  }
+}
+
 export async function fetchTaskFile(id: number, path: string): Promise<string | null> {
   const r = await act(() => api<{ content: string }>('GET', `/tasks/${id}/file?${new URLSearchParams({ path })}`), `Không đọc được ${path}`)
   return r ? r.content : null

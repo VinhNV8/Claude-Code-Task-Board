@@ -50,10 +50,22 @@ test('git() không throw khi exit code khác 0', async () => {
 })
 
 test('mainRepoStatus: nhánh và trạng thái sạch', async () => {
-  assert.deepEqual(await g.mainRepoStatus(project), { branch: 'main', clean: true, changes: [] })
-  writeFileSync(join(repo, 'dirty.txt'), 'x')
-  assert.deepEqual(await g.mainRepoStatus(project), { branch: 'main', clean: false, changes: ['dirty.txt'] })
-  rmSync(join(repo, 'dirty.txt'))
+  assert.deepEqual(await g.mainRepoStatus(project), { branch: 'main', clean: true, changes: [], staged: [] })
+  mkdirSync(join(repo, 'thư mục mới'), { recursive: true })
+  writeFileSync(join(repo, 'thư mục mới', 'tên có dấu.txt'), 'x')
+  // File chưa track trong thư mục mới được liệt kê từng file; tên có dấu/khoảng trắng không bị quote
+  assert.deepEqual(await g.mainRepoStatus(project), { branch: 'main', clean: false, changes: ['thư mục mới/tên có dấu.txt'], staged: [] })
+  rmSync(join(repo, 'thư mục mới'), { recursive: true })
+})
+
+test('parsePorcelainZ: đã sửa, đã stage, đổi tên (kèm tên cũ), chưa track', () => {
+  const out = [' M a.ts', 'M  b.ts', 'R  new.ts', 'old.ts', '?? c.ts', 'MM d.ts', ''].join('\0')
+  assert.deepEqual(g.parsePorcelainZ(out), {
+    clean: false,
+    changes: ['a.ts', 'b.ts', 'new.ts', 'old.ts', 'c.ts', 'd.ts'],
+    staged: ['b.ts', 'new.ts', 'd.ts'],
+  })
+  assert.deepEqual(g.parsePorcelainZ(''), { clean: true, changes: [], staged: [] })
 })
 
 test('createWorktree tạo nhánh + worktree, gọi lại thì tái sử dụng', async () => {

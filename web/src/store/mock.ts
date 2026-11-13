@@ -10,6 +10,7 @@ import { formatReviewFeedback } from '../lib/reviewComments'
 import type {
   DemoFlags,
   FileDiff,
+  MergeCheck,
   LogEvent,
   LogEventInput,
   PermissionMode,
@@ -364,8 +365,12 @@ function requestPermission(a: Active, tool: string, input: string) {
   const task = state.tasks.find((t) => t.id === a.taskId)!
   const project = state.projects.find((p) => p.id === task.projectId)
   addEvent(a.runId, { type: 'tool_use', tool, input })
-  if (matchesAllowed(project, tool, input)) {
-    addEvent(a.runId, { type: 'system', text: `Tự động cho phép ${tool}(${input}) theo quy tắc của project` })
+  const auto = task.permissionMode === 'auto'
+  if (auto || matchesAllowed(project, tool, input)) {
+    addEvent(a.runId, {
+      type: 'system',
+      text: auto ? `Tự động cho phép ${tool}(${input}) (mode Auto)` : `Tự động cho phép ${tool}(${input}) theo quy tắc của project`,
+    })
     addEvent(a.runId, { type: 'tool_result', tool, output: 'added 1 package in 2s' })
     schedule(a)
     return
@@ -633,6 +638,26 @@ export function requestChanges(id: number, feedback: string, comments: ReviewCom
 
 // Preview/Edit Markdown: dựng nội dung "bản mới" từ diff giả lập (dòng ngữ cảnh + dòng thêm)
 const mockFiles = new Map<string, string>()
+
+export async function fetchMergeCheck(id: number): Promise<MergeCheck | null> {
+  const task = state.tasks.find((t) => t.id === id)
+  const project = task && state.projects.find((p) => p.id === task.projectId)
+  if (!task || !project) return null
+  const files = state.diffs[id] ?? []
+  const base = { mainBranch: project.mainBranch, currentBranch: project.mainBranch, staged: [], checkedAt: Date.now() }
+  if (!files.length) return { ...base, hasChanges: false, ready: true, dirty: [], overlap: [] }
+  // Demo "repo chính bẩn": một file trùng với task + vài file không liên quan
+  if (!state.demo.dirtyMainRepo) return { ...base, hasChanges: true, ready: true, dirty: ['docs/notes.md'], overlap: [] }
+  const overlap = [files[0].path]
+  return {
+    ...base,
+    hasChanges: true,
+    ready: false,
+    dirty: [...overlap, 'docs/notes.md', 'scripts/tmp.mjs'],
+    overlap,
+    warning: `Repo chính có 1 file chưa commit trùng với file task đã sửa: ${overlap[0]}. Hãy commit hoặc bỏ thay đổi ở các file này trước khi merge.`,
+  }
+}
 
 export async function fetchTaskFile(id: number, path: string): Promise<string | null> {
   const saved = mockFiles.get(`${id}:${path}`)
