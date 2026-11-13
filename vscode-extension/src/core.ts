@@ -1,6 +1,7 @@
 // Phần logic thuần của extension (không import 'vscode') để test được bằng node:test.
 import { createServer } from 'node:net'
-import { resolve } from 'node:path'
+import { existsSync } from 'node:fs'
+import { join, resolve } from 'node:path'
 
 /** Thông tin server đang chạy, lưu ở `<globalStorage>/server.json` để các cửa sổ VS Code dùng chung một server. */
 export interface ServerInfo {
@@ -141,4 +142,15 @@ export function freePort(): Promise<number> {
 /** Phần cuối file log để kèm vào thông báo lỗi khởi động. */
 export function tail(text: string, lines = 15) {
   return text.split(/\r?\n/).filter(Boolean).slice(-lines).join('\n')
+}
+
+/** File chạy Claude Code CLI đi kèm extension Claude Code (thư mục cài extension lấy từ API vscode.extensions). */
+export function claudeBinInExtension(
+  extensionPath: string | undefined,
+  platform: NodeJS.Platform = process.platform,
+  exists: (p: string) => boolean = existsSync,
+): string | undefined {
+  if (!extensionPath) return undefined
+  const p = join(extensionPath, 'resources', 'native-binary', platform === 'win32' ? 'claude.exe' : 'claude')
+  return exists(p) ? p : undefined
 }

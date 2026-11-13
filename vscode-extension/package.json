@@ -121,6 +121,7 @@
     "build": "node scripts/build.mjs",
     "watch-server": "node scripts/build.mjs --skip-web",
     "package": "node scripts/build.mjs && vsce package --no-dependencies",
+    "package:no-telegram": "node scripts/build.mjs --no-telegram && vsce package --no-dependencies -o agent-task-board-0.1.0-no-telegram.vsix",
     "typecheck": "tsc --noEmit -p .",
     "test": "node --test --import tsx \"src/*.test.ts\"",
     "icon": "node scripts/icon.mjs"

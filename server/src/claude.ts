@@ -1,41 +1,13 @@
 // Dò file chạy Claude Code CLI (xem docs/P0-SPIKE.md, D1).
 // Thứ tự: biến CLAUDE_BIN → bản extension VSCode mới nhất → `claude` trong PATH.
 import { execFileSync } from 'node:child_process'
-import { existsSync, readdirSync } from 'node:fs'
-import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { existsSync } from 'node:fs'
+import { fromVscodeExtensions } from './claudeEditorScan.ts'
 
 export interface ClaudeBin {
   path: string
   source: 'env' | 'vscode-extension' | 'path'
   version?: string
-}
-
-function compareVersions(a: string, b: string) {
-  const pa = a.split('.').map(Number)
-  const pb = b.split('.').map(Number)
-  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
-    const d = (pa[i] ?? 0) - (pb[i] ?? 0)
-    if (d) return d
-  }
-  return 0
-}
-
-function fromVscodeExtensions(): string | undefined {
-  const exeName = process.platform === 'win32' ? 'claude.exe' : 'claude'
-  const roots = ['.vscode', '.vscode-insiders', '.cursor', '.windsurf'].map((d) => join(homedir(), d, 'extensions'))
-  const found: { version: string; path: string }[] = []
-  for (const root of roots) {
-    if (!existsSync(root)) continue
-    for (const dir of readdirSync(root)) {
-      const m = dir.match(/^anthropic\.claude-code-(\d+\.\d+\.\d+)/)
-      if (!m) continue
-      const p = join(root, dir, 'resources', 'native-binary', exeName)
-      if (existsSync(p)) found.push({ version: m[1], path: p })
-    }
-  }
-  found.sort((a, b) => compareVersions(b.version, a.version))
-  return found[0]?.path
 }
 
 function fromPath(): string | undefined {

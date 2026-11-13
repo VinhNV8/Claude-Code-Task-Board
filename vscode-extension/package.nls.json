@@ -6,7 +6,7 @@
   "command.loginClaude": "Sign in to Claude Code",
   "command.restartServer": "Restart server",
   "command.showLogs": "Show server log",
-  "description": "A task board for Claude Code: run tasks in parallel on separate git branches, approve permissions, review diffs, and keep costs under control.",
+  "description": "A task board for AI coding tasks: queue work, approve tool permissions, review changes before accepting them, and track spending per project.",
   "view.home": "Get started",
   "view.home.welcome": "Assign work to Claude Code. Each task runs on its own git branch, and you review the diff before merging.\n[Open Task Board](command:agentTaskBoard.open)\n[Add this workspace as a project](command:agentTaskBoard.addWorkspace)\nRequires Claude Code signed in (Pro/Max plan) or an Anthropic API key.\n[Sign in to Claude Code](command:agentTaskBoard.loginClaude)\n[Use an API key](command:agentTaskBoard.openSettings)\n[Open in browser](command:agentTaskBoard.openInBrowser) · [Show log](command:agentTaskBoard.showLogs)",
   "config.claudePath": "Path to the Claude Code CLI executable. Leave empty to detect it automatically (the Claude Code extension, then `claude` on PATH). Run **Restart server** after changing it.",

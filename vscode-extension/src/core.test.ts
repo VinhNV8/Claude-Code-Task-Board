@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { boardHash, freePort, parseAuthStatus, parseServerInfo, pickMainBranch, samePath, serverEnv, webviewHtml } from './core.ts'
+import { boardHash, claudeBinInExtension, freePort, parseAuthStatus, parseServerInfo, pickMainBranch, samePath, serverEnv, webviewHtml } from './core.ts'
 
 test('parseServerInfo: chỉ nhận file hợp lệ', () => {
   const ok = { pid: 12, port: 4000, previewPort: 4001, version: '0.1.0', startedAt: 1 }
@@ -87,4 +87,14 @@ test('boardHash / webviewHtml', () => {
 test('freePort: trả về cổng dùng được', async () => {
   const p = await freePort()
   assert.ok(p > 0 && p < 65536)
+})
+
+test('claudeBinInExtension: đường dẫn CLI theo hệ điều hành, chỉ trả về khi file có thật', () => {
+  const seen: string[] = []
+  const yes = (p: string) => (seen.push(p), true)
+  assert.match(claudeBinInExtension('/ext/claude', 'linux', yes)!, /[\\/]ext[\\/]claude[\\/]resources[\\/]native-binary[\\/]claude$/)
+  assert.match(claudeBinInExtension('C:\\ext', 'win32', yes)!, /native-binary[\\/]claude\.exe$/)
+  assert.equal(claudeBinInExtension('/ext/claude', 'linux', () => false), undefined)
+  assert.equal(claudeBinInExtension(undefined, 'linux', yes), undefined)
+  assert.equal(seen.length, 2)
 })

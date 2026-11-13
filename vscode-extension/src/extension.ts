@@ -4,7 +4,7 @@
 // - Tự kiểm tra Claude Code (đã cài, đã đăng nhập) và đề xuất thêm workspace đang mở làm project.
 import * as vscode from 'vscode'
 import { execFile } from 'node:child_process'
-import { boardHash, parseAuthStatus, pickMainBranch, samePath, webviewHtml, type ServerInfo } from './core'
+import { boardHash, claudeBinInExtension, parseAuthStatus, pickMainBranch, samePath, webviewHtml, type ServerInfo } from './core'
 import { ServerManager, type Health } from './serverManager'
 import { startClaudeLimitWatch } from './claudeLimitWatch'
 
@@ -37,7 +37,9 @@ export function activate(ctx: vscode.ExtensionContext) {
     extensionDir: ctx.extensionUri.fsPath,
     version: String(ctx.extension.packageJSON.version ?? '0.0.0'),
     idleMinutes: () => cfg().get<number>('idleShutdownMinutes', 30),
-    claudePath: () => cfg().get<string>('claudePath') || undefined,
+    // Không có cài đặt: lấy CLI đi kèm extension Claude Code (server trong extension không tự quét thư mục editor)
+    claudePath: () =>
+      cfg().get<string>('claudePath') || claudeBinInExtension(vscode.extensions.getExtension(CLAUDE_EXTENSION_ID)?.extensionPath),
     log: (l) => output.appendLine(`[${new Date().toLocaleTimeString()}] ${l}`),
   })
 

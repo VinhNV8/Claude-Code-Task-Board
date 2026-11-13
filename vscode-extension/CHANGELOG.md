@@ -5,6 +5,8 @@
 - Reviewing a task now means accepting its output; merging is a separate, optional action. Rejecting no longer deletes the output.
 - New projects write output straight into the project folder (no git required). The previous per-task branch mode is still available on the Projects page; existing projects keep it.
 - Adding the open workspace as a project no longer requires a git repository.
+- The extension finds the Claude Code CLI through VS Code's extension API instead of scanning editor folders in your home directory.
+- Testing an API key now makes one direct HTTPS request to the Anthropic API; the Anthropic SDK is no longer bundled (smaller download).
 
 ## 0.1.0
 

@@ -6,7 +6,7 @@
   "command.loginClaude": "Đăng nhập Claude Code",
   "command.restartServer": "Khởi động lại server",
   "command.showLogs": "Xem log server",
-  "description": "Bảng công việc giao task cho Claude Code: chạy song song trên nhánh riêng, duyệt quyền, review diff, kiểm soát chi phí.",
+  "description": "Bảng công việc cho các task lập trình bằng AI: xếp hàng công việc, duyệt quyền công cụ, review thay đổi trước khi chấp nhận, theo dõi chi phí theo project.",
   "view.home": "Bắt đầu",
   "view.home.welcome": "Giao việc cho Claude Code, mỗi task chạy trên một nhánh riêng, bạn review diff rồi mới merge.\n[Mở Task Board](command:agentTaskBoard.open)\n[Thêm workspace này làm project](command:agentTaskBoard.addWorkspace)\nCần Claude Code đã đăng nhập (gói Pro/Max), hoặc API key của Anthropic.\n[Đăng nhập Claude Code](command:agentTaskBoard.loginClaude)\n[Dùng API key](command:agentTaskBoard.openSettings)\n[Mở trong trình duyệt](command:agentTaskBoard.openInBrowser) · [Xem log](command:agentTaskBoard.showLogs)",
   "config.claudePath": "Đường dẫn file chạy Claude Code CLI. Để trống: tự tìm (extension Claude Code, rồi `claude` trong PATH). Đổi xong cần **Khởi động lại server**.",

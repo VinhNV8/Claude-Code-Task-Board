@@ -3,7 +3,6 @@
 // - apiKey: API key của Claude Console, trả tiền theo token. Đây là cách được phép dùng trong sản phẩm.
 // Key lấy từ biến môi trường TASKBOARD_ANTHROPIC_API_KEY (ưu tiên) hoặc key đã lưu (mã hoá) trong DB.
 // Key không bao giờ trả ra API, không ghi vào log hay thông báo lỗi.
-import Anthropic from '@anthropic-ai/sdk'
 import type { ClaudeAuthInput, ClaudeAuthMode, ClaudeAuthSettings } from './types.ts'
 
 export class ClaudeAuthError extends Error {}
@@ -16,12 +15,13 @@ export function defaultAuthMode(env: NodeJS.ProcessEnv = process.env): ClaudeAut
   return env.TASKBOARD_DEFAULT_AUTH_MODE?.trim() === 'apiKey' ? 'apiKey' : 'subscription'
 }
 
-const KEY_RE = /^sk-ant-[A-Za-z0-9_-]{20,}$/
+// Chỉ kiểm tra hình thức chung; key có dùng được hay không do testApiKey (gọi API) xác nhận.
+const KEY_RE = /^[A-Za-z0-9_-]{20,300}$/
 
 export function validateApiKey(raw: unknown): string {
   if (typeof raw !== 'string') throw new ClaudeAuthError('API key không hợp lệ')
   const key = raw.trim()
-  if (!KEY_RE.test(key)) throw new ClaudeAuthError('API key không đúng định dạng (dạng sk-ant-..., tạo trong Claude Console → API keys)')
+  if (!KEY_RE.test(key)) throw new ClaudeAuthError('API key không đúng định dạng (tạo trong Claude Console → API keys)')
   return key
 }
 
@@ -78,24 +78,28 @@ export function authFailureHint(text: string | undefined): string | undefined {
   return undefined
 }
 
-/** Tạo client cho việc kiểm tra key; test thay bằng hàm giả để không gọi mạng. */
-export type MakeClient = (apiKey: string) => Pick<Anthropic, 'models'>
-const defaultClient: MakeClient = (apiKey) => new Anthropic({ apiKey, maxRetries: 0, timeout: 15_000 })
+export type FetchLike = (url: string, init: { method: string; headers: Record<string, string>; signal?: AbortSignal }) => Promise<{ ok: boolean; status: number }>
+
+const MODELS_URL = 'https://api.anthropic.com/v1/models?limit=1'
 
 /**
  * Kiểm tra key bằng cách liệt kê model: không tốn token, không tốn tiền.
  * Chỉ xác nhận key hợp lệ, không kiểm tra số dư credit.
+ * Gọi thẳng HTTP (không dùng SDK) để bundle gọn. Thông báo lỗi tự viết, không bao giờ chứa key.
  */
-export async function testApiKey(apiKey: string, makeClient: MakeClient = defaultClient): Promise<void> {
+export async function testApiKey(apiKey: string, fetchImpl: FetchLike = fetch as unknown as FetchLike, timeoutMs = 15_000): Promise<void> {
+  let res: Awaited<ReturnType<FetchLike>>
   try {
-    await makeClient(apiKey).models.list({ limit: 1 })
-  } catch (e) {
-    // Thông báo lỗi tự viết, không dùng message của SDK, để chắc chắn không lộ key.
-    if (e instanceof Anthropic.AuthenticationError) throw new ClaudeAuthError('API key không hợp lệ hoặc đã bị thu hồi')
-    if (e instanceof Anthropic.PermissionDeniedError) throw new ClaudeAuthError('API key không có quyền truy cập API')
-    if (e instanceof Anthropic.RateLimitError) return // key hợp lệ, chỉ đang bị giới hạn tốc độ
-    if (e instanceof Anthropic.APIConnectionError) throw new ClaudeAuthError('Không kết nối được tới API của Anthropic. Kiểm tra mạng rồi thử lại.')
-    if (e instanceof Anthropic.APIError) throw new ClaudeAuthError(`API của Anthropic trả lỗi ${e.status ?? 'không xác định'}`)
-    throw new ClaudeAuthError('Kiểm tra API key thất bại')
+    res = await fetchImpl(MODELS_URL, {
+      method: 'GET',
+      headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
+      signal: AbortSignal.timeout(timeoutMs),
+    })
+  } catch {
+    throw new ClaudeAuthError('Không kết nối được tới API của Anthropic. Kiểm tra mạng rồi thử lại.')
   }
+  if (res.ok || res.status === 429) return // 429: key hợp lệ, chỉ đang bị giới hạn tốc độ
+  if (res.status === 401) throw new ClaudeAuthError('API key không hợp lệ hoặc đã bị thu hồi')
+  if (res.status === 403) throw new ClaudeAuthError('API key không có quyền truy cập API')
+  throw new ClaudeAuthError(`API của Anthropic trả lỗi ${res.status}`)
 }

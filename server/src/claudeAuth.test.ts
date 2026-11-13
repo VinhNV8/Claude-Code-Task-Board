@@ -6,7 +6,6 @@ import { mkdtempSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { randomBytes, randomUUID } from 'node:crypto'
-import Anthropic from '@anthropic-ai/sdk'
 
 process.env.TASKBOARD_DATA = mkdtempSync(join(tmpdir(), 'taskboard auth '))
 process.env.TASKBOARD_DB = ':memory:'
@@ -22,7 +21,7 @@ const auth = await import('./claudeAuth.ts')
 const { routes } = await import('./routes.ts')
 const { default: Fastify } = await import('fastify')
 import type { Project, Settings, Task } from './types.ts'
-import type { MakeClient } from './claudeAuth.ts'
+import type { FetchLike } from './claudeAuth.ts'
 
 const KEY = `sk-ant-api03-${'a'.repeat(40)}WXYZ`
 const KEY2 = `sk-ant-api03-${'b'.repeat(40)}LAST`
@@ -141,26 +140,26 @@ test('runCap: nhỏ nhất giữa giới hạn task và budget còn lại; hết
   assert.equal(runCap(5, { spent: 3, budget: undefined }), 5)
 })
 
-// ---------------------------------------------------------------- kiểm tra key (SDK giả)
+// ---------------------------------------------------------------- kiểm tra key (fetch giả)
 
-const failing = (err: unknown): MakeClient => () => ({ models: { list: () => Promise.reject(err) } }) as never
-const headers = new Headers()
+const respond = (status: number): FetchLike => () => Promise.resolve({ ok: status >= 200 && status < 300, status })
 
 test('testApiKey: thành công; lỗi được dịch sang tiếng Việt và không chứa key', async () => {
-  let usedKey = ''
-  await auth.testApiKey(KEY, (k) => {
-    usedKey = k
-    return { models: { list: () => Promise.resolve({}) } } as never
+  let call: { url: string; headers: Record<string, string> } | undefined
+  await auth.testApiKey(KEY, (url, init) => {
+    call = { url, headers: init.headers }
+    return Promise.resolve({ ok: true, status: 200 })
   })
-  assert.equal(usedKey, KEY)
-  const cases: [unknown, RegExp][] = [
-    [new Anthropic.AuthenticationError(401, undefined, `bad key ${KEY}`, headers), /không hợp lệ/],
-    [new Anthropic.PermissionDeniedError(403, undefined, 'nope', headers), /không có quyền/],
-    [new Anthropic.APIConnectionError({ message: 'offline' }), /Không kết nối/],
-    [new Anthropic.InternalServerError(500, undefined, 'boom', headers), /500/],
+  assert.equal(call?.url, 'https://api.anthropic.com/v1/models?limit=1')
+  assert.equal(call?.headers['x-api-key'], KEY)
+  const cases: [FetchLike, RegExp][] = [
+    [respond(401), /không hợp lệ/],
+    [respond(403), /không có quyền/],
+    [() => Promise.reject(new TypeError('fetch failed')), /Không kết nối/],
+    [respond(500), /500/],
   ]
-  for (const [err, re] of cases) {
-    await assert.rejects(auth.testApiKey(KEY, failing(err)), (e: Error) => {
+  for (const [f, re] of cases) {
+    await assert.rejects(auth.testApiKey(KEY, f), (e: Error) => {
       assert.ok(e instanceof auth.ClaudeAuthError)
       assert.match(e.message, re)
       assert.ok(!e.message.includes(KEY))
@@ -168,7 +167,7 @@ test('testApiKey: thành công; lỗi được dịch sang tiếng Việt và kh
     })
   }
   // Bị giới hạn tốc độ nghĩa là key hợp lệ
-  await auth.testApiKey(KEY, failing(new Anthropic.RateLimitError(429, undefined, 'slow', headers)))
+  await auth.testApiKey(KEY, respond(429))
 })
 
 // ---------------------------------------------------------------- DB + API
