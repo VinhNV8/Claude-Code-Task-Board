@@ -1,6 +1,6 @@
 // Chuyển từng dòng stream-json của Claude Code thành LogEvent cho giao diện.
 // Schema đã kiểm chứng ở docs/P0-SPIKE.md (S6).
-import { relative, isAbsolute } from 'node:path'
+import { posix, win32 } from 'node:path'
 import type { LogEventInput, ModelUsage } from './types.ts'
 
 export interface ResultInfo {
@@ -61,8 +61,10 @@ export class StreamParser {
 
   private rel(p: unknown) {
     if (typeof p !== 'string') return ''
-    if (!isAbsolute(p)) return p
-    const r = relative(this.cwd, p)
+    // Chọn kiểu đường dẫn theo cwd (không theo máy đang chạy): log ghi trên Windows vẫn đọc đúng ở nơi khác
+    const path = /^([A-Za-z]:[\\/]|\\\\)/.test(this.cwd) ? win32 : posix
+    if (!path.isAbsolute(p)) return p
+    const r = path.relative(this.cwd, p)
     return r && !r.startsWith('..') ? r.replace(/\\/g, '/') : p
   }
 

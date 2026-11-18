@@ -619,9 +619,11 @@ export const templates = {
   const LEGACY_SEEDED = ['tpl-bug', 'tpl-test', 'tpl-refactor', 'tpl-feature'] // trước khi có cơ chế ghi nhớ
   const row = db.prepare("SELECT value FROM settings WHERE key = 'templates_seeded'").get() as { value: string } | undefined
   const seeded = new Set<string>(row ? (JSON.parse(row.value) as string[]) : hasTemplatesTable ? LEGACY_SEEDED : [])
-  const now = Date.now()
-  DEFAULT_TEMPLATES.filter((t) => !seeded.has(t.id)).forEach((t, i) => {
-    if (!templates.get(t.id)) templates.upsert(t, now + i)
+  // Mốc thời gian lùi về quá khứ (không phải now + i): template người dùng tạo ngay sau đó vẫn xếp sau các template mặc định
+  const fresh = DEFAULT_TEMPLATES.filter((t) => !seeded.has(t.id))
+  const start = Date.now() - fresh.length
+  fresh.forEach((t, i) => {
+    if (!templates.get(t.id)) templates.upsert(t, start + i)
     seeded.add(t.id)
   })
   db.prepare("INSERT INTO settings (key, value) VALUES ('templates_seeded', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(JSON.stringify([...seeded]))
