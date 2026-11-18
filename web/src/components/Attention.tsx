@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { AlertTriangle, Check, ChevronDown, ChevronUp, Eye, Layers, Loader2, Pause, RotateCcw, StepForward, Timer, X } from 'lucide-react'
+import { AlertTriangle, Check, ChevronDown, ChevronUp, Eye, Layers, Loader2, MessageCircleQuestion, Pause, RotateCcw, StepForward, Timer, X } from 'lucide-react'
 import { approveTask, decidePermission, decidePermissionsBatch, ensureDiff, resumeTask, retryTask, useStore } from '../store/store'
-import { DenyReasonBox, PermissionCard } from './PermissionCard'
+import { DenyReasonBox, PermissionCard, QuestionForm } from './PermissionCard'
 import { stripMarkdown } from './Markdown'
 import { Button, ConfirmDialog, StatusGlyph, useNow } from './ui'
 import { duration } from '../lib/format'
@@ -11,6 +11,7 @@ import { hasDraftComments } from '../lib/reviewDraft'
 import { loadCollapsed, saveCollapsed } from '../lib/sidebar'
 import type { AttentionItem } from '../lib/workView'
 import type { PermissionRequest, Project, Task } from '../types'
+import { tr } from '../lib/i18n'
 
 // ------------------------------------------------------------ duyệt quyền hàng loạt (FR-46)
 
@@ -18,7 +19,8 @@ import type { PermissionRequest, Project, Task } from '../types'
 export function groupSame(reqs: PermissionRequest[]): PermissionRequest[][] {
   const groups = new Map<string, PermissionRequest[]>()
   for (const r of reqs) {
-    const key = `${r.tool}\u0000${r.input.trim()}`
+    // Câu hỏi của Claude (FR-40) phải trả lời riêng từng câu: không bao giờ gộp nhóm
+    const key = r.questions?.length ? `q\u0000${r.id}` : `${r.tool}\u0000${r.input.trim()}`
     const g = groups.get(key)
     if (g) g.push(r)
     else groups.set(key, [r])
@@ -50,22 +52,22 @@ export function PermissionGroup({ reqs, tasks }: { reqs: PermissionRequest[]; ta
     <div className={`rounded-xl border-2 border-dashed p-3 ${high ? 'border-red-300 dark:border-red-800' : 'border-amber-300 dark:border-amber-800'}`}>
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <p className="inline-flex flex-1 items-center gap-1.5 text-sm font-semibold text-slate-700 dark:text-slate-200">
-          <Layers size={16} /> {reqs.length} task đang chờ cùng lệnh này
+          <Layers size={16} /> {tr('{n} task đang chờ cùng lệnh này', { n: reqs.length })}
         </p>
         {!denying && (
           <>
             <Button variant="secondary" size="sm" disabled={busy} onClick={() => setDenying(true)}>
-              <X size={14} /> Từ chối tất cả
+              <X size={14} /> {tr('Từ chối tất cả')}
             </Button>
             <Button variant="success" size="sm" disabled={busy} onClick={() => (high ? setConfirmHigh(true) : run('allow'))}>
-              <Check size={14} /> Cho phép tất cả
+              <Check size={14} /> {tr('Cho phép tất cả')}
             </Button>
           </>
         )}
       </div>
       {denying && (
         <div className="mb-3">
-          <DenyReasonBox busy={busy} submitLabel="Từ chối tất cả" onSubmit={(r) => run('deny', r)} onCancel={() => setDenying(false)} />
+          <DenyReasonBox busy={busy} submitLabel={tr('Từ chối tất cả')} onSubmit={(r) => run('deny', r)} onCancel={() => setDenying(false)} />
         </div>
       )}
       <div className="space-y-3">
@@ -76,11 +78,11 @@ export function PermissionGroup({ reqs, tasks }: { reqs: PermissionRequest[]; ta
       <ConfirmDialog
         open={confirmHigh}
         danger
-        title="Cho phép lệnh rủi ro cao?"
-        confirmLabel={`Cho phép cả ${reqs.length} task`}
+        title={tr('Cho phép lệnh rủi ro cao?')}
+        confirmLabel={tr('Cho phép cả {n} task', { n: reqs.length })}
         message={
           <>
-            <p>Lệnh này được xếp rủi ro cao{riskReasons.length ? ':' : '.'}</p>
+            <p>{riskReasons.length ? tr('Lệnh này được xếp rủi ro cao:') : tr('Lệnh này được xếp rủi ro cao.')}</p>
             {riskReasons.length > 0 && (
               <ul className="mt-1 list-disc pl-5 text-red-700 dark:text-red-300">
                 {riskReasons.map((x) => (
@@ -88,7 +90,7 @@ export function PermissionGroup({ reqs, tasks }: { reqs: PermissionRequest[]; ta
                 ))}
               </ul>
             )}
-            <p className="mt-2">Bạn chắc chắn muốn cho phép cho cả {reqs.length} task cùng lúc?</p>
+            <p className="mt-2">{tr('Bạn chắc chắn muốn cho phép cho cả {n} task cùng lúc?', { n: reqs.length })}</p>
           </>
         }
         onConfirm={() => run('allow')}
@@ -101,11 +103,14 @@ export function PermissionGroup({ reqs, tasks }: { reqs: PermissionRequest[]; ta
 // ------------------------------------------------------------ thẻ "Cần bạn"
 
 const TONE = {
-  permission: { label: 'Xin quyền', cls: 'border-amber-300 dark:border-amber-800', head: 'text-amber-700 dark:text-amber-400', glyph: 'needs_input' },
-  waiting: { label: 'Đang chờ bạn', cls: 'border-amber-300 dark:border-amber-800', head: 'text-amber-700 dark:text-amber-400', glyph: 'needs_input' },
-  review: { label: 'Chờ duyệt', cls: 'border-slate-200 dark:border-slate-800', head: 'text-violet-700 dark:text-violet-400', glyph: 'review' },
-  failed: { label: 'Bị dừng', cls: 'border-slate-200 dark:border-slate-800', head: 'text-rose-700 dark:text-rose-400', glyph: 'failed' },
+  permission: { label: tr('Xin quyền'), cls: 'border-amber-300 dark:border-amber-800', head: 'text-amber-700 dark:text-amber-400', glyph: 'needs_input' },
+  waiting: { label: tr('Đang chờ bạn'), cls: 'border-amber-300 dark:border-amber-800', head: 'text-amber-700 dark:text-amber-400', glyph: 'needs_input' },
+  review: { label: tr('Chờ duyệt'), cls: 'border-slate-200 dark:border-slate-800', head: 'text-violet-700 dark:text-violet-400', glyph: 'review' },
+  failed: { label: tr('Bị dừng'), cls: 'border-slate-200 dark:border-slate-800', head: 'text-rose-700 dark:text-rose-400', glyph: 'failed' },
 } as const
+
+/** FR-40: câu hỏi của Claude dùng tông xanh, giống thẻ "Claude hỏi bạn" ở trang chi tiết. */
+const QUESTION_TONE = { label: tr('Claude hỏi'), cls: 'border-sky-300 dark:border-sky-800', head: 'text-sky-700 dark:text-sky-400' }
 
 /**
  * Một việc cần bạn, xử lý ngay trên thẻ: cho phép/từ chối quyền, chấp nhận output, tiếp tục/chạy lại.
@@ -116,7 +121,8 @@ export function AttentionCard({ item, task, project, onOpen, className = '' }: {
   const now = useNow(1000)
   const [busy, setBusy] = useState(false)
   const [denying, setDenying] = useState(false)
-  const tone = TONE[item.kind]
+  const isQuestion = item.kind === 'permission' && !!item.req.questions?.length
+  const tone = isQuestion ? { ...TONE.permission, ...QUESTION_TONE } : TONE[item.kind]
   const run = async (fn: () => Promise<unknown>) => {
     if (busy) return
     setBusy(true)
@@ -136,11 +142,24 @@ export function AttentionCard({ item, task, project, onOpen, className = '' }: {
   let actions: ReactNode = null
   const open = (
     <Button size="sm" variant="ghost" onClick={() => onOpen(task.id)}>
-      <Eye size={13} /> Chi tiết
+      <Eye size={13} /> {tr('Chi tiết')}
     </Button>
   )
 
-  if (item.kind === 'permission') {
+  if (item.kind === 'permission' && item.req.questions?.length) {
+    // FR-40: Claude hỏi, trả lời ngay trên thẻ
+    const req = item.req
+    const left = permissionTimeLeft(req.timeoutAt, now)
+    body = (
+      <>
+        <QuestionForm req={req} compact />
+        <p className="inline-flex items-center gap-1 text-xs text-sky-700 dark:text-sky-400">
+          <Timer size={12} /> {left > 0 ? tr('Claude tự quyết sau {time}', { time: duration(left) }) : tr('Hết thời gian chờ…')}
+        </p>
+      </>
+    )
+    actions = open
+  } else if (item.kind === 'permission') {
     const req = item.req
     const high = req.risk === 'high'
     const left = permissionTimeLeft(req.timeoutAt, now)
@@ -148,15 +167,15 @@ export function AttentionCard({ item, task, project, onOpen, className = '' }: {
       <>
         {high && (
           <p className="inline-flex items-center gap-1 text-xs font-semibold text-red-700 dark:text-red-300">
-            <AlertTriangle size={12} /> Rủi ro cao{req.riskReasons?.[0] ? `: ${req.riskReasons[0]}` : ''}
+            <AlertTriangle size={12} /> {tr('Rủi ro cao')}{req.riskReasons?.[0] ? `: ${req.riskReasons[0]}` : ''}
           </p>
         )}
         <p className="text-xs text-slate-500 dark:text-slate-400">
-          Claude xin dùng <span className="font-mono text-slate-700 dark:text-slate-200">{req.tool}</span>
+          {tr('Claude xin dùng')} <span className="font-mono text-slate-700 dark:text-slate-200">{req.tool}</span>
         </p>
         <pre className="line-clamp-3 whitespace-pre-wrap break-all rounded-md bg-slate-900 px-2.5 py-1.5 font-mono text-xs text-slate-100">{permissionDisplay(req)}</pre>
         <p className="inline-flex items-center gap-1 text-xs text-amber-700 dark:text-amber-400">
-          <Timer size={12} /> {left > 0 ? `Tự từ chối sau ${duration(left)}` : 'Hết thời gian chờ…'}
+          <Timer size={12} /> {left > 0 ? tr('Tự từ chối sau {time}', { time: duration(left) }) : tr('Hết thời gian chờ…')}
         </p>
         {denying && <DenyReasonBox busy={busy} onSubmit={(r) => run(() => decidePermission(req.id, 'deny', r))} onCancel={() => setDenying(false)} />}
       </>
@@ -164,25 +183,25 @@ export function AttentionCard({ item, task, project, onOpen, className = '' }: {
     actions = !denying && (
       <>
         {high ? (
-          <Button size="sm" variant="primary" onClick={() => onOpen(task.id)} title="Lệnh rủi ro cao: xem đầy đủ trước khi cho phép">
-            <Eye size={13} /> Xem để duyệt
+          <Button size="sm" variant="primary" onClick={() => onOpen(task.id)} title={tr('Lệnh rủi ro cao: xem đầy đủ trước khi cho phép')}>
+            <Eye size={13} /> {tr('Xem để duyệt')}
           </Button>
         ) : (
           <Button size="sm" variant="success" disabled={busy} onClick={() => run(() => decidePermission(req.id, 'allow'))}>
-            {busy ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />} Cho phép
+            {busy ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />} {tr('Cho phép')}
           </Button>
         )}
         <Button size="sm" disabled={busy} onClick={() => setDenying(true)}>
-          <X size={13} /> Từ chối
+          <X size={13} /> {tr('Từ chối')}
         </Button>
         {!high && open}
       </>
     )
   } else if (item.kind === 'waiting') {
-    body = <p className="text-xs text-slate-500 dark:text-slate-400">Claude đang chờ bạn. Mở chi tiết để xem yêu cầu.</p>
+    body = <p className="text-xs text-slate-500 dark:text-slate-400">{tr('Claude đang chờ bạn. Mở chi tiết để xem yêu cầu.')}</p>
     actions = (
       <Button size="sm" variant="primary" onClick={() => onOpen(task.id)}>
-        <Eye size={13} /> Mở chi tiết
+        <Eye size={13} /> {tr('Mở chi tiết')}
       </Button>
     )
   } else if (item.kind === 'review') {
@@ -194,9 +213,9 @@ export function AttentionCard({ item, task, project, onOpen, className = '' }: {
       <>
         <p className="text-xs text-slate-500 dark:text-slate-400">
           {files === undefined ? (
-            'Đang tải thay đổi…'
+            tr('Đang tải thay đổi…')
           ) : files.length === 0 ? (
-            'Không thay đổi code'
+            tr('Không thay đổi code')
           ) : (
             <>
               {files.length} file · <span className="text-emerald-600 dark:text-emerald-400">+{add}</span> <span className="text-rose-600 dark:text-rose-400">−{del}</span>
@@ -217,13 +236,13 @@ export function AttentionCard({ item, task, project, onOpen, className = '' }: {
           size="sm"
           variant="success"
           disabled={busy}
-          title="Chấp nhận output, chuyển task sang Done (không merge)"
+          title={tr('Chấp nhận output, chuyển task sang Done (không merge)')}
           onClick={() => (hasDraftComments(task.id) ? onOpen(task.id) : run(() => approveTask(task.id)))}
         >
-          {busy ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />} Chấp nhận
+          {busy ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />} {tr('Chấp nhận')}
         </Button>
         <Button size="sm" onClick={() => onOpen(task.id)}>
-          <Eye size={13} /> Xem thay đổi
+          <Eye size={13} /> {tr('Xem thay đổi')}
         </Button>
       </>
     )
@@ -234,7 +253,7 @@ export function AttentionCard({ item, task, project, onOpen, className = '' }: {
       <p className="line-clamp-2 text-xs text-rose-600 dark:text-rose-400">
         {paused ? (
           <span className="inline-flex items-center gap-1 text-amber-700 dark:text-amber-400">
-            <Pause size={12} /> Bạn đã tạm dừng task này
+            <Pause size={12} /> {tr('Bạn đã tạm dừng task này')}
           </span>
         ) : (
           task.failReason
@@ -244,12 +263,12 @@ export function AttentionCard({ item, task, project, onOpen, className = '' }: {
     actions = (
       <>
         {resumable ? (
-          <Button size="sm" variant="primary" disabled={busy} onClick={() => run(() => resumeTask(task.id))} title="Giữ thay đổi đang dở, chạy tiếp phiên Claude cũ">
-            <StepForward size={13} /> Tiếp tục
+          <Button size="sm" variant="primary" disabled={busy} onClick={() => run(() => resumeTask(task.id))} title={tr('Giữ thay đổi đang dở, chạy tiếp phiên Claude cũ')}>
+            <StepForward size={13} /> {tr('Tiếp tục')}
           </Button>
         ) : (
           <Button size="sm" variant="primary" disabled={busy} onClick={() => run(() => retryTask(task.id))}>
-            <RotateCcw size={13} /> Chạy lại
+            <RotateCcw size={13} /> {tr('Chạy lại')}
           </Button>
         )}
         {open}
@@ -260,7 +279,7 @@ export function AttentionCard({ item, task, project, onOpen, className = '' }: {
   return (
     <div className={`flex min-w-0 flex-col gap-2 rounded-lg border bg-white p-3 dark:bg-slate-900 ${tone.cls} ${className}`}>
       <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide">
-        <StatusGlyph status={tone.glyph} size={13} />
+        {isQuestion ? <MessageCircleQuestion size={13} className="text-sky-600" /> : <StatusGlyph status={tone.glyph} size={13} />}
         <span className={tone.head}>{tone.label}</span>
         <span className="ml-auto truncate pl-2 text-xs font-normal normal-case tracking-normal text-slate-500 dark:text-slate-400">
           {project?.name} <span className="font-mono">#{task.id}</span>
@@ -294,16 +313,16 @@ export function AttentionStrip({ items, tasks, projects, onOpen }: { items: Atte
   if (!rows.length)
     return (
       <p className="mb-3 inline-flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
-        <StatusGlyph status="done" size={13} /> Không có việc nào chờ bạn. Các agent đang tự chạy.
+        <StatusGlyph status="done" size={13} /> {tr('Không có việc nào chờ bạn. Các agent đang tự chạy.')}
       </p>
     )
 
   return (
-    <section aria-label="Cần bạn" className="mb-4 rounded-xl border border-amber-300/70 bg-amber-50/60 p-3 dark:border-amber-900/70 dark:bg-amber-950/20">
+    <section aria-label={tr('Cần bạn')} className="mb-4 rounded-xl border border-amber-300/70 bg-amber-50/60 p-3 dark:border-amber-900/70 dark:bg-amber-950/20">
       <div className="flex items-center gap-2 text-sm">
         <StatusGlyph status="needs_input" />
-        <span className="font-semibold">Cần bạn · {rows.length}</span>
-        <span className="hidden text-xs text-slate-500 sm:inline dark:text-slate-400">Claude đang chờ, xử lý ngay tại đây</span>
+        <span className="font-semibold">{tr('Cần bạn')} · {rows.length}</span>
+        <span className="hidden text-xs text-slate-500 sm:inline dark:text-slate-400">{tr('Claude đang chờ, xử lý ngay tại đây')}</span>
         <button
           onClick={() => setCollapsed(!collapsed)}
           aria-expanded={!collapsed}
@@ -311,11 +330,11 @@ export function AttentionStrip({ items, tasks, projects, onOpen }: { items: Atte
         >
           {collapsed ? (
             <>
-              <ChevronDown size={14} /> Mở ra
+              <ChevronDown size={14} /> {tr('Mở ra')}
             </>
           ) : (
             <>
-              <ChevronUp size={14} /> Thu gọn
+              <ChevronUp size={14} /> {tr('Thu gọn')}
             </>
           )}
         </button>
@@ -344,7 +363,7 @@ export function AttentionGrid({ items, tasks, projects, onOpen }: { items: Atten
   if (!items.length)
     return (
       <p className="inline-flex items-center gap-2 rounded-lg border border-dashed border-slate-300 px-3 py-2.5 text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
-        <StatusGlyph status="done" /> Không có việc nào chờ bạn. Việc mới sẽ hiện ở đây kèm thông báo.
+        <StatusGlyph status="done" /> {tr('Không có việc nào chờ bạn. Việc mới sẽ hiện ở đây kèm thông báo.')}
       </p>
     )
 

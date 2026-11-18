@@ -1,5 +1,5 @@
 // Chế độ xác thực Claude (subscription / API key): mã hoá key, gộp cài đặt, môi trường tiến trình con,
-// kiểm tra key, và budget là giới hạn cứng ở chế độ API key. DB in-memory, không gọi mạng, không spawn Claude.
+// và budget là giới hạn cứng ở chế độ API key. DB in-memory, không gọi mạng, không spawn Claude.
 import { test, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdtempSync, readFileSync } from 'node:fs'
@@ -21,7 +21,6 @@ const auth = await import('./claudeAuth.ts')
 const { routes } = await import('./routes.ts')
 const { default: Fastify } = await import('fastify')
 import type { Project, Settings, Task } from './types.ts'
-import type { FetchLike } from './claudeAuth.ts'
 
 const KEY = `sk-ant-api03-${'a'.repeat(40)}WXYZ`
 const KEY2 = `sk-ant-api03-${'b'.repeat(40)}LAST`
@@ -140,36 +139,6 @@ test('runCap: nhỏ nhất giữa giới hạn task và budget còn lại; hết
   assert.equal(runCap(5, { spent: 3, budget: undefined }), 5)
 })
 
-// ---------------------------------------------------------------- kiểm tra key (fetch giả)
-
-const respond = (status: number): FetchLike => () => Promise.resolve({ ok: status >= 200 && status < 300, status })
-
-test('testApiKey: thành công; lỗi được dịch sang tiếng Việt và không chứa key', async () => {
-  let call: { url: string; headers: Record<string, string> } | undefined
-  await auth.testApiKey(KEY, (url, init) => {
-    call = { url, headers: init.headers }
-    return Promise.resolve({ ok: true, status: 200 })
-  })
-  assert.equal(call?.url, 'https://api.anthropic.com/v1/models?limit=1')
-  assert.equal(call?.headers['x-api-key'], KEY)
-  const cases: [FetchLike, RegExp][] = [
-    [respond(401), /không hợp lệ/],
-    [respond(403), /không có quyền/],
-    [() => Promise.reject(new TypeError('fetch failed')), /Không kết nối/],
-    [respond(500), /500/],
-  ]
-  for (const [f, re] of cases) {
-    await assert.rejects(auth.testApiKey(KEY, f), (e: Error) => {
-      assert.ok(e instanceof auth.ClaudeAuthError)
-      assert.match(e.message, re)
-      assert.ok(!e.message.includes(KEY))
-      return true
-    })
-  }
-  // Bị giới hạn tốc độ nghĩa là key hợp lệ
-  await auth.testApiKey(KEY, respond(429))
-})
-
 // ---------------------------------------------------------------- DB + API
 
 test('API settings: lưu key mã hoá trong DB, không bao giờ trả key ra; xoá key; key sai định dạng bị từ chối', async () => {
@@ -198,8 +167,9 @@ test('API settings: lưu key mã hoá trong DB, không bao giờ trả key ra; x
   assert.equal((res.json() as Settings).auth.hasApiKey, false)
   assert.equal(claudeApiKey.get(), undefined)
 
+  // SPEC C1: không còn endpoint gọi thử key lên API của Anthropic
   res = await app.inject({ method: 'POST', url: '/api/settings/claude-auth/test', payload: {} })
-  assert.equal(res.statusCode, 400) // chưa có key
+  assert.equal(res.statusCode, 404)
 
   res = await put({ mode: 'subscription' })
   assert.equal((res.json() as Settings).auth.mode, 'subscription')

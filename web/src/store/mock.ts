@@ -8,6 +8,7 @@ import { resumeBlocker } from '../lib/resume'
 import { parseRefs, resolveRefs, unmetDeps } from '../lib/deps'
 import { formatReviewFeedback } from '../lib/reviewComments'
 import type {
+  Answers,
   DemoFlags,
   FileDiff,
   MergeCheck,
@@ -39,6 +40,7 @@ import type {
 } from '../types'
 import { showBrowserNotification, transitionNotice, type Notice } from '../lib/notify'
 import type { ClaudeLimit } from '../lib/claudeLimit'
+import { normalizePermissionMode, normalizePriority, titleKey, type ImportRequest, type ImportResult, type ImportRowResult } from '../lib/taskImport'
 
 export interface State {
   projects: Project[]
@@ -504,6 +506,82 @@ export async function createTask(input: NewTask): Promise<number> {
   return id
 }
 
+/**
+ * FR-01a, bản giả lập: kiểm tra rút gọn (tiêu đề, mô tả, project, ưu tiên, mức quyền, trùng tiêu đề, mã phụ thuộc trong file).
+ * Quy tắc đầy đủ ở server/src/taskImport.ts.
+ */
+export async function importTasks(req: ImportRequest): Promise<ImportResult & { tasks: Task[] }> {
+  const fallback = state.projects.find((p) => p.id === req.projectId)
+  if (!fallback) throw Object.assign(new Error('Project không hợp lệ'), { code: undefined })
+  const existing = new Map(state.tasks.map((t) => [`${t.projectId}\n${titleKey(t.title)}`, t.id]))
+  const seen = new Map<string, number>()
+  const keys = new Map(req.rows.filter((r) => r.key).map((r) => [r.key!.toUpperCase(), r.line]))
+  const results: ImportRowResult[] = req.rows.map((r) => {
+    const errors: string[] = []
+    const project = r.project ? state.projects.find((p) => p.id === r.project || p.name.toLowerCase() === r.project!.toLowerCase()) : fallback
+    if (!project) errors.push(`Không tìm thấy project "${r.project}"`)
+    if (!r.title.trim()) errors.push('Vui lòng nhập tiêu đề')
+    if (r.prompt.trim().length < 10) errors.push('Mô tả cần ít nhất 10 ký tự')
+    const pr = normalizePriority(r.priority)
+    if (pr && !['urgent', 'high', 'normal', 'low'].includes(pr)) errors.push('Độ ưu tiên không hợp lệ')
+    const mode = normalizePermissionMode(r.permissionMode)
+    if (mode && !['manual', 'acceptEdits', 'plan', 'auto'].includes(mode)) errors.push('Mức quyền không hợp lệ')
+    for (const d of r.dependsOn ?? []) if (!keys.has(d.toUpperCase()) && !/^#?\d+$/.test(d)) errors.push(`Không tìm thấy mã "${d}" trong file hoặc trong các task đã có`)
+    const res: ImportRowResult = { line: r.line, status: errors.length ? 'error' : 'ok', errors: errors.length ? errors : undefined, projectId: project?.id }
+    res.permissionMode = (mode as PermissionMode | undefined) ?? project?.permissionMode
+    if (project && r.title.trim()) {
+      const k = `${project.id}\n${titleKey(r.title)}`
+      const dup = existing.get(k)
+      if (dup !== undefined) res.duplicateOf = { taskId: dup }
+      else if (seen.has(k)) res.duplicateOf = { line: seen.get(k) }
+      else seen.set(k, r.line)
+      if (res.duplicateOf && req.onDuplicate === 'skip') {
+        res.status = 'duplicate'
+        delete res.errors
+      }
+    }
+    return res
+  })
+  const ok = results.filter((r) => r.status === 'ok')
+  const out: ImportResult = { rows: results, created: 0, skipped: results.filter((r) => r.status === 'duplicate').length, autoCount: ok.filter((r) => r.permissionMode === 'auto').length }
+  if (req.dryRun) return { ...out, tasks: [] }
+  const bad = results.filter((r) => r.status === 'error').length
+  if (bad) throw Object.assign(new Error(`Còn ${bad} dòng lỗi, chưa tạo task nào`), { code: 'IMPORT_INVALID' })
+  if (out.autoCount && !req.confirmAuto) throw Object.assign(new Error('Cần xác nhận mức quyền Auto'), { code: 'CONFIRM_AUTO' })
+  const created: Task[] = []
+  const idByLine = new Map<number, number>()
+  let nextId = state.nextTaskId
+  for (const res of ok) {
+    const r = req.rows.find((x) => x.line === res.line)!
+    const id = nextId++
+    idByLine.set(r.line, id)
+    created.push({
+      id,
+      title: r.title.trim(),
+      prompt: r.prompt,
+      projectId: res.projectId!,
+      priority: (normalizePriority(r.priority) as Priority | undefined) ?? 'normal',
+      permissionMode: res.permissionMode!,
+      tags: r.tags ?? [],
+      model: r.model || undefined,
+      status: req.run ? 'queued' : 'backlog',
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    })
+    res.taskId = id
+  }
+  for (const [line, id] of idByLine) {
+    const t = created.find((x) => x.id === id)!
+    const r = req.rows.find((x) => x.line === line)!
+    const deps = (r.dependsOn ?? [])
+      .map((d) => (keys.has(d.toUpperCase()) ? idByLine.get(keys.get(d.toUpperCase())!) : Number(d.replace('#', ''))))
+      .filter((x): x is number => !!x && x !== t.id)
+    if (deps.length) t.dependsOn = [...new Set(deps)]
+  }
+  set((s) => ({ tasks: [...s.tasks, ...created], nextTaskId: nextId }))
+  return { ...out, created: created.length, tasks: created }
+}
+
 export function updateTask(id: number, patch: Partial<Pick<Task, 'title' | 'prompt' | 'priority' | 'projectId' | 'tags' | 'permissionMode' | 'model' | 'dependsOn'>>) {
   patchTask(id, patch.dependsOn ? { ...patch, dependsOn: patch.dependsOn.length ? patch.dependsOn : undefined } : patch)
   afterChange()
@@ -775,6 +853,14 @@ export function decidePermission(reqId: string, decision: 'allow' | 'deny' | 'al
   schedule(a)
 }
 
+/** FR-40 (bản giả lập): lưu đáp án rồi cho task chạy tiếp như khi cho phép. */
+export function answerQuestion(reqId: string, answers: Answers) {
+  const req = state.permissions.find((p) => p.id === reqId)
+  if (!req || req.status !== 'pending') return
+  set((s) => ({ permissions: s.permissions.map((p) => (p.id === reqId ? { ...p, answers } : p)) }))
+  decidePermission(reqId, 'allow')
+}
+
 // ------------------------------------------------------------ project & settings
 
 export async function saveProject(p: Project): Promise<string | null> {
@@ -831,10 +917,6 @@ export async function saveClaudeAuth(input: ClaudeAuthInput): Promise<string | n
     return { settings: { ...s.settings, auth: { ...cur, mode: input.mode ?? cur.mode, hasApiKey, apiKeyHint } } }
   })
   return null
-}
-
-export async function testClaudeAuth(_apiKey?: string): Promise<string | null> {
-  return 'Kiểm tra API key chỉ hoạt động khi chạy với backend thật (npm run dev)'
 }
 
 export async function testTelegram(_input: TelegramSettingsInput): Promise<string | null> {

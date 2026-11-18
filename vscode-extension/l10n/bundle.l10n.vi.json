@@ -5,7 +5,6 @@
   "Added project \"{0}\". You can adjust permissions and budget on the Projects page.": "Đã thêm project \"{0}\". Có thể chỉnh quyền, budget trong trang Dự án.",
   "Agent Task Board requires VS Code 1.101 or later (Node with node:sqlite). This version uses Node {0}.": "Agent Task Board cần VS Code 1.101 trở lên (Node có node:sqlite). Bản hiện tại dùng Node {0}.",
   "Claude Code is not signed in. Sign in with your Claude account (Pro/Max), or use an API key.": "Claude Code chưa đăng nhập. Đăng nhập bằng tài khoản Claude (Pro/Max), hoặc dùng API key.",
-  "Claude Code was not found on this machine. Install the Claude Code extension (it includes the CLI), or use an Anthropic API key.": "Chưa tìm thấy Claude Code trên máy. Cài extension Claude Code (có sẵn CLI), hoặc dùng API key của Anthropic.",
   "Claude Code was not found. Install the Claude Code extension first.": "Chưa tìm thấy Claude Code. Hãy cài extension Claude Code trước.",
   "Claude Code: sign in": "Claude Code: đăng nhập",
   "Could not add the project: {0}": "Không thêm được project: {0}",
@@ -19,5 +18,8 @@
   "Sign in": "Đăng nhập",
   "Starting Task Board…": "Đang khởi động Task Board…",
   "Use API key": "Dùng API key",
-  "Open a folder in VS Code first.": "Hãy mở một thư mục trong VS Code trước."
+  "Open a folder in VS Code first.": "Hãy mở một thư mục trong VS Code trước.",
+  "Claude Code was not found on this machine. Install the Claude Code extension (it includes the CLI), or set the CLI path.": "Chưa tìm thấy Claude Code trên máy. Cài extension Claude Code (có sẵn CLI), hoặc chỉ định đường dẫn CLI.",
+  "Claude Code was not found on this machine. API key mode still runs tasks with the Claude Code CLI: install the Claude Code extension (it includes the CLI), or set the CLI path.": "Chưa tìm thấy Claude Code trên máy. Chế độ API key vẫn chạy task bằng Claude Code CLI: cài extension Claude Code (có sẵn CLI), hoặc chỉ định đường dẫn CLI.",
+  "Set CLI path": "Chỉ định đường dẫn CLI"
 }

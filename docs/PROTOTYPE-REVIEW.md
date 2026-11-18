@@ -57,5 +57,5 @@ PT-02 | Ẩn cột Backlog khi trống | Tuỳ chọn
 
 ## Trạng thái duyệt
 - [x] Vòng 1: không có góp ý
-- [ ] Vòng 2: đã góp ý
+- [x] Vòng 2: không cần (vòng 1 không có góp ý), chốt 2026-11-18
 - [x] **Giao diện đã được duyệt** (2026-11-11), chuyển sang P0

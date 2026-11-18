@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { ChartColumn, FolderGit2, KanbanSquare, Plus, Radar, Rows3, Search, Settings as SettingsIcon } from 'lucide-react'
+import { ChartColumn, FileUp, FolderGit2, KanbanSquare, Plus, Radar, Rows3, Search, Settings as SettingsIcon } from 'lucide-react'
 import { useStore } from '../store/store'
 import { StatusGlyph } from './ui'
 import { fold } from '../lib/taskFilter'
@@ -15,7 +15,17 @@ interface Item {
 }
 
 /** Bảng lệnh Ctrl K: tìm task theo tên/#id, đổi cách xem, giao việc, chuyển trang. */
-export function CommandPalette({ open, onClose, onNewTask }: { open: boolean; onClose: () => void; onNewTask: () => void }) {
+export function CommandPalette({
+  open,
+  onClose,
+  onNewTask,
+  onImport,
+}: {
+  open: boolean
+  onClose: () => void
+  onNewTask: () => void
+  onImport?: () => void
+}) {
   const s = useStore()
   const navigate = useNavigate()
   const loc = useLocation()
@@ -46,6 +56,7 @@ export function CommandPalette({ open, onClose, onNewTask }: { open: boolean; on
   const items = useMemo<Item[]>(() => {
     const actions: Item[] = [
       { id: 'new', label: 'Giao việc mới', hint: 'N', icon: <Plus size={16} />, run: onNewTask },
+      ...(onImport ? [{ id: 'import', label: 'Import task từ CSV / Excel', icon: <FileUp size={16} />, run: onImport }] : []),
       { id: 'v-board', label: 'Xem dạng Bảng', hint: '1', icon: <KanbanSquare size={16} />, run: () => goWork({ view: 'board' }) },
       { id: 'v-ops', label: 'Xem Điều phối · Cần bạn', hint: '2', icon: <Radar size={16} />, run: () => goWork({ view: 'ops' }) },
       { id: 'v-triage', label: 'Xem Phân luồng', hint: '3', icon: <Rows3 size={16} />, run: () => goWork({ view: 'triage' }) },

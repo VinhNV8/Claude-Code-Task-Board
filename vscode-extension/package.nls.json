@@ -8,7 +8,7 @@
   "command.showLogs": "Show server log",
   "description": "A task board for AI coding tasks: queue work, approve tool permissions, review changes before accepting them, and track spending per project.",
   "view.home": "Get started",
-  "view.home.welcome": "Assign work to Claude Code. Each task runs on its own git branch, and you review the diff before merging.\n[Open Task Board](command:agentTaskBoard.open)\n[Add this workspace as a project](command:agentTaskBoard.addWorkspace)\nRequires Claude Code signed in (Pro/Max plan) or an Anthropic API key.\n[Sign in to Claude Code](command:agentTaskBoard.loginClaude)\n[Use an API key](command:agentTaskBoard.openSettings)\n[Open in browser](command:agentTaskBoard.openInBrowser) · [Show log](command:agentTaskBoard.showLogs)",
+  "view.home.welcome": "Assign work to Claude Code and review the changes before you accept them.\n[Open Task Board](command:agentTaskBoard.open)\n[Add this workspace as a project](command:agentTaskBoard.addWorkspace)\nRequires the Claude Code CLI (included in the Claude Code extension), either signed in (Pro/Max plan) or used with an Anthropic API key.\n[Sign in to Claude Code](command:agentTaskBoard.loginClaude)\n[Use an API key](command:agentTaskBoard.openSettings)\n[Open in browser](command:agentTaskBoard.openInBrowser) · [Show log](command:agentTaskBoard.showLogs)",
   "config.claudePath": "Path to the Claude Code CLI executable. Leave empty to detect it automatically (the Claude Code extension, then `claude` on PATH). Run **Restart server** after changing it.",
   "config.idleShutdownMinutes": "Stop the background server after this many idle minutes (no window has the Task Board open and no task is running, waiting or scheduled). `0`: never stop."
 }

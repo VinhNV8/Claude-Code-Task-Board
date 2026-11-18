@@ -9,13 +9,13 @@ import { readTaskFile, readTaskImage, saveTaskFile } from './reviewFiles.ts'
 import { PREVIEW_PORT, PREVIEW_TTL_MS, signPreviewToken } from './preview.ts'
 import { retryTask } from './retry.ts'
 import { resumeTask } from './resume.ts'
+import { checkKeyToken } from './apiKeyBroker.ts'
 import { claudeApiKey, events, projects, reviews, runs, scheduleRuns, schedules, settings, taskDeps, tasks, telegramToken, templates, testRuns } from './db.ts'
-import { ClaudeAuthError, mergeAuth, testApiKey, validateApiKey } from './claudeAuth.ts'
+import { ClaudeAuthError, mergeAuth } from './claudeAuth.ts'
 import { ScheduleError, checkCron, validateSchedule, type ScheduleInput } from './schedules.ts'
 import { nextRuns } from './cron.ts'
 import { TelegramError, mergeTelegram, sendTelegram, validateAppUrl, validateChatId, validateToken } from './telegram.ts'
 import { TemplateError, validateTemplate, type TemplateInput } from './templates.ts'
-import { TagError, validateTags } from './tags.ts'
 import { StatsError, computeStats, parseStatsQuery, type StatsOptions, type StatsQuery } from './stats.ts'
 import { hasSlot, isRunning, notifyFromClaude, pump, runNow, startRun, stopTask, updateTask } from './runner.ts'
 import { TestCommandError, parseCommand } from './testCommand.ts'
@@ -27,18 +27,18 @@ import { adjustByHistory } from './modelHistoryService.ts'
 import { removeWorktree, taskDiff } from './git.ts'
 import { canDeleteTask } from '../../web/src/lib/taskDelete.ts'
 import { INTERNAL_TOKEN } from './config.ts'
-import { decidePermission, decidePermissionsBatch, initPermissions, listPermissions, requestPermission, type Decision } from './permissions.ts'
+import { answerQuestion, decidePermission, decidePermissionsBatch, initPermissions, listPermissions, requestPermission, type Decision } from './permissions.ts'
 import { BudgetError, parseBudgetAction, parseUsd } from './budget.ts'
 import { PERMISSION_PRESETS } from './permissionPresets.ts'
 import { dismissRule, ruleSuggestionsFor, watchRuleSuggestions } from './ruleSuggestions.ts'
 import { getBudgets, isProjectBlocked, refreshBudgets, withBlockedReason } from './budgetService.ts'
 import { getClaudeLimit } from './claudeLimit.ts'
 import { DepsError, pendingDeps, suggestDeps, validateDeps } from './taskDeps.ts'
-import type { FileDiff, PermissionMode, Priority, Project, PromptTemplate, Schedule, Settings, TelegramSettingsInput, ClaudeAuthInput } from './types.ts'
+import { MODES, validateTask, type TaskBody } from './taskValidate.ts'
+import { importTasks } from './taskImport.ts'
+import type { ImportRequest } from '../../web/src/lib/taskImport.ts'
+import type { FileDiff, PermissionMode, Project, PromptTemplate, Schedule, Settings, TelegramSettingsInput, ClaudeAuthInput } from './types.ts'
 
-const PRIORITIES: Priority[] = ['urgent', 'high', 'normal', 'low']
-// Không cho phép bypassPermissions (SPEC Mục 9)
-const MODES: PermissionMode[] = ['acceptEdits', 'manual', 'auto', 'plan']
 
 
 function gitToplevel(path: string) {
@@ -295,22 +295,6 @@ export async function routes(app: FastifyInstance) {
 
   // ------------------------------------------------------------ tasks
 
-  interface TaskBody {
-    title?: string
-    prompt?: string
-    projectId?: string
-    priority?: Priority
-    permissionMode?: PermissionMode
-    tags?: string[]
-    /** '' hoặc null: kế thừa project → Settings (P5, D2). */
-    model?: string | null
-    /** Giới hạn chi phí mỗi lần chạy (USD, `--max-budget-usd`). null/'': không giới hạn. */
-    maxCostUsd?: number | string | null
-    /** Các task phải Done trước (FR-08). Không gửi: giữ nguyên; [] hoặc null: bỏ hết. */
-    dependsOn?: number[] | null
-    run?: boolean
-  }
-
   /** Kiểm tra danh sách chờ (lỗi tiếng Việt 400). */
   function checkDeps(raw: unknown, o: { taskId?: number; projectId: string }) {
     try {
@@ -321,49 +305,6 @@ export async function routes(app: FastifyInstance) {
     }
   }
 
-  function validateTask(b: TaskBody, partial = false) {
-    const out: TaskBody = {}
-    if (!partial || b.title !== undefined) {
-      if (!b.title?.trim()) throw new HttpError(400, 'Vui lòng nhập tiêu đề')
-      out.title = b.title.trim()
-    }
-    if (!partial || b.prompt !== undefined) {
-      if (!b.prompt || b.prompt.trim().length < 10) throw new HttpError(400, 'Mô tả cần ít nhất 10 ký tự')
-      out.prompt = b.prompt
-    }
-    if (!partial || b.projectId !== undefined) {
-      if (!b.projectId || !projects.get(b.projectId)) throw new HttpError(400, 'Project không hợp lệ')
-      out.projectId = b.projectId
-    }
-    if (b.priority !== undefined) {
-      if (!PRIORITIES.includes(b.priority)) throw new HttpError(400, 'Độ ưu tiên không hợp lệ')
-      out.priority = b.priority
-    }
-    if (b.permissionMode !== undefined) {
-      if (!MODES.includes(b.permissionMode)) throw new HttpError(400, 'Mức quyền không hợp lệ')
-      out.permissionMode = b.permissionMode
-    }
-    if (b.tags !== undefined) {
-      try {
-        out.tags = validateTags(b.tags)
-      } catch (e) {
-        if (e instanceof TagError) throw new HttpError(400, e.message)
-        throw e
-      }
-    }
-    if (b.model !== undefined) out.model = normalizeModel(b.model)
-    if (b.maxCostUsd !== undefined) {
-      try {
-        const n = parseUsd(b.maxCostUsd, 'Giới hạn chi phí mỗi lần chạy')
-        if (n === 0) throw new BudgetError('Giới hạn chi phí mỗi lần chạy phải lớn hơn 0 (để trống nếu không giới hạn)')
-        out.maxCostUsd = n ?? null
-      } catch (e) {
-        if (e instanceof BudgetError) throw new HttpError(400, e.message)
-        throw e
-      }
-    }
-    return out
-  }
 
   app.post<{ Body: TaskBody }>('/api/tasks', async (req) => {
     const v = validateTask(req.body)
@@ -404,6 +345,14 @@ export async function routes(app: FastifyInstance) {
     // Bớt phụ thuộc có thể làm task Queued chạy được ngay.
     if (deps) pump()
     return updated
+  })
+
+  // FR-01a: import task hàng loạt (docs/SPEC-IMPORT.md). 200 dòng × ô tới 32k ký tự vượt bodyLimit mặc định 1 MB.
+  app.post<{ Body: Partial<ImportRequest> }>('/api/tasks/import', { bodyLimit: 12 * 1024 * 1024 }, async (req) => {
+    const { tasks: created, ...result } = importTasks(req.body)
+    for (const t of created) broadcast({ type: 'task', task: t })
+    if (created.length) pump()
+    return { ...result, tasks: created }
   })
 
   // FR-08 nguồn ③: gợi ý phụ thuộc từ `#id` / mã task trong tiêu đề + prompt (không tự thêm).
@@ -545,6 +494,11 @@ export async function routes(app: FastifyInstance) {
     return decidePermission(req.params.id, d, d === 'deny' ? req.body?.reason : undefined)
   })
 
+  // FR-40: trả lời câu hỏi AskUserQuestion của Claude. answers: { "<nguyên văn câu hỏi>": "<câu trả lời>" }
+  app.post<{ Params: { id: string }; Body: { answers?: unknown } }>('/api/permissions/:id/answer', async (req) =>
+    answerQuestion(req.params.id, req.body?.answers),
+  )
+
   interface PermissionBody {
     taskId?: string | number
     toolName?: string
@@ -661,6 +615,16 @@ export async function routes(app: FastifyInstance) {
     notificationType?: string
   }
 
+  // Chế độ API key: script apiKeyHelper của run hỏi key (apiKeyBroker.ts). Chỉ localhost (isInternalPath),
+  // chỉ với token của run đang chạy; key trả dạng text, không cache.
+  app.get<{ Querystring: { task?: string } }>('/api/internal/api-key', async (req, reply) => {
+    const taskId = Number(req.query.task)
+    const key = settings.get().auth.mode === 'apiKey' ? claudeApiKey.effective() : undefined
+    if (!Number.isInteger(taskId) || !isRunning(taskId) || !checkKeyToken(taskId, req.headers['x-taskboard-key-token']) || !key)
+      throw new HttpError(401, 'Không cấp API key cho yêu cầu này')
+    return reply.header('cache-control', 'no-store').type('text/plain; charset=utf-8').send(key)
+  })
+
   app.post<{ Body: NotificationBody }>('/api/hooks/notification', async (req) => {
     if (req.headers['x-taskboard-token'] !== INTERNAL_TOKEN) throw new HttpError(401, 'Token nội bộ không hợp lệ')
     const b = req.body ?? {}
@@ -755,20 +719,6 @@ export async function routes(app: FastifyInstance) {
       await sendTelegram({ token, chatId }, `🔔 Tin nhắn thử từ Claude Task Board.\nThông báo Telegram đã hoạt động.${link}`)
     } catch (e) {
       if (e instanceof TelegramError) throw new HttpError(400, e.message)
-      throw e
-    }
-    return { ok: true }
-  })
-
-  // Kiểm tra API key Claude: key đang nhập (nếu có) hoặc key đang dùng. Chỉ liệt kê model, không tốn tiền.
-  app.post<{ Body: { apiKey?: string } }>('/api/settings/claude-auth/test', async (req) => {
-    try {
-      const raw = req.body?.apiKey
-      const key = typeof raw === 'string' && raw.trim() ? validateApiKey(raw) : claudeApiKey.effective()
-      if (!key) throw new ClaudeAuthError('Chưa nhập API key')
-      await testApiKey(key)
-    } catch (e) {
-      if (e instanceof ClaudeAuthError) throw new HttpError(400, e.message)
       throw e
     }
     return { ok: true }

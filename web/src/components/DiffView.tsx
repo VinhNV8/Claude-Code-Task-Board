@@ -25,6 +25,7 @@ import { fileSignature, isMarkdownPath } from '../lib/reviewComments'
 import { isHtmlPath, isImagePath } from '../lib/diff'
 import { HtmlPreview } from './HtmlPreview'
 import type { ReviewDraftApi } from '../lib/reviewDraft'
+import { tr } from '../lib/i18n'
 
 const STATUS_ICON = {
   added: <FilePlus size={14} className="text-emerald-500" />,
@@ -71,13 +72,13 @@ function ImageSide({ label, src, tone }: { label: string; src: string; tone: 'ol
         </span>
         {size && <span className="font-mono text-slate-500 dark:text-slate-400">{size}</span>}
         <a href={src} target="_blank" rel="noreferrer" className="ml-auto text-slate-500 hover:text-indigo-600 hover:underline dark:text-slate-400">
-          Mở ảnh gốc
+          {tr('Mở ảnh gốc')}
         </a>
       </figcaption>
       {/* Nền ca-rô để thấy vùng trong suốt của PNG/SVG */}
       <div className="grid min-h-[140px] place-items-center rounded-md border border-slate-200 bg-[length:16px_16px] bg-[position:0_0,8px_8px] bg-[image:linear-gradient(45deg,#e2e8f0_25%,transparent_25%,transparent_75%,#e2e8f0_75%),linear-gradient(45deg,#e2e8f0_25%,transparent_25%,transparent_75%,#e2e8f0_75%)] p-3 dark:border-slate-700 dark:bg-[image:linear-gradient(45deg,#1e293b_25%,transparent_25%,transparent_75%,#1e293b_75%),linear-gradient(45deg,#1e293b_25%,transparent_25%,transparent_75%,#1e293b_75%)]">
         {state === 'loading' && <Loader2 size={18} className="animate-spin text-slate-400" />}
-        {state === 'error' && <span className="text-xs text-rose-600 dark:text-rose-400">Không tải được ảnh</span>}
+        {state === 'error' && <span className="text-xs text-rose-600 dark:text-rose-400">{tr('Không tải được ảnh')}</span>}
         <img
           src={src}
           alt={label}
@@ -98,8 +99,8 @@ function ImageSide({ label, src, tone }: { label: string; src: string; tone: 'ol
 function ImagePane({ file, imageUrl }: { file: FileDiff; imageUrl: NonNullable<DiffReview['imageUrl']> }) {
   return (
     <div className="flex flex-col gap-4 p-3 sm:flex-row">
-      {file.status !== 'added' && <ImageSide label={file.status === 'deleted' ? 'Đã xoá' : 'Trước'} tone="old" src={imageUrl(file.oldPath ?? file.path, 'old')} />}
-      {file.status !== 'deleted' && <ImageSide label={file.status === 'added' ? 'Ảnh mới' : 'Sau'} tone="new" src={imageUrl(file.path, 'new')} />}
+      {file.status !== 'added' && <ImageSide label={file.status === 'deleted' ? tr('Đã xoá') : tr('Trước')} tone="old" src={imageUrl(file.oldPath ?? file.path, 'old')} />}
+      {file.status !== 'deleted' && <ImageSide label={file.status === 'added' ? tr('Ảnh mới') : tr('Sau')} tone="new" src={imageUrl(file.path, 'new')} />}
     </div>
   )
 }
@@ -129,11 +130,11 @@ function Composer({ initial = '', onSubmit, onCancel, label }: { initial?: strin
           if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) submit()
           if (e.key === 'Escape') onCancel()
         }}
-        placeholder="Nhận xét cho Claude… (Ctrl+Enter để lưu)"
+        placeholder={tr('Nhận xét cho Claude… (Ctrl+Enter để lưu)')}
       />
       <div className="flex justify-end gap-2">
         <Button size="sm" variant="ghost" onClick={onCancel}>
-          Huỷ
+          {tr('Huỷ')}
         </Button>
         <Button size="sm" variant="primary" disabled={!text.trim()} onClick={submit}>
           {label}
@@ -149,7 +150,7 @@ function CommentBox({ c, review }: { c: ReviewComment; review?: DiffReview }) {
     return (
       <Composer
         initial={c.text}
-        label="Lưu"
+        label={tr('Lưu')}
         onCancel={() => setEditing(false)}
         onSubmit={(t) => {
           review.draft.editComment(c.id, t)
@@ -163,10 +164,10 @@ function CommentBox({ c, review }: { c: ReviewComment; review?: DiffReview }) {
       <p className="min-w-0 flex-1 whitespace-pre-wrap break-words">{c.text}</p>
       {review?.canEdit && (
         <span className="flex shrink-0 gap-1">
-          <button title="Sửa nhận xét" className="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200" onClick={() => setEditing(true)}>
+          <button title={tr('Sửa nhận xét')} className="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200" onClick={() => setEditing(true)}>
             <Pencil size={14} />
           </button>
-          <button title="Xoá nhận xét" className="text-slate-400 hover:text-rose-600" onClick={() => review.draft.removeComment(c.id)}>
+          <button title={tr('Xoá nhận xét')} className="text-slate-400 hover:text-rose-600" onClick={() => review.draft.removeComment(c.id)}>
             <Trash2 size={14} />
           </button>
         </span>
@@ -202,7 +203,7 @@ function CommentRows({
         {list.map((c) => (
           <CommentBox key={c.id} c={c} review={review} />
         ))}
-        {open && <Composer label="Thêm nhận xét" onCancel={onCancel} onSubmit={(t) => onAdd(open, t)} />}
+        {open && <Composer label={tr('Thêm nhận xét')} onCancel={onCancel} onSubmit={(t) => onAdd(open, t)} />}
       </td>
     </tr>
   )
@@ -214,7 +215,7 @@ function NoCell({ n, onComment }: { n?: number; onComment?: () => void }) {
     <td className="relative w-12 select-none border-r border-slate-200 px-2 text-right align-top text-slate-400 dark:border-slate-800">
       {onComment && (
         <button
-          title="Nhận xét dòng này"
+          title={tr('Nhận xét dòng này')}
           onClick={onComment}
           className="absolute left-0.5 top-0.5 hidden rounded bg-indigo-600 p-px text-white group-hover:block"
         >
@@ -372,10 +373,10 @@ function MarkdownPane({
   if (!state || state.loading)
     return (
       <p className="flex items-center justify-center gap-2 py-8 text-sm text-slate-400">
-        <Loader2 size={16} className="animate-spin" /> Đang tải nội dung…
+        <Loader2 size={16} className="animate-spin" /> {tr('Đang tải nội dung…')}
       </p>
     )
-  if (state.content === null) return <p className="py-8 text-center text-sm text-slate-400">Không đọc được nội dung file. Hãy xem ở chế độ Diff.</p>
+  if (state.content === null) return <p className="py-8 text-center text-sm text-slate-400">{tr('Không đọc được nội dung file. Hãy xem ở chế độ Diff.')}</p>
 
   if (mode === 'preview')
     return (
@@ -394,7 +395,7 @@ function MarkdownPane({
         spellCheck={false}
       />
       <div className="flex items-center justify-end gap-2">
-        <span className="mr-auto text-xs text-slate-500">Lưu sẽ ghi vào worktree và commit trên nhánh task. Diff được tính lại.</span>
+        <span className="mr-auto text-xs text-slate-500">{tr('Lưu sẽ ghi vào worktree và commit trên nhánh task. Diff được tính lại.')}</span>
         <Button
           size="sm"
           variant="ghost"
@@ -404,7 +405,7 @@ function MarkdownPane({
             onModeChange('preview')
           }}
         >
-          Huỷ
+          {tr('Huỷ')}
         </Button>
         <Button
           size="sm"
@@ -415,12 +416,13 @@ function MarkdownPane({
             const ok = await review.saveFile(file.path, text)
             setSaving(false)
             if (ok) {
-              setState({ sig: '', content: text, loading: false }) // diff mới về sẽ tải lại
+              // diff mới về sẽ tải lại
+              setState({ sig: '', content: text, loading: false })
               onModeChange('preview')
             }
           }}
         >
-          {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Lưu &amp; commit
+          {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} {tr('Lưu & commit')}
         </Button>
       </div>
     </div>
@@ -455,7 +457,7 @@ export function DiffView({ files, review }: { files: FileDiff[]; review?: DiffRe
   const isViewed = (f: FileDiff) => review?.draft.viewed[f.path] === fileSignature(f)
   const viewedCount = files.filter(isViewed).length
 
-  if (!file) return <p className="py-8 text-center text-sm text-slate-400">Không có thay đổi nào.</p>
+  if (!file) return <p className="py-8 text-center text-sm text-slate-400">{tr('Không có thay đổi nào.')}</p>
 
   const md = isMarkdownPath(file.path) && file.status !== 'deleted' && !!review
   // Ảnh: xem trước Trước/Sau. SVG còn có mã nguồn (diff chữ) nên cho chuyển qua lại
@@ -492,8 +494,8 @@ export function DiffView({ files, review }: { files: FileDiff[]; review?: DiffRe
           {review && (
             <>
               {' '}
-              · <span className={viewedCount === files.length ? 'text-emerald-600' : ''}>đã xem {viewedCount}/{files.length}</span>
-              {allComments.length > 0 && <> · {allComments.length} nhận xét</>}
+              · <span className={viewedCount === files.length ? 'text-emerald-600' : ''}>{tr('đã xem {n}/{total}', { n: viewedCount, total: files.length })}</span>
+              {allComments.length > 0 && <> · {tr('{n} nhận xét', { n: allComments.length })}</>}
             </>
           )}
         </span>
@@ -522,13 +524,13 @@ export function DiffView({ files, review }: { files: FileDiff[]; review?: DiffRe
                   {STATUS_ICON[f.status]}
                   <span className={`min-w-0 flex-1 truncate font-mono ${seen ? 'text-slate-400' : ''}`}>{f.path}</span>
                   {n > 0 && (
-                    <span className="inline-flex shrink-0 items-center gap-0.5 text-amber-600" title={`${n} nhận xét`}>
+                    <span className="inline-flex shrink-0 items-center gap-0.5 text-amber-600" title={tr('{n} nhận xét', { n })}>
                       <MessageSquareText size={12} />
                       {n}
                     </span>
                   )}
                   {f.binary ? (
-                    <span className="shrink-0 text-slate-400">{isImagePath(f.path) ? 'ảnh' : 'nhị phân'}</span>
+                    <span className="shrink-0 text-slate-400">{isImagePath(f.path) ? tr('ảnh') : tr('nhị phân')}</span>
                   ) : (
                     <>
                       <span className="shrink-0 text-emerald-600">+{f.additions}</span>
@@ -548,14 +550,14 @@ export function DiffView({ files, review }: { files: FileDiff[]; review?: DiffRe
             </span>
             {md && (
               <div className="flex rounded-md ring-1 ring-slate-200 dark:ring-slate-700">
-                <Seg active={mode === 'preview'} onClick={() => setMode('preview')} title="Xem Markdown đã render">
+                <Seg active={mode === 'preview'} onClick={() => setMode('preview')} title={tr('Xem Markdown đã render')}>
                   <Eye size={13} /> Preview
                 </Seg>
-                <Seg active={mode === 'diff'} onClick={() => setMode('diff')} title="Xem thay đổi, nhận xét theo dòng">
+                <Seg active={mode === 'diff'} onClick={() => setMode('diff')} title={tr('Xem thay đổi, nhận xét theo dòng')}>
                   <FileCode2 size={13} /> Diff
                 </Seg>
                 {review?.canEdit && (
-                  <Seg active={mode === 'edit'} onClick={() => setMode('edit')} title="Sửa trực tiếp nội dung file">
+                  <Seg active={mode === 'edit'} onClick={() => setMode('edit')} title={tr('Sửa trực tiếp nội dung file')}>
                     <Pencil size={13} /> Edit
                   </Seg>
                 )}
@@ -563,32 +565,32 @@ export function DiffView({ files, review }: { files: FileDiff[]; review?: DiffRe
             )}
             {html && (
               <div className="flex rounded-md ring-1 ring-slate-200 dark:ring-slate-700">
-                <Seg active={mode === 'preview'} onClick={() => setMode('preview')} title="Xem giao diện trang (chạy trong vùng cách ly)">
-                  <Eye size={13} /> Giao diện
+                <Seg active={mode === 'preview'} onClick={() => setMode('preview')} title={tr('Xem giao diện trang (chạy trong vùng cách ly)')}>
+                  <Eye size={13} /> {tr('Giao diện')}
                 </Seg>
-                <Seg active={mode === 'diff'} onClick={() => setMode('diff')} title="Xem thay đổi mã nguồn, nhận xét theo dòng">
-                  <FileCode2 size={13} /> Mã
+                <Seg active={mode === 'diff'} onClick={() => setMode('diff')} title={tr('Xem thay đổi mã nguồn, nhận xét theo dòng')}>
+                  <FileCode2 size={13} /> {tr('Mã')}
                 </Seg>
               </div>
             )}
             {imgHasCode && (
               <div className="flex rounded-md ring-1 ring-slate-200 dark:ring-slate-700">
-                <Seg active={mode === 'preview'} onClick={() => setMode('preview')} title="Xem ảnh trước và sau khi sửa">
-                  <ImageIcon size={13} /> Ảnh
+                <Seg active={mode === 'preview'} onClick={() => setMode('preview')} title={tr('Xem ảnh trước và sau khi sửa')}>
+                  <ImageIcon size={13} /> {tr('Ảnh')}
                 </Seg>
-                <Seg active={mode === 'diff'} onClick={() => setMode('diff')} title="Xem thay đổi mã nguồn, nhận xét theo dòng">
-                  <FileCode2 size={13} /> Mã
+                <Seg active={mode === 'diff'} onClick={() => setMode('diff')} title={tr('Xem thay đổi mã nguồn, nhận xét theo dòng')}>
+                  <FileCode2 size={13} /> {tr('Mã')}
                 </Seg>
               </div>
             )}
             {review?.canEdit && (
-              <Button size="sm" variant="ghost" onClick={() => setFileComposer(true)} title="Nhận xét chung cho cả file">
-                <MessageSquarePlus size={14} /> Nhận xét file
+              <Button size="sm" variant="ghost" onClick={() => setFileComposer(true)} title={tr('Nhận xét chung cho cả file')}>
+                <MessageSquarePlus size={14} /> {tr('Nhận xét file')}
               </Button>
             )}
             {review && (
-              <Button size="sm" variant={isViewed(file) ? 'success' : 'secondary'} onClick={toggleViewed} title="Đánh dấu đã review file này">
-                {isViewed(file) ? <CheckSquare size={14} /> : <Square size={14} />} Đã xem
+              <Button size="sm" variant={isViewed(file) ? 'success' : 'secondary'} onClick={toggleViewed} title={tr('Đánh dấu đã review file này')}>
+                {isViewed(file) ? <CheckSquare size={14} /> : <Square size={14} />} {tr('Đã xem')}
               </Button>
             )}
           </div>
@@ -599,7 +601,7 @@ export function DiffView({ files, review }: { files: FileDiff[]; review?: DiffRe
               ))}
               {fileComposer && review && (
                 <Composer
-                  label="Thêm nhận xét"
+                  label={tr('Thêm nhận xét')}
                   onCancel={() => setFileComposer(false)}
                   onSubmit={(text) => {
                     review.draft.addComment({ path: file.path, text })
@@ -618,7 +620,7 @@ export function DiffView({ files, review }: { files: FileDiff[]; review?: DiffRe
               <MarkdownPane file={file} mode={mode} review={review!} onModeChange={setMode} />
             ) : file.hunks.length === 0 ? (
               <p className="py-8 text-center text-sm text-slate-400">
-                {file.binary ? 'File nhị phân, không xem trước được nội dung.' : 'Không có nội dung để hiển thị (chỉ đổi tên hoặc đổi quyền file).'}
+                {file.binary ? tr('File nhị phân, không xem trước được nội dung.') : tr('Không có nội dung để hiển thị (chỉ đổi tên hoặc đổi quyền file).')}
               </p>
             ) : layout === 'unified' ? (
               <Unified {...bodyProps} />
@@ -628,7 +630,7 @@ export function DiffView({ files, review }: { files: FileDiff[]; review?: DiffRe
           </div>
           {md && mode === 'preview' && lineComments.length > 0 && (
             <p className="border-t border-slate-200 px-3 py-1.5 text-xs text-slate-500 dark:border-slate-800">
-              File có {lineComments.length} nhận xét theo dòng, chuyển sang <b>Diff</b> để xem.
+              {tr('File có {n} nhận xét theo dòng, chuyển sang Diff để xem.', { n: lineComments.length })}
             </p>
           )}
         </div>

@@ -182,6 +182,8 @@ if (!taskCols.some((c) => c.name === 'max_cost_usd')) db.exec('ALTER TABLE tasks
 // P7-05 (FR-46): lý do người dùng nhập khi Từ chối, gửi kèm message deny cho Claude.
 const permCols = db.prepare('PRAGMA table_info(permission_requests)').all() as { name: string }[]
 if (!permCols.some((c) => c.name === 'deny_reason')) db.exec('ALTER TABLE permission_requests ADD COLUMN deny_reason TEXT')
+// FR-40: đáp án (JSON) cho câu hỏi AskUserQuestion, trả về Claude qua updatedInput.answers.
+if (!permCols.some((c) => c.name === 'answers_json')) db.exec('ALTER TABLE permission_requests ADD COLUMN answers_json TEXT')
 // C-02 (FR-08): phụ thuộc giữa task. Xoá task nào thì liên kết của nó tự mất.
 db.exec(`
 CREATE TABLE IF NOT EXISTS task_deps (
@@ -282,18 +284,28 @@ export const taskDeps = {
   dependents: (taskId: number) =>
     (db.prepare('SELECT task_id FROM task_deps WHERE depends_on_id = ? ORDER BY task_id').all(taskId) as { task_id: number }[]).map((r) => r.task_id),
   /** Thay toàn bộ danh sách chờ của task (đã kiểm tra hợp lệ ở tầng trên). */
-  set: (taskId: number, deps: number[]) => {
-    db.exec('BEGIN')
-    try {
-      db.prepare('DELETE FROM task_deps WHERE task_id = ?').run(taskId)
-      const ins = db.prepare('INSERT OR IGNORE INTO task_deps (task_id, depends_on_id) VALUES (?, ?)')
-      for (const d of deps) ins.run(taskId, d)
-      db.exec('COMMIT')
-    } catch (err) {
-      db.exec('ROLLBACK')
-      throw err
-    }
-  },
+  set: (taskId: number, deps: number[]) => inTransaction(() => writeDeps(taskId, deps)),
+  /** Như `set` nhưng không mở transaction riêng: gọi bên trong `inTransaction` (import task, FR-01a). */
+  write: (taskId: number, deps: number[]) => writeDeps(taskId, deps),
+}
+
+function writeDeps(taskId: number, deps: number[]) {
+  db.prepare('DELETE FROM task_deps WHERE task_id = ?').run(taskId)
+  const ins = db.prepare('INSERT OR IGNORE INTO task_deps (task_id, depends_on_id) VALUES (?, ?)')
+  for (const d of deps) ins.run(taskId, d)
+}
+
+/** Chạy `fn` trong một transaction: lỗi thì ROLLBACK và ném lại. Không lồng nhau. */
+export function inTransaction<T>(fn: () => T): T {
+  db.exec('BEGIN')
+  try {
+    const out = fn()
+    db.exec('COMMIT')
+    return out
+  } catch (err) {
+    db.exec('ROLLBACK')
+    throw err
+  }
 }
 
 const toRun = (r: Row): Run => ({
@@ -601,9 +613,18 @@ export const templates = {
   remove: (id: string) => db.prepare('DELETE FROM templates WHERE id = ?').run(id),
 }
 
-if (!hasTemplatesTable) {
+// Nạp template mặc định chưa từng nạp (kể cả template mặc định thêm ở phiên bản sau).
+// Ghi nhớ id đã nạp trong settings để template người dùng đã xoá không bị thêm lại.
+{
+  const LEGACY_SEEDED = ['tpl-bug', 'tpl-test', 'tpl-refactor', 'tpl-feature'] // trước khi có cơ chế ghi nhớ
+  const row = db.prepare("SELECT value FROM settings WHERE key = 'templates_seeded'").get() as { value: string } | undefined
+  const seeded = new Set<string>(row ? (JSON.parse(row.value) as string[]) : hasTemplatesTable ? LEGACY_SEEDED : [])
   const now = Date.now()
-  DEFAULT_TEMPLATES.forEach((t, i) => templates.upsert(t, now + i))
+  DEFAULT_TEMPLATES.filter((t) => !seeded.has(t.id)).forEach((t, i) => {
+    if (!templates.get(t.id)) templates.upsert(t, now + i)
+    seeded.add(t.id)
+  })
+  db.prepare("INSERT INTO settings (key, value) VALUES ('templates_seeded', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(JSON.stringify([...seeded]))
 }
 
 // ---------------------------------------------------------------- schedules (PLAN 4.6)

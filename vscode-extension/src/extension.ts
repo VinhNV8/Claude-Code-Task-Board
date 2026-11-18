@@ -180,25 +180,31 @@ function run(file: string, args: string[], cwd?: string) {
 
 let claudeChecked = false
 
-/** Kiểm tra một lần mỗi phiên: có Claude Code chưa, đã đăng nhập chưa (bỏ qua nếu đang dùng API key). */
+/**
+ * Kiểm tra một lần mỗi phiên: có Claude Code CLI chưa (cả hai chế độ xác thực đều chạy task bằng CLI),
+ * và ở chế độ đăng nhập thì đã đăng nhập chưa.
+ */
 async function checkClaude(ctx: vscode.ExtensionContext, info: ServerInfo) {
   if (claudeChecked) return
   claudeChecked = true
   const h: Health | undefined = await manager.health(info)
-  if (!h || h.authMode === 'apiKey') return
+  if (!h) return
   if (!h.claude?.found || !h.claude.path) {
     const install = t('Install Claude Code')
-    const useKey = t('Use API key')
+    const setPath = t('Set CLI path')
     const pick = await vscode.window.showWarningMessage(
-      t('Claude Code was not found on this machine. Install the Claude Code extension (it includes the CLI), or use an Anthropic API key.'),
+      h.authMode === 'apiKey'
+        ? t('Claude Code was not found on this machine. API key mode still runs tasks with the Claude Code CLI: install the Claude Code extension (it includes the CLI), or set the CLI path.')
+        : t('Claude Code was not found on this machine. Install the Claude Code extension (it includes the CLI), or set the CLI path.'),
       install,
-      useKey,
+      setPath,
     )
     if (pick === install) await vscode.commands.executeCommand('workbench.extensions.search', CLAUDE_EXTENSION_ID)
-    if (pick === useKey) await openBoard(ctx, 'settings')
+    if (pick === setPath) await vscode.commands.executeCommand('workbench.action.openSettings', 'agentTaskBoard.claudePath')
     claudeChecked = false // kiểm tra lại lần mở sau
     return
   }
+  if (h.authMode === 'apiKey') return // dùng API key: không cần đăng nhập Claude Code
   let status
   try {
     status = parseAuthStatus(await run(h.claude.path, ['auth', 'status']))

@@ -70,6 +70,6 @@ npm run seed:backlog                # tạo task ở cột Backlog
 | P7-05 | Từ chối kèm lý do + duyệt hàng loạt | low | P7-04 | P7 |
 
 ## Việc của bạn (không giao cho Claude)
-- [ ] **Điểm duyệt #1**: bấm thử giao diện P1 trên trình duyệt (PLAN, mục "Kết quả kiểm thử P1").
-- [ ] Chọn hạng mục P4 muốn làm (PLAN, mục "Phê duyệt kế hoạch"). Task P4 nào không cần thì xóa khỏi board.
-- [ ] Điểm duyệt #2 sau P2-08 và điểm duyệt #3 sau P3-08.
+- [x] **Điểm duyệt #1** (đạt 2026-11-18): bấm thử giao diện P1 trên trình duyệt (PLAN, mục "Kết quả kiểm thử P1").
+- [x] Chọn hạng mục P4 muốn làm (PLAN, mục "Phê duyệt kế hoạch"): giữ tất cả P4-01..07 (2026-11-18).
+- [x] Điểm duyệt #2 sau P2-08 và điểm duyệt #3 sau P3-08 (đạt 2026-11-18).

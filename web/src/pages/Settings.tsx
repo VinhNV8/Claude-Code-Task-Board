@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Bell, CalendarClock, Cpu, FileText, Info, KeyRound, Languages, Timer } from 'lucide-react'
-import { IS_MOCK, notify, saveClaudeAuth, saveTelegram, testClaudeAuth, testTelegram, toast, updateSettings, useStore } from '../store/store'
+import { IS_MOCK, notify, saveClaudeAuth, saveTelegram, testTelegram, toast, updateSettings, useStore } from '../store/store'
 import type { ClaudeAuthMode } from '../types'
 import { MODEL_OPTIONS } from '../lib/model'
 import { Button, Field, inputCls } from '../components/ui'
@@ -46,7 +46,7 @@ function TelegramSettings() {
     if (kind !== 'test') setBotToken('')
     toast({
       kind: 'success',
-      title: kind === 'test' ? 'Đã gửi tin nhắn thử tới Telegram' : kind === 'clear' ? 'Đã xoá bot token' : 'Đã lưu cấu hình Telegram',
+      title: kind === 'test' ? tr('Đã gửi tin nhắn thử tới Telegram') : kind === 'clear' ? tr('Đã xoá bot token') : tr('Đã lưu cấu hình Telegram'),
     })
   }
 
@@ -55,39 +55,39 @@ function TelegramSettings() {
       <label className="flex items-center gap-3">
         <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
         <span className="text-sm">
-          Gửi thông báo qua Telegram
-          <span className="block text-xs text-slate-500">Dùng cùng lựa chọn “Thông báo khi task chuyển sang” ở trên, tin nhắn kèm liên kết mở task.</span>
+          {tr('Gửi thông báo qua Telegram')}
+          <span className="block text-xs text-slate-500">{tr('Dùng cùng lựa chọn “Thông báo khi task chuyển sang” ở trên, tin nhắn kèm liên kết mở task.')}</span>
         </span>
       </label>
       <div className="grid gap-3 sm:grid-cols-2">
-        <Field label="Bot token" hint={telegram.hasToken ? 'Đã lưu token. Để trống để giữ nguyên, nhập để thay.' : 'Tạo bot với @BotFather rồi dán token vào đây.'}>
+        <Field label="Bot token" hint={telegram.hasToken ? tr('Đã lưu token. Để trống để giữ nguyên, nhập để thay.') : tr('Tạo bot với @BotFather rồi dán token vào đây.')}>
           <input
             type="password"
             autoComplete="off"
             className={inputCls}
             value={botToken}
-            placeholder={telegram.hasToken ? '•••••••• (đã lưu)' : '123456789:ABC…'}
+            placeholder={telegram.hasToken ? tr('•••••••• (đã lưu)') : '123456789:ABC…'}
             onChange={(e) => setBotToken(e.target.value)}
           />
         </Field>
-        <Field label="Chat ID" hint="Nhắn /start cho bot trước. Có thể là số (nhóm bắt đầu bằng -100) hoặc @tenkenh.">
+        <Field label="Chat ID" hint={tr('Nhắn /start cho bot trước. Có thể là số (nhóm bắt đầu bằng -100) hoặc @tenkenh.')}>
           <input className={inputCls} value={chatId} placeholder="123456789" onChange={(e) => setChatId(e.target.value)} />
         </Field>
       </div>
-      <Field label="Địa chỉ giao diện (dùng cho liên kết mở task)" hint="Để trống sẽ dùng địa chỉ bạn đang mở.">
+      <Field label={tr('Địa chỉ giao diện (dùng cho liên kết mở task)')} hint={tr('Để trống sẽ dùng địa chỉ bạn đang mở.')}>
         <input className={inputCls} value={appUrl} placeholder={location.origin} onChange={(e) => setAppUrl(e.target.value)} />
       </Field>
       {error && <p className="text-xs text-rose-600">{error}</p>}
       <div className="flex flex-wrap gap-2">
         <Button size="sm" variant="primary" disabled={!!busy} onClick={() => run('save')}>
-          {busy === 'save' ? 'Đang lưu…' : 'Lưu Telegram'}
+          {busy === 'save' ? tr('Đang lưu…') : tr('Lưu Telegram')}
         </Button>
         <Button size="sm" disabled={!!busy || (!botToken.trim() && !telegram.hasToken) || !chatId.trim()} onClick={() => run('test')}>
-          {busy === 'test' ? 'Đang gửi…' : 'Gửi thử'}
+          {busy === 'test' ? tr('Đang gửi…') : tr('Gửi thử')}
         </Button>
         {telegram.hasToken && (
           <Button size="sm" variant="ghost" disabled={!!busy} onClick={() => run('clear')}>
-            Xoá token
+            {tr('Xoá token')}
           </Button>
         )}
       </div>
@@ -98,13 +98,13 @@ function TelegramSettings() {
 const AUTH_OPTIONS: { value: ClaudeAuthMode; label: string; hint: string }[] = [
   {
     value: 'subscription',
-    label: 'Đăng nhập Claude Code (gói Pro/Max)',
-    hint: 'Dùng phiên đăng nhập Claude Code trên máy này. Chi phí nằm trong gói, có hạn mức theo 5 giờ và theo tuần. Chỉ dành cho cá nhân tự dùng, không dùng để phục vụ người khác.',
+    label: tr('Đăng nhập Claude Code (gói Pro/Max)'),
+    hint: tr('Dùng phiên đăng nhập Claude Code trên máy này. Chi phí nằm trong gói, có hạn mức theo 5 giờ và theo tuần. Chỉ dành cho cá nhân tự dùng, không dùng để phục vụ người khác.'),
   },
   {
     value: 'apiKey',
-    label: 'API key (trả theo token)',
-    hint: 'Tính tiền theo token vào tài khoản Claude Console, riêng với gói Pro/Max. Budget tháng của project trở thành giới hạn cứng: hết budget là dừng.',
+    label: tr('API key (trả theo token)'),
+    hint: tr('Tính tiền theo token vào tài khoản Claude Console, riêng với gói Pro/Max. Budget tháng của project trở thành giới hạn cứng: hết budget là dừng. Key sai sẽ báo lỗi ở lần chạy task đầu tiên. Vẫn cần Claude Code CLI trên máy (không cần đăng nhập).'),
   },
 ]
 
@@ -113,7 +113,7 @@ function ClaudeAuthSettings() {
   const { auth } = useStore().settings
   const [mode, setMode] = useState<ClaudeAuthMode>(auth.mode)
   const [apiKey, setApiKey] = useState('')
-  const [busy, setBusy] = useState<'save' | 'test' | 'clear' | null>(null)
+  const [busy, setBusy] = useState<'save' | 'clear' | null>(null)
   const [error, setError] = useState<string | null>(null)
   useEffect(() => setMode(auth.mode), [auth.mode])
 
@@ -121,29 +121,25 @@ function ClaudeAuthSettings() {
   const missingKey = mode === 'apiKey' && !apiKey.trim() && !hasKey
   const dirty = mode !== auth.mode || !!apiKey.trim()
 
-  async function run(kind: 'save' | 'test' | 'clear') {
+  async function run(kind: 'save' | 'clear') {
     setBusy(kind)
     setError(null)
     const err =
-      kind === 'test'
-        ? await testClaudeAuth(apiKey.trim())
-        : kind === 'clear'
-          ? await saveClaudeAuth({ apiKey: null })
-          : await saveClaudeAuth({ mode, apiKey: apiKey.trim() || undefined })
+      kind === 'clear' ? await saveClaudeAuth({ apiKey: null }) : await saveClaudeAuth({ mode, apiKey: apiKey.trim() || undefined })
     setBusy(null)
     if (err) return setError(err)
-    if (kind !== 'test') setApiKey('')
+    setApiKey('')
     toast({
       kind: 'success',
-      title: kind === 'test' ? 'API key hợp lệ' : kind === 'clear' ? 'Đã xoá API key đã lưu' : 'Đã lưu cài đặt xác thực',
+      title: kind === 'clear' ? tr('Đã xoá API key đã lưu') : tr('Đã lưu cài đặt xác thực'),
     })
   }
 
   const keyHint = auth.envApiKey
-    ? `Đang dùng key từ biến môi trường TASKBOARD_ANTHROPIC_API_KEY (…${auth.apiKeyHint ?? ''}). Key lưu ở đây chỉ dùng khi bỏ biến này.`
+    ? tr('Đang dùng key từ biến môi trường TASKBOARD_ANTHROPIC_API_KEY (…{hint}). Key lưu ở đây chỉ dùng khi bỏ biến này.', { hint: auth.apiKeyHint ?? '' })
     : auth.hasApiKey
-      ? `Đã lưu key …${auth.apiKeyHint ?? ''} (mã hoá). Để trống để giữ nguyên, nhập để thay.`
-      : 'Tạo key trong Claude Console → API keys.'
+      ? tr('Đã lưu key …{hint} (mã hoá). Để trống để giữ nguyên, nhập để thay.', { hint: auth.apiKeyHint ?? '' })
+      : tr('Tạo key trong Claude Console → API keys.')
 
   return (
     <div className="space-y-4">
@@ -166,30 +162,25 @@ function ClaudeAuthSettings() {
               autoComplete="off"
               className={inputCls}
               value={apiKey}
-              placeholder={hasKey ? `•••• ${auth.apiKeyHint ?? ''} (đã có)` : 'sk-ant-…'}
+              placeholder={hasKey ? tr('•••• {hint} (đã có)', { hint: auth.apiKeyHint ?? '' }) : 'sk-ant-…'}
               onChange={(e) => setApiKey(e.target.value)}
             />
           </Field>
           <p className="rounded-md bg-amber-50 p-3 text-xs text-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
-            Chi phí là tiền thật. Nên đặt budget tháng cho từng project và đặt giới hạn chi tiêu (spend limit) trong Claude Console.
-            Số tiền Task Board hiển thị tính theo giá niêm yết, có thể lệch nhẹ so với hoá đơn.
+            {tr('Chi phí là tiền thật. Nên đặt budget tháng cho từng project và đặt giới hạn chi tiêu (spend limit) trong Claude Console.')}{' '}
+            {tr('Số tiền Task Board hiển thị tính theo giá niêm yết, có thể lệch nhẹ so với hoá đơn.')}
           </p>
         </>
       )}
-      {missingKey && <p className="text-xs text-rose-600">Chế độ API key cần có key trước khi lưu.</p>}
+      {missingKey && <p className="text-xs text-rose-600">{tr('Chế độ API key cần có key trước khi lưu.')}</p>}
       {error && <p className="text-xs text-rose-600">{error}</p>}
       <div className="flex flex-wrap gap-2">
         <Button size="sm" variant="primary" disabled={!!busy || missingKey || !dirty} onClick={() => run('save')}>
-          {busy === 'save' ? 'Đang lưu…' : 'Lưu xác thực'}
+          {busy === 'save' ? tr('Đang lưu…') : tr('Lưu xác thực')}
         </Button>
-        {mode === 'apiKey' && (
-          <Button size="sm" disabled={!!busy || (!apiKey.trim() && !hasKey)} onClick={() => run('test')}>
-            {busy === 'test' ? 'Đang kiểm tra…' : 'Kiểm tra key (miễn phí)'}
-          </Button>
-        )}
         {auth.hasApiKey && (
           <Button size="sm" variant="ghost" disabled={!!busy} onClick={() => run('clear')}>
-            Xoá key đã lưu
+            {tr('Xoá key đã lưu')}
           </Button>
         )}
       </div>
@@ -216,7 +207,7 @@ export function Settings() {
       const r = await Notification.requestPermission()
       setPerm(r)
       if (r !== 'granted') {
-        toast({ kind: 'warning', title: 'Trình duyệt chưa cho phép thông báo' })
+        toast({ kind: 'warning', title: tr('Trình duyệt chưa cho phép thông báo') })
         return
       }
     }
@@ -228,7 +219,7 @@ export function Settings() {
       <h1 className="text-lg font-semibold">{tr('Cài đặt')}</h1>
 
       <Section icon={<Languages size={18} />} title={tr('Ngôn ngữ')}>
-        <Field label="Language / Ngôn ngữ" hint={tr('Ngôn ngữ giao diện. Trong VS Code, mặc định theo ngôn ngữ của VS Code.')}>
+        <Field label={'Language / Ng\u00f4n ng\u1eef'} hint={tr('Ngôn ngữ giao diện. Trong VS Code, mặc định theo ngôn ngữ của VS Code.')}>
           <select className={inputCls} value={LANG} onChange={(e) => setLang(e.target.value as Lang)}>
             {LANGS.map((l) => (
               <option key={l.id} value={l.id}>
@@ -239,8 +230,8 @@ export function Settings() {
         </Field>
       </Section>
 
-      <Section icon={<Cpu size={18} />} title="Thực thi">
-        <Field label="Số task chạy song song tối đa (toàn hệ thống)" hint="Task ở Needs Input vẫn chiếm slot. Nên để 2 để tránh vượt giới hạn sử dụng của gói Claude.">
+      <Section icon={<Cpu size={18} />} title={tr('Thực thi')}>
+        <Field label={tr('Số task chạy song song tối đa (toàn hệ thống)')} hint={tr('Task ở Needs Input vẫn chiếm slot. Nên để 2 để tránh vượt giới hạn sử dụng của gói Claude.')}>
           <input
             type="number"
             min={1}
@@ -250,9 +241,9 @@ export function Settings() {
             onChange={(e) => updateSettings({ maxParallel: Math.max(1, Number(e.target.value) || 1) })}
           />
         </Field>
-        <Field label="Model mặc định" hint="Dùng khi task và project đều không chọn model. Run sửa theo review / tiếp tục giữ model của lần chạy trước.">
+        <Field label={tr('Model mặc định')} hint={tr('Dùng khi task và project đều không chọn model. Run sửa theo review / tiếp tục giữ model của lần chạy trước.')}>
           <select className={`${inputCls} w-64`} value={settings.defaultModel} onChange={(e) => updateSettings({ defaultModel: e.target.value })}>
-            <option value="">Mặc định của Claude CLI</option>
+            <option value="">{tr('Mặc định của Claude CLI')}</option>
             {MODEL_OPTIONS.map((o) => (
               <option key={o.value} value={o.value}>
                 {o.label}
@@ -266,20 +257,20 @@ export function Settings() {
         <label className="flex items-center gap-3">
           <input type="checkbox" checked={settings.autoEscalate ?? true} onChange={(e) => updateSettings({ autoEscalate: e.target.checked })} />
           <span className="text-sm">
-            Tự nâng model khi task thất bại
+            {tr('Tự nâng model khi task thất bại')}
             <span className="block text-xs text-slate-500">
-              Retry sau lần chạy lỗi, hoặc Yêu cầu sửa từ lần thứ 2, sẽ lên một bậc (Haiku → Sonnet → Opus). Không áp dụng cho model chọn tay.
+              {tr('Retry sau lần chạy lỗi, hoặc Yêu cầu sửa từ lần thứ 2, sẽ lên một bậc (Haiku → Sonnet → Opus). Không áp dụng cho model chọn tay.')}
             </span>
           </span>
         </label>
       </Section>
 
-      <Section icon={<KeyRound size={18} />} title="Xác thực Claude">
+      <Section icon={<KeyRound size={18} />} title={tr('Xác thực Claude')}>
         <ClaudeAuthSettings />
       </Section>
 
-      <Section icon={<Timer size={18} />} title="Xin quyền (Needs Input)">
-        <Field label="Tự động từ chối sau (phút)" hint="Nếu bạn không phản hồi, quyền bị từ chối và Claude tiếp tục theo hướng khác.">
+      <Section icon={<Timer size={18} />} title={tr('Xin quyền (Needs Input)')}>
+        <Field label={tr('Tự động từ chối sau (phút)')} hint={tr('Nếu bạn không phản hồi, quyền bị từ chối và Claude tiếp tục theo hướng khác.')}>
           <input
             type="number"
             min={1}
@@ -291,18 +282,19 @@ export function Settings() {
         </Field>
       </Section>
 
-      <Section icon={<Bell size={18} />} title="Thông báo">
+      <Section icon={<Bell size={18} />} title={tr('Thông báo')}>
         <label className="flex items-center gap-3">
           <input type="checkbox" checked={settings.browserNotifications} onChange={(e) => enableBrowser(e.target.checked)} />
           <span className="text-sm">
-            Thông báo của trình duyệt (kể cả khi đang ở tab khác)
+            {tr('Thông báo của trình duyệt (kể cả khi đang ở tab khác)')}
             <span className="block text-xs text-slate-500">
-              Quyền hiện tại: {perm === 'granted' ? 'đã cho phép' : perm === 'denied' ? 'bị chặn, hãy mở lại trong cài đặt trình duyệt' : perm === 'unsupported' ? 'không hỗ trợ' : 'chưa hỏi'}
+              {tr('Quyền hiện tại:')}{' '}
+              {perm === 'granted' ? tr('đã cho phép') : perm === 'denied' ? tr('bị chặn, hãy mở lại trong cài đặt trình duyệt') : perm === 'unsupported' ? tr('không hỗ trợ') : tr('chưa hỏi')}
             </span>
           </span>
         </label>
         <div>
-          <p className="mb-2 text-sm font-medium">Thông báo khi task chuyển sang</p>
+          <p className="mb-2 text-sm font-medium">{tr('Thông báo khi task chuyển sang')}</p>
           <div className="flex flex-wrap gap-4 text-sm">
             {(
               [
@@ -318,40 +310,40 @@ export function Settings() {
             ))}
           </div>
         </div>
-        <Button size="sm" onClick={() => notify({ kind: 'info', title: 'Thông báo thử', body: 'Bạn sẽ nhận thông báo như thế này' }, { force: true })}>
-          Gửi thông báo thử
+        <Button size="sm" onClick={() => notify({ kind: 'info', title: tr('Thông báo thử'), body: tr('Bạn sẽ nhận thông báo như thế này') }, { force: true })}>
+          {tr('Gửi thông báo thử')}
         </Button>
         <TelegramSettings />
       </Section>
 
-      <Section icon={<FileText size={18} />} title="Template prompt">
+      <Section icon={<FileText size={18} />} title={tr('Template prompt')}>
         <TemplateManager />
       </Section>
 
-      <Section icon={<CalendarClock size={18} />} title="Lên lịch task (cron)">
+      <Section icon={<CalendarClock size={18} />} title={tr('Lên lịch task (cron)')}>
         <ScheduleManager />
       </Section>
 
-      <Section icon={<Info size={18} />} title="Hệ thống">
+      <Section icon={<Info size={18} />} title={tr('Hệ thống')}>
         <dl className="grid grid-cols-[160px_1fr] gap-y-2 text-sm">
           <dt className="text-slate-500">Claude Code CLI</dt>
           <dd className="break-all font-mono text-xs">
             {IS_MOCK
-              ? '(bản giả lập: chưa kết nối)'
+              ? tr('(bản giả lập: chưa kết nối)')
               : !health
-                ? 'Đang kiểm tra…'
+                ? tr('Đang kiểm tra…')
                 : health.claude.found
-                  ? `${health.claude.version} · ${health.claude.source === 'vscode-extension' ? 'từ extension VSCode' : health.claude.source} · ${health.claude.path}`
-                  : '⚠ Không tìm thấy. Đặt biến môi trường CLAUDE_BIN rồi khởi động lại.'}
+                  ? `${health.claude.version} · ${health.claude.source === 'vscode-extension' ? tr('từ extension VSCode') : health.claude.source} · ${health.claude.path}`
+                  : tr('⚠ Không tìm thấy. Cài extension Claude Code, hoặc đặt đường dẫn CLI (CLAUDE_BIN) rồi khởi động lại.')}
           </dd>
-          <dt className="text-slate-500">Xác thực</dt>
+          <dt className="text-slate-500">{tr('Xác thực')}</dt>
           <dd>
             {settings.auth.mode === 'apiKey'
-              ? `API key …${settings.auth.apiKeyHint ?? '(chưa có)'}${settings.auth.envApiKey ? ' · từ biến môi trường' : ''}`
-              : 'Phiên đăng nhập Claude Code trên máy (gói Pro/Max)'}
+              ? `API key …${settings.auth.apiKeyHint ?? tr('(chưa có)')}${settings.auth.envApiKey ? ` · ${tr('từ biến môi trường')}` : ''}`
+              : tr('Phiên đăng nhập Claude Code trên máy (gói Pro/Max)')}
           </dd>
           <dt className="text-slate-500">Backend</dt>
-          <dd className="font-mono text-xs">{IS_MOCK ? '(bản giả lập)' : health ? `${location.host} · online` : '…'}</dd>
+          <dd className="font-mono text-xs">{IS_MOCK ? tr('(bản giả lập)') : health ? `${location.host} · online` : '…'}</dd>
         </dl>
       </Section>
     </div>

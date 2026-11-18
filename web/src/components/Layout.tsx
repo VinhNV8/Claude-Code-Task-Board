@@ -4,6 +4,7 @@ import {
   Bell,
   ChartColumn,
   CheckCircle2,
+  FileUp,
   FlaskConical,
   FolderGit2,
   KanbanSquare,
@@ -27,6 +28,7 @@ import { ErrorBoundary } from './ErrorBoundary'
 import { IS_MOCK, closeDepsConfirm, dismissToast, getState, resetDemo, runTaskNow, setDemo, updateSettings, useStore } from '../store/store'
 import { askPermissionOnce } from '../lib/notify'
 import { TaskFormModal } from './TaskFormModal'
+import { ImportModal } from './ImportModal'
 import { fetchAuthStatus, logout } from '../lib/auth'
 import { tr } from '../lib/i18n'
 import { compactBadge, isSidebarShortcut, loadCollapsed, saveCollapsed } from '../lib/sidebar'
@@ -47,6 +49,9 @@ import { APP_NAME, pageTitle } from '../lib/brand'
 
 const NewTaskCtx = createContext<(projectId?: string) => void>(() => {})
 export const useNewTask = () => useContext(NewTaskCtx)
+/** Mở hộp thoại import task từ CSV / Excel (FR-01a). */
+const ImportCtx = createContext<(projectId?: string) => void>(() => {})
+export const useImportTasks = () => useContext(ImportCtx)
 
 // ------------------------------------------------------------ theme
 
@@ -109,6 +114,8 @@ export function Layout() {
   const mdHide = collapsed ? 'md:hidden' : ''
   const [newOpen, setNewOpen] = useState(false)
   const [newProject, setNewProject] = useState<string | undefined>()
+  const [importOpen, setImportOpen] = useState(false)
+  const [importProject, setImportProject] = useState<string | undefined>()
   // Nút đăng xuất chỉ hiện khi backend bật đăng nhập (truy cập từ xa, PLAN 4.7)
   const [authRequired, setAuthRequired] = useState(false)
   useEffect(() => {
@@ -168,6 +175,10 @@ export function Layout() {
     setNewProject(projectId)
     setNewOpen(true)
   }
+  const openImport = (projectId?: string) => {
+    setImportProject(projectId)
+    setImportOpen(true)
+  }
 
   const nav: { to: string; label: string; icon: ReactNode; active: boolean; badge?: number; urgent?: boolean }[] = [
     { to: '/', label: tr('Công việc'), icon: <KanbanSquare size={18} />, active: onWork && workView !== 'ops' },
@@ -186,6 +197,7 @@ export function Layout() {
 
   return (
     <NewTaskCtx.Provider value={openNew}>
+    <ImportCtx.Provider value={openImport}>
       <div className="flex min-h-screen flex-col bg-slate-50 text-slate-900 md:flex-row dark:bg-slate-950 dark:text-slate-100">
         {/* Sidebar */}
         <aside
@@ -292,6 +304,9 @@ export function Layout() {
                   <Bell size={13} /> {tr('{n} việc cần bạn xử lý', { n: attention })}
                 </Link>
               )}
+              <Button onClick={() => openImport()} className="hidden sm:inline-flex" title={tr('Import task từ CSV / Excel')}>
+                <FileUp size={16} /> {tr('Import')}
+              </Button>
               <Button variant="primary" onClick={() => openNew()} title={`${tr('Phím tắt')}: N`}>
                 <Plus size={16} /> {tr('Giao việc')}
               </Button>
@@ -316,11 +331,13 @@ export function Layout() {
         </div>
 
         <TaskFormModal open={newOpen} onClose={() => setNewOpen(false)} defaultProjectId={newProject} />
-        <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} onNewTask={() => openNew()} />
+        <ImportModal open={importOpen} onClose={() => setImportOpen(false)} defaultProjectId={importProject} />
+        <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} onNewTask={() => openNew()} onImport={() => openImport()} />
         <Toasts />
         <DepsConfirm />
         {IS_MOCK && <DemoPanel />}
       </div>
+    </ImportCtx.Provider>
     </NewTaskCtx.Provider>
   )
 }

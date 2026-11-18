@@ -8,6 +8,7 @@ import { STOP_REASON, canResume } from '../lib/resume'
 import { queueTask, resumeTask, retryTask, useStore } from '../store/store'
 import { unmetDeps } from '../lib/deps'
 import { useNow } from './ui'
+import { LOCALE, tr } from '../lib/i18n'
 
 export function TaskCard({
   task,
@@ -82,7 +83,7 @@ export function TaskCard({
             className="inline-flex shrink-0 items-center gap-0.5 rounded bg-amber-100 px-1.5 py-0.5 text-[11px] font-semibold uppercase text-amber-700 dark:bg-amber-950 dark:text-amber-300"
             title={task.failReason}
           >
-            <Pause size={10} /> Tạm dừng
+            <Pause size={10} /> {tr('Đã tạm dừng')}
           </span>
         )}
         <span className="truncate">{project?.name}</span>
@@ -97,9 +98,9 @@ export function TaskCard({
               ? 'bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300'
               : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'
           }`}
-          title={depFailed ? 'Có task được chờ đang lỗi: Chạy lại task đó, hoặc gỡ phụ thuộc' : 'Chỉ chạy khi các task này Done (đã chấp nhận output)'}
+          title={depFailed ? tr('Có task được chờ đang lỗi: Chạy lại task đó, hoặc gỡ phụ thuộc') : tr('Chỉ chạy khi các task này Done (đã chấp nhận output)')}
         >
-          <Link2 size={11} /> Chờ {waitingOn.map((id) => `#${id}${statusOf(id) === 'failed' ? ' (lỗi)' : ''}`).join(', ')}
+          <Link2 size={11} /> {tr('Chờ {ids}', { ids: waitingOn.map((id) => `#${id}${statusOf(id) === 'failed' ? ` ${tr('(lỗi)')}` : ''}`).join(', ') })}
         </div>
       )}
 
@@ -127,22 +128,22 @@ export function TaskCard({
         )}
         {task.status === 'needs_input' && (
           <span className="inline-flex items-center gap-1 font-medium text-amber-600 dark:text-amber-400">
-            <Hand size={12} /> Đang chờ bạn cấp quyền
+            <Hand size={12} /> {tr('Đang chờ bạn cấp quyền')}
           </span>
         )}
         {task.status === 'review' && (
           <span className="inline-flex items-center gap-1">
-            <GitBranch size={12} /> {fileCount ?? 0} file thay đổi
+            <GitBranch size={12} /> {tr('{n} file thay đổi', { n: fileCount ?? 0 })}
           </span>
         )}
         {task.status === 'review' && task.reviewWarning && (
           <span className="inline-flex items-center gap-1 text-rose-600">
-            <AlertTriangle size={12} /> Cảnh báo
+            <AlertTriangle size={12} /> {tr('Cảnh báo')}
           </span>
         )}
         {failed && (
           <span className="inline-flex shrink-0 items-center gap-1 text-rose-600 dark:text-rose-400">
-            <AlertTriangle size={12} className="shrink-0" /> {paused ? 'Đã dừng' : 'Lỗi'}
+            <AlertTriangle size={12} className="shrink-0" /> {paused ? tr('Đã dừng') : tr('Lỗi')}
           </span>
         )}
         {failed && resumable && (
@@ -152,9 +153,9 @@ export function TaskCard({
               resumeTask(task.id)
             }}
             className="ml-auto inline-flex shrink-0 items-center gap-1 rounded bg-indigo-50 px-1.5 py-0.5 font-medium text-indigo-700 hover:bg-indigo-100 dark:bg-indigo-950/60 dark:text-indigo-300 dark:hover:bg-indigo-900"
-            title="Giữ thay đổi đang dở, chạy tiếp phiên Claude cũ (Chạy lại từ đầu: mở chi tiết task)"
+            title={tr('Giữ thay đổi đang dở, chạy tiếp phiên Claude cũ (Chạy lại từ đầu: mở chi tiết task)')}
           >
-            <StepForward size={12} /> Tiếp tục
+            <StepForward size={12} /> {tr('Tiếp tục')}
           </button>
         )}
         {failed && !resumable && (
@@ -164,14 +165,14 @@ export function TaskCard({
               retryTask(task.id)
             }}
             className="ml-auto inline-flex shrink-0 items-center gap-1 rounded bg-indigo-50 px-1.5 py-0.5 font-medium text-indigo-700 hover:bg-indigo-100 dark:bg-indigo-950/60 dark:text-indigo-300 dark:hover:bg-indigo-900"
-            title="Chạy lại"
+            title={tr('Chạy lại')}
           >
-            <RotateCcw size={12} /> Chạy lại
+            <RotateCcw size={12} /> {tr('Chạy lại')}
           </button>
         )}
         {waitingUntil && (
-          <span className="line-clamp-1 inline-flex items-center gap-1 text-amber-600 dark:text-amber-400" title={new Date(waitingUntil).toLocaleString('vi-VN')}>
-            <Hourglass size={12} className="shrink-0" /> Chờ đến {hhmm(waitingUntil)} do giới hạn sử dụng
+          <span className="line-clamp-1 inline-flex items-center gap-1 text-amber-600 dark:text-amber-400" title={new Date(waitingUntil).toLocaleString(LOCALE)}>
+            <Hourglass size={12} className="shrink-0" /> {tr('Chờ đến {time} do giới hạn sử dụng', { time: hhmm(waitingUntil) })}
           </span>
         )}
         {waitingUntil && (
@@ -181,9 +182,9 @@ export function TaskCard({
               resumeTask(task.id)
             }}
             className="ml-auto inline-flex shrink-0 items-center gap-1 rounded bg-indigo-50 px-1.5 py-0.5 font-medium text-indigo-700 hover:bg-indigo-100 dark:bg-indigo-950/60 dark:text-indigo-300 dark:hover:bg-indigo-900"
-            title="Không chờ tới giờ reset, chạy tiếp ngay"
+            title={tr('Không chờ tới giờ reset, chạy tiếp ngay')}
           >
-            <StepForward size={12} /> Tiếp tục ngay
+            <StepForward size={12} /> {tr('Tiếp tục ngay')}
           </button>
         )}
         {!waitingUntil && ['backlog', 'queued', 'done'].includes(task.status) && (
@@ -198,9 +199,9 @@ export function TaskCard({
               queueTask(task.id)
             }}
             className="ml-auto inline-flex items-center gap-1 rounded bg-indigo-50 px-1.5 py-0.5 font-medium text-indigo-700 hover:bg-indigo-100 dark:bg-indigo-950/60 dark:text-indigo-300 dark:hover:bg-indigo-900"
-            title="Đưa vào hàng đợi"
+            title={tr('Đưa vào hàng đợi')}
           >
-            <Play size={12} /> Chạy
+            <Play size={12} /> {tr('Chạy')}
           </button>
         )}
       </div>

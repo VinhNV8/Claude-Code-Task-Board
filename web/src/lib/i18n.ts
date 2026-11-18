@@ -45,6 +45,9 @@ function detect(): Lang {
 
 export const LANG: Lang = detect()
 
+/** Locale cho toLocaleString / Intl (định dạng số, ngày giờ) theo ngôn ngữ giao diện. */
+export const LOCALE = LANG === 'en' ? 'en-US' : 'vi-VN'
+
 /** Điền tham số {tên} vào chuỗi. */
 export function format(text: string, params?: Record<string, string | number>) {
   if (!params) return text

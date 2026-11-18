@@ -1,7 +1,7 @@
 // Thao tác git cho review flow (PLAN mục 2.1): mỗi task chạy trong worktree riêng trên nhánh claude/task-<id>.
 // Luôn gọi git bằng execFile + mảng tham số (đường dẫn có dấu cách trên Windows vẫn đúng).
 import { execFile } from 'node:child_process'
-import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { DATA_DIR, tasks } from './db.ts'
 import { parseGitDiff } from '../../web/src/lib/diff.ts'
@@ -111,8 +111,14 @@ export async function resetWorktree(project: Pick<Project, 'id' | 'repoPath' | '
 }
 
 /** `git add -A` rồi commit. Trả về true nếu có commit mới, false nếu không có thay đổi. */
+/**
+ * File do công cụ trên máy người dùng tự ghi khi Claude chạy (vd. hook Claude Code cấp người dùng ghi
+ * `.claude/logs/token-usage*`), không phải output của task: không chụp vào diff, không commit vào nhánh task.
+ */
+export const TOOL_NOISE_DIRS = ['.claude/logs/']
+
 export async function commitAll(worktreePath: string, message: string): Promise<boolean> {
-  const add = await git(worktreePath, ['add', '-A'])
+  const add = await git(worktreePath, ['add', '-A', '--', '.', ...TOOL_NOISE_DIRS.map((d) => `:(exclude)${d}`)])
   if (add.code !== 0) throw new Error(`git add thất bại: ${errText(add)}`)
   const diff = await git(worktreePath, ['diff', '--cached', '--quiet'])
   if (diff.code === 0) return false
@@ -236,23 +242,36 @@ type SnapProject = Pick<Project, 'id' | 'repoPath'>
 export const snapshotGitDir = (projectId: string) => resolve(join(DATA_DIR, 'snapshots', `${projectId}.git`))
 
 /** Bỏ qua mặc định khi chụp (thư mục không có .gitignore vẫn không chụp các thư mục phụ thuộc nặng). */
-const SNAPSHOT_EXCLUDES = ['node_modules/', '.venv/', 'venv/', '__pycache__/', '.DS_Store', 'Thumbs.db', '~$*'].join('\n') + '\n'
+const SNAPSHOT_EXCLUDES = ['node_modules/', '.venv/', 'venv/', '__pycache__/', '.DS_Store', 'Thumbs.db', '~$*', ...TOOL_NOISE_DIRS].join('\n') + '\n'
 
 function snapArgs(project: SnapProject, args: string[]) {
   return ['--git-dir', snapshotGitDir(project.id), '--work-tree', resolve(project.repoPath), '-c', 'core.quotePath=false', ...args]
 }
 
+/** Ghi danh sách bỏ qua khi khác bản hiện có (kho snapshot tạo từ phiên bản cũ cũng nhận mục mới). */
+function syncSnapshotExcludes(dir: string) {
+  const file = join(dir, 'info', 'exclude')
+  let cur = ''
+  try {
+    cur = readFileSync(file, 'utf8')
+  } catch {
+    // chưa có file
+  }
+  if (cur === SNAPSHOT_EXCLUDES) return
+  mkdirSync(join(dir, 'info'), { recursive: true })
+  writeFileSync(file, SNAPSHOT_EXCLUDES)
+}
+
 async function ensureSnapshotRepo(project: SnapProject) {
   const dir = snapshotGitDir(project.id)
-  if (existsSync(join(dir, 'HEAD'))) return
+  if (existsSync(join(dir, 'HEAD'))) return syncSnapshotExcludes(dir)
   mkdirSync(dir, { recursive: true })
   const init = await git(DATA_DIR, ['init', '--quiet', '--bare', dir])
   if (init.code !== 0) throw new Error(`Không tạo được kho snapshot: ${errText(init)}`)
   // Tree snapshot không có ref trỏ tới: tắt gc tự động để git không dọn mất baseRef của task đang review.
   for (const [k, v] of [['gc.auto', '0'], ['core.autocrlf', 'false'], ['core.safecrlf', 'false']])
     await git(DATA_DIR, ['--git-dir', dir, 'config', k, v])
-  mkdirSync(join(dir, 'info'), { recursive: true })
-  writeFileSync(join(dir, 'info', 'exclude'), SNAPSHOT_EXCLUDES)
+  syncSnapshotExcludes(dir)
 }
 
 /** Chụp toàn bộ thư mục project, trả về hash của git tree. */

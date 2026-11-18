@@ -21,7 +21,7 @@ Không cần cài Node hay chạy lệnh gì: extension chạy server bằng ch�
 - **git**.
 - Một trong hai cách xác thực:
   - **Claude Code đã đăng nhập** (gói Pro/Max): cài extension [Claude Code](https://marketplace.visualstudio.com/items?itemName=anthropic.claude-code) (có sẵn CLI) hoặc cài CLI `claude`, rồi đăng nhập. Extension tự tìm thấy CLI và báo nếu chưa đăng nhập (lệnh **Agent Task Board: Đăng nhập Claude Code**).
-  - **API key Anthropic** (trả theo token): vào **Cài đặt → Xác thực Claude**, dán key rồi bấm Kiểm tra. Ở chế độ này budget tháng của project là giới hạn cứng.
+  - **API key Anthropic** (trả theo token): vào **Cài đặt → Xác thực Claude** và dán key; key sai sẽ báo lỗi ở lần chạy task đầu tiên. Ở chế độ này budget tháng của project là giới hạn cứng. Task vẫn chạy bằng Claude Code CLI nên máy vẫn phải cài CLI (không cần đăng nhập).
 
 ## Lệnh
 

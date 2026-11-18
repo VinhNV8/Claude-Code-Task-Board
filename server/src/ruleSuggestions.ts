@@ -79,7 +79,8 @@ export function projectHistory(projectId: string, now = Date.now()): HistoryItem
     .prepare(
       `SELECT r.tool, r.input_json, r.status, r.created_at FROM permission_requests r
        JOIN tasks t ON t.id = r.task_id
-       WHERE t.project_id = ? AND r.created_at >= ? AND r.status IN ('allowed', 'denied')`,
+       WHERE t.project_id = ? AND r.created_at >= ? AND r.status IN ('allowed', 'denied')
+         AND r.tool != 'AskUserQuestion'`, // FR-40: câu hỏi của Claude không phải quyền, không gợi ý rule
     )
     .all(projectId, now - WINDOW_MS) as { tool: string; input_json: string; status: HistoryItem['status']; created_at: number }[]
   return rows.flatMap((r) => {

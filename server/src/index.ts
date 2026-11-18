@@ -15,9 +15,10 @@ import { startScheduler, stopScheduler } from './scheduler.ts'
 import { kv, projects, schedules, settings, tasks, telegramToken } from './db.ts'
 import { createTelegramNotifier, sendTelegram, type FetchLike } from './telegram.ts'
 import { activeConfig, createTelegramApprover, createTelegramPoller } from './telegramApprove.ts'
-import { decidePermission, listPermissions } from './permissions.ts'
+import { answerQuestion, decidePermission, listPermissions } from './permissions.ts'
 import { PORT, PROD } from './config.ts'
 import { AuthConfigError, registerAuth, resolveListenConfig, type ListenConfig } from './auth.ts'
+import { guardConfig, registerRequestGuard } from './requestGuard.ts'
 import { PREVIEW_MAX_BYTES, PREVIEW_PORT, createPreviewHandler, isPreviewOrigin } from './preview.ts'
 import { readTaskBlob } from './reviewFiles.ts'
 
@@ -42,6 +43,8 @@ try {
 
 const app = Fastify({ logger: { level: PROD ? 'info' : 'warn' } })
 await app.register(fastifyWebsocket)
+// Chặn DNS rebinding và request chéo trang (requestGuard.ts), trước cả kiểm tra đăng nhập
+registerRequestGuard(app, guardConfig(listen))
 registerAuth(app, listen)
 // Trang HTML xem trước (cổng riêng, sandbox) không được gửi request ghi dữ liệu vào API chính
 app.addHook('onRequest', async (req, reply) => {
@@ -89,6 +92,7 @@ const approver = createTelegramApprover({
   getTask: (id) => tasks.get(id),
   projectName: (id) => projects.get(id)?.name,
   decide: (id, d) => decidePermission(id, d),
+  answer: (id, a) => answerQuestion(id, a, 'trả lời qua Telegram'),
   now: Date.now,
   log: (msg) => app.log.warn(msg),
 })

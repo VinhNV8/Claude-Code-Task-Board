@@ -1,10 +1,10 @@
 import { useId } from 'react'
 
-// Logo Claude Workspace: ba cột (bảng công việc) + tia sáng (AI). Giữ đồng bộ với web/public/logo.svg.
+// Logo Agent Task Board: ba cột (bảng công việc) + tia sáng (AI). Giữ đồng bộ với web/public/logo.svg.
 export function Logo({ size = 28, className }: { size?: number; className?: string }) {
   const id = useId()
   return (
-    <svg width={size} height={size} viewBox="0 0 64 64" className={className} role="img" aria-label="Claude Workspace" data-testid="logo">
+    <svg width={size} height={size} viewBox="0 0 64 64" className={className} role="img" aria-label="Agent Task Board" data-testid="logo">
       <defs>
         <linearGradient id={id} x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">
           <stop offset="0" stopColor="#6366f1" />

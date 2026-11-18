@@ -19,6 +19,23 @@
 | S6 | Schema output | ✅ Đạt | Xem bên dưới |
 | S7 | Từ chối quyền (`--permission-prompts none`) | ✅ Đạt | Lệnh cần quyền bị từ chối, liệt kê trong `result.permission_denials[]` |
 | S8 | `--permission-prompt-tool` qua MCP | ✅ Đạt | MCP server stdio tự viết nhận `{tool_name, input, tool_use_id}`, trả `{"behavior":"allow","updatedInput":...}` thì lệnh chạy được. **Rủi ro chính của P3 đã được gỡ** |
+| S9 | `AskUserQuestion` qua permission prompt tool (FR-40, 2026-11-18, CLI 2.1.322, Haiku) | ✅ Đạt | Xem mục S9 bên dưới |
+
+## S9: Claude hỏi lại người dùng giữa lúc chạy (FR-40)
+
+Mục đích: xem ở chế độ `-p`, tool gốc `AskUserQuestion` có đi qua `--permission-prompt-tool` không, và trả đáp án về cho Claude bằng cách nào. Script: [ask-user-question.spike.mjs](../server/fixtures/ask-user-question.spike.mjs), output thật: [ask-user-question.jsonl](../server/fixtures/ask-user-question.jsonl).
+
+| Kịch bản | Kết quả |
+|---|---|
+| Có `--permission-prompt-tool` | `AskUserQuestion` có trong `init.tools`. Claude gọi tool → MCP nhận `{tool_name: "AskUserQuestion", input: {questions: [{question, header, options[{label, description}], multiSelect}]}}` |
+| Trả `{behavior: "allow", updatedInput: {...input, answers: {"<question>": "<label>"}}}` | ✅ Claude nhận "Your questions have been answered: …" và **chạy tiếp trong cùng tiến trình** |
+| Đáp án tự do (không có trong `options`) | ✅ Claude nhận và dùng đúng nguyên văn |
+| `allow` **không** có `answers` | ⚠️ Claude nhận "The user did not answer the questions." |
+| `deny` kèm `message` | Claude đọc được `message` (tool_result `is_error`), có ghi vào `permission_denials`. Dùng được làm đường dự phòng, nhưng không chuẩn |
+| Không có `--permission-prompt-tool` | `AskUserQuestion` **không có** trong danh sách tool, Claude không hỏi được |
+| `--permission-mode` `acceptEdits` / `plan` | ✅ Vẫn đi qua prompt tool, đáp án đến được Claude |
+
+Hệ quả cho board hiện tại: allowlist khớp hoặc mode Auto sẽ tự `allow` với `updatedInput = input`, nên Claude nhận "did not answer". Mode Manual hiện `AskUserQuestion` như một yêu cầu quyền thường; bấm Allow cũng không có đáp án. Cần: luôn đưa `AskUserQuestion` vào Needs Input (không tự duyệt), hiện câu hỏi + lựa chọn + ô "Khác", trả `answers` trong `updatedInput`. Hết timeout thì trả `allow` không có `answers` để Claude tự quyết.
 
 ## Schema stream-json (đã quan sát)
 

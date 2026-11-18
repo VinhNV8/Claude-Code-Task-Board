@@ -8,6 +8,7 @@ import { join } from 'node:path'
 import readline from 'node:readline'
 import { claudeEnv, findClaudeBin } from './claude.ts'
 import { nodeCommand } from './runtime.ts'
+import { issueKeyToken, revokeKeyToken } from './apiKeyBroker.ts'
 import { DATA_DIR, claudeApiKey, events, projects, runs, settings, taskDeps, tasks, testRuns } from './db.ts'
 import { authFailureHint, resolveCredentials } from './claudeAuth.ts'
 import { broadcast } from './bus.ts'
@@ -208,7 +209,7 @@ export function startRun(task: Task, kind: RunKind, feedback?: string) {
   const project = projects.get(task.projectId)!
   const bin = findClaudeBin()
   if (!bin) {
-    updateTask(task.id, { status: 'failed', failReason: 'Không tìm thấy Claude Code CLI. Đặt biến môi trường CLAUDE_BIN.' })
+    updateTask(task.id, { status: 'failed', failReason: 'Không tìm thấy Claude Code CLI. Cả chế độ đăng nhập lẫn API key đều chạy task bằng CLI: cài extension Claude Code (có sẵn CLI), hoặc chỉ định đường dẫn (cài đặt agentTaskBoard.claudePath của extension, hoặc biến môi trường CLAUDE_BIN).' })
     return
   }
 
@@ -359,7 +360,14 @@ function spawnClaude(o: {
   // P3 (PLAN 3.6): file settings tạm khai báo hook Notification gọi về /api/hooks/notification.
   let hookSettings: string | undefined
   try {
-    hookSettings = writeHookSettings(RUN_LOG_DIR, run.id, { taskId: task.id, port: PORT, token: INTERNAL_TOKEN, nodePath: nodeCommand(DATA_DIR) })
+    hookSettings = writeHookSettings(RUN_LOG_DIR, run.id, {
+      taskId: task.id,
+      port: PORT,
+      token: INTERNAL_TOKEN,
+      nodePath: nodeCommand(DATA_DIR),
+      // Chế độ API key: CLI lấy key qua apiKeyHelper, key không nằm trong môi trường mà lệnh Bash thừa hưởng
+      apiKeyToken: creds.apiKey ? issueKeyToken(task.id) : undefined,
+    })
   } catch (err) {
     removeTempFiles({ mcpConfig })
     finish(task.id, run.id, { exitCode: -1, error: `Không ghi được cấu hình hook: ${(err as Error).message}` })
@@ -382,7 +390,7 @@ function spawnClaude(o: {
   const prompt = o.prompt ?? resumePrompt({ kind, resume, feedback, taskPrompt: task.prompt })
   let child: ChildProcess
   try {
-    child = spawn(o.bin, args, { cwd, env: claudeEnv({ TASKBOARD_TASK_ID: String(task.id) }, { apiKey: creds.apiKey }), windowsHide: true })
+    child = spawn(o.bin, args, { cwd, env: claudeEnv({ TASKBOARD_TASK_ID: String(task.id) }), windowsHide: true })
   } catch (err) {
     removeTempFiles(tempFiles)
     finish(task.id, run.id, { exitCode: -1, error: `Không chạy được Claude CLI: ${(err as Error).message}` })
@@ -435,6 +443,7 @@ function finish(
   o: { exitCode: number; result?: ResultInfo; stderr?: string; error?: string; rateLimitEvent?: RateLimitEvent; resumed?: boolean },
 ) {
   const { exitCode, result, stderr, error, rateLimitEvent, resumed } = o
+  revokeKeyToken(taskId) // run đã kết thúc: token lấy API key hết hiệu lực
   const run = runs.finish(runId, {
     endedAt: Date.now(),
     exitCode,

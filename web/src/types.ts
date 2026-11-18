@@ -1,5 +1,7 @@
 // Mô hình dữ liệu dùng chung, bám theo SPEC Mục 5.2.
 // P1 sẽ thay nguồn dữ liệu giả bằng API thật nhưng giữ nguyên các kiểu này.
+import type { Answers, Question } from './lib/question.ts'
+export type { Answers, Question, QuestionOption } from './lib/question.ts'
 
 export type TaskStatus =
   | 'backlog'
@@ -205,6 +207,10 @@ export interface PermissionRequest {
   status: 'pending' | 'allowed' | 'denied' | 'timeout'
   /** Lý do người dùng nhập khi Từ chối (FR-46), gửi kèm cho Claude */
   denyReason?: string
+  /** FR-40: có khi `tool` là AskUserQuestion. Thẻ hiện câu hỏi + lựa chọn thay cho Cho phép/Từ chối */
+  questions?: Question[]
+  /** FR-40: đáp án người dùng đã gửi (khoá là nguyên văn câu hỏi) */
+  answers?: Answers
 }
 
 export interface ReviewAction {

@@ -1,4 +1,4 @@
-# Claude Workspace
+# Agent Task Board
 
 Giao việc cho Claude Code, theo dõi tiến độ và review kết quả qua trình duyệt, không cần mở VSCode.
 Chạy Claude Code CLI (headless) bằng một trong hai cách xác thực, chọn ở **Cài đặt → Xác thực Claude**:
@@ -41,8 +41,11 @@ Mở **http://localhost:3000**
 | `TASKBOARD_SECRET_KEY` | Khoá mã hoá (32 byte, hex hoặc base64) cho key lưu trong DB. Không đặt thì tự sinh ở `data/secret.key` |
 
 - Key nhập trong giao diện được mã hoá AES-256-GCM trước khi lưu vào SQLite, không bao giờ trả ra API hay ghi log. Mất `data/secret.key` thì phải nhập lại key.
-- Nút **Kiểm tra key** chỉ liệt kê model nên không tốn phí. Nút này không kiểm tra số dư credit.
+- Task Board không tự gọi API của Anthropic để thử key (SPEC C1). Key sai hoặc hết credit sẽ báo lỗi ở lần chạy task đầu tiên, kèm hướng dẫn tiếng Việt.
 - Task Board luôn bỏ `ANTHROPIC_API_KEY` / `ANTHROPIC_AUTH_TOKEN` có sẵn trong môi trường, chỉ truyền key đã chọn, để không tính tiền nhầm tài khoản.
+- Key **không** được truyền cho Claude qua biến môi trường, vì các lệnh mà Claude chạy (Bash, npm script, hook) đều thừa hưởng biến môi trường. Một repo có prompt injection chỉ cần chạy `env` là lộ key. Thay vào đó, mỗi run khai báo `apiKeyHelper`: CLI chạy script `hooks/apikey.ts`, script này hỏi backend qua `/api/internal/api-key` bằng một token cấp riêng cho run đó. Token chỉ dùng được khi task đang chạy và bị huỷ khi run kết thúc.
+  - Giới hạn: token nằm trên dòng lệnh của helper và trong file settings tạm của run. Một lệnh cố ý dò tiến trình hoặc file của cùng người dùng vẫn có thể lấy được key trong lúc task chạy. Vì vậy vẫn nên đặt spend limit trong Claude Console.
+  - Không dùng `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB`, vì biến này ép mọi task về chế độ quyền `default` (bỏ qua acceptEdits/auto/plan).
 - Nên đặt giới hạn chi tiêu (spend limit) trong Claude Console. Chi phí Task Board hiển thị tính theo giá niêm yết.
 
 ## Truy cập từ xa qua Tailscale
@@ -58,8 +61,8 @@ nên đi qua [Tailscale](https://tailscale.com) (mạng riêng mã hoá, không 
 
 Các bước (Windows, PowerShell):
 
-1. Cài Tailscale trên máy chạy Claude Workspace và trên thiết bị muốn truy cập, đăng nhập **cùng một tailnet**.
-2. Lấy IP Tailscale của máy chạy Claude Workspace: `tailscale ip -4` (dạng `100.x.y.z`).
+1. Cài Tailscale trên máy chạy Agent Task Board và trên thiết bị muốn truy cập, đăng nhập **cùng một tailnet**.
+2. Lấy IP Tailscale của máy chạy Agent Task Board: `tailscale ip -4` (dạng `100.x.y.z`).
 3. Tạo token ngẫu nhiên và lưu lại ở nơi an toàn (trình quản lý mật khẩu):
    ```powershell
    node -e "console.log(require('crypto').randomBytes(24).toString('base64url'))"
@@ -83,6 +86,11 @@ Cách hoạt động:
 - Route nội bộ `/api/internal/*` và `/api/hooks/*` (MCP xin quyền, hook Notification) chỉ nhận kết nối trực tiếp từ localhost, không nhận qua mạng hay qua reverse proxy.
 - Muốn có HTTPS: dùng `tailscale serve --bg 3000` (giữ `REMOTE_HOST` trống, chỉ đặt `TASKBOARD_AUTH_TOKEN`). Tailscale proxy về `127.0.0.1:3000`; cookie được thêm cờ `Secure` khi proxy gửi `X-Forwarded-Proto: https`.
   **Không** dùng `tailscale funnel` (mở ra Internet công cộng).
+
+Chặn trang web lạ (luôn bật, kể cả khi chỉ chạy local):
+- **DNS rebinding:** khi chưa bật đăng nhập, backend chỉ nhận header `Host` là `localhost`, `127.x.x.x`, `::1` hoặc địa chỉ lắng nghe. Muốn truy cập bằng tên khác mà không bật đăng nhập (ví dụ reverse proxy riêng), thêm tên đó vào `TASKBOARD_ALLOWED_HOSTS` (nhiều tên cách nhau bằng dấu phẩy).
+- **Request chéo trang:** request ghi (POST, PUT, PATCH, DELETE) và kết nối `/ws` từ trình duyệt phải có `Origin` trùng với chính địa chỉ của backend. Trường hợp proxy cùng máy (như `tailscale serve`) được chấp nhận qua `X-Forwarded-Host`. Origin khác thì khai báo trong `TASKBOARD_ALLOWED_ORIGINS`, ví dụ `https://board.example.com`.
+- Script, `curl` và extension VS Code không gửi `Origin` nên không bị ảnh hưởng.
 
 ## Extension VS Code
 Thư mục [vscode-extension/](vscode-extension/) đóng gói Task Board thành extension: người dùng cài từ Marketplace là dùng được, không cần Node hay `npm start`. Hướng dẫn cho người dùng nằm ở [vscode-extension/README.md](vscode-extension/README.md).

@@ -1,6 +1,1 @@
-Làm sao để select model chuẩn cho mỗi task?
-Các task chạy cần phê duyệt permission -> làm thế nào để có thể triển khai?
-
-Tổng hợp buget theo từng project đê có thể dễ dàng theo dõi.
-
-Task đó đang dùng model nào -> cần có thông tin.
+18-Nov: Cấu hình task định kỳ (Claude sẽ dựa vào task định kỳ để tự động tạo output/đăng facebook,....) -> Nghiên cứu ý tưởng, đề xuất giải 3-5 giải pháp để triển khai được.

@@ -179,3 +179,13 @@ test('taskDiff: không có nhánh → [], có nhánh → diff thêm/sửa/xoá/�
   assert.deepEqual(by['img.bin'].hunks, [])
   await g.removeWorktree(project, 5)
 })
+
+test('commitAll: không commit log do hook ghi vào .claude/logs', async () => {
+  const { path } = await g.createWorktree(project, 9)
+  mkdirSync(join(path, '.claude', 'logs'), { recursive: true })
+  writeFileSync(join(path, '.claude', 'logs', 'token-usage.md'), '# log\n')
+  assert.equal(await g.commitAll(path, 'chỉ có log'), false)
+  writeFileSync(join(path, 'real.txt'), 'x\n')
+  assert.equal(await g.commitAll(path, 'task #9'), true)
+  assert.equal(await ok(path, ['show', '--name-only', '--format=', 'HEAD']), 'real.txt')
+})

@@ -9,6 +9,7 @@ import { columnTasks } from '../lib/board'
 import { unmetDeps } from '../lib/deps'
 import { logLine, slotAssignments, type AttentionItem } from '../lib/workView'
 import type { Project, Task, TaskStatus } from '../types'
+import { tr } from '../lib/i18n'
 
 const LOG_LINES = 6
 
@@ -50,18 +51,18 @@ function AgentSlot({ index, task, project, next, taskLink, onOpen }: { index: nu
       <div className="flex min-h-[210px] flex-col rounded-lg border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
         {head()}
         <div className="m-3 flex flex-1 flex-col items-center justify-center gap-1.5 rounded-md border border-dashed border-slate-300 p-3 text-center text-xs text-slate-500 dark:border-slate-700 dark:text-slate-400">
-          <span className="font-medium text-slate-700 dark:text-slate-200">Slot trống</span>
+          <span className="font-medium text-slate-700 dark:text-slate-200">{tr('Slot trống')}</span>
           {next ? (
             <>
               <span className="line-clamp-2">
-                Kế tiếp: <span className="font-mono">#{next.id}</span> {next.title}
+                {tr('Kế tiếp:')} <span className="font-mono">#{next.id}</span> {next.title}
               </span>
               <Button size="sm" className="mt-1" onClick={() => void runTaskNow(next.id)}>
-                <Play size={13} /> Chạy ngay
+                <Play size={13} /> {tr('Chạy ngay')}
               </Button>
             </>
           ) : (
-            <span>Hàng đợi trống</span>
+            <span>{tr('Hàng đợi trống')}</span>
           )}
         </div>
       </div>
@@ -73,11 +74,11 @@ function AgentSlot({ index, task, project, next, taskLink, onOpen }: { index: nu
         {head(<StatusGlyph status="needs_input" size={12} />)}
         <div className="m-3 flex flex-1 flex-col items-center justify-center gap-1.5 rounded-md border border-dashed border-amber-300 p-3 text-center text-xs text-slate-500 dark:border-amber-800 dark:text-slate-400">
           <span className="inline-flex items-center gap-1 font-medium text-amber-700 dark:text-amber-400">
-            <Hand size={13} /> Slot bị giữ: Claude chờ bạn cấp quyền
+            <Hand size={13} /> {tr('Slot bị giữ: Claude chờ bạn cấp quyền')}
           </span>
           <span className="line-clamp-2 text-slate-700 dark:text-slate-200">{task.title}</span>
           <Button size="sm" variant="primary" className="mt-1" onClick={() => onOpen(task.id)}>
-            <Eye size={13} /> Xem yêu cầu
+            <Eye size={13} /> {tr('Xem yêu cầu')}
           </Button>
         </div>
       </div>
@@ -92,7 +93,7 @@ function AgentSlot({ index, task, project, next, taskLink, onOpen }: { index: nu
         </Link>
         <div className="flex flex-wrap gap-1.5">
           <Button size="sm" variant="ghost" onClick={() => setConfirmStop(true)} className="text-rose-600">
-            <Square size={12} /> Tạm dừng
+            <Square size={12} /> {tr('Tạm dừng')}
           </Button>
           <Button size="sm" variant="ghost" onClick={() => onOpen(task.id)}>
             <Eye size={13} /> Xem log
@@ -100,7 +101,7 @@ function AgentSlot({ index, task, project, next, taskLink, onOpen }: { index: nu
         </div>
       </div>
       <div className="mt-auto flex h-[118px] flex-col justify-end overflow-hidden border-t border-slate-200 bg-slate-50 px-3 py-2 font-mono text-[11px] leading-[1.7] text-slate-500 dark:border-slate-800 dark:bg-slate-950/60 dark:text-slate-400">
-        {lines.length === 0 && <span>Đang chờ log…</span>}
+        {lines.length === 0 && <span>{tr('Đang chờ log…')}</span>}
         {lines.map((l, i) => (
           <div
             key={i}
@@ -115,9 +116,9 @@ function AgentSlot({ index, task, project, next, taskLink, onOpen }: { index: nu
       <ConfirmDialog
         open={confirmStop}
         onClose={() => setConfirmStop(false)}
-        title={`Tạm dừng task #${task.id}?`}
-        message="Claude sẽ bị dừng ngay. Các thay đổi đang làm dở vẫn còn trong worktree, bạn có thể bấm Tiếp tục để chạy tiếp phiên cũ hoặc Chạy lại từ đầu."
-        confirmLabel="Tạm dừng"
+        title={tr('Tạm dừng task #{id}?', { id: task.id })}
+        message={tr('Claude sẽ bị dừng ngay. Các thay đổi đang làm dở vẫn được giữ, bạn có thể bấm Tiếp tục để chạy tiếp phiên cũ hoặc Chạy lại từ đầu.')}
+        confirmLabel={tr('Tạm dừng')}
         danger
         onConfirm={() => stopTask(task.id)}
       />
@@ -133,17 +134,17 @@ function Lane({ status, title, tasks, taskLink, now, more }: { status: TaskStatu
         {title}
         <span className="font-normal text-slate-500 dark:text-slate-400">{tasks.length + (more ?? 0)}</span>
       </div>
-      {tasks.length === 0 && <p className="border-t border-slate-100 py-2 text-xs text-slate-400 dark:border-slate-800">Trống</p>}
+      {tasks.length === 0 && <p className="border-t border-slate-100 py-2 text-xs text-slate-400 dark:border-slate-800">{tr('Trống')}</p>}
       {tasks.map((t) => (
         <Link key={t.id} to={taskLink(t.id)} className="group flex items-center gap-2 border-t border-slate-100 py-1.5 text-[13px] dark:border-slate-800">
           <span className="font-mono text-[11px] text-slate-400">#{t.id}</span>
           <span className="min-w-0 flex-1 truncate group-hover:text-indigo-600 dark:group-hover:text-indigo-400">{t.title}</span>
           <span className="shrink-0 text-[11px] text-slate-400">
-            {t.status === 'failed' ? <span className="text-rose-500">lỗi</span> : timeAgo(t.updatedAt, now)}
+            {t.status === 'failed' ? <span className="text-rose-500">{tr('lỗi')}</span> : timeAgo(t.updatedAt, now)}
           </span>
         </Link>
       ))}
-      {!!more && <p className="border-t border-slate-100 pt-1.5 text-[11px] text-slate-400 dark:border-slate-800">và {more} task khác, xem ở view Bảng</p>}
+      {!!more && <p className="border-t border-slate-100 pt-1.5 text-[11px] text-slate-400 dark:border-slate-800">{tr('và {n} task khác, xem ở view Bảng', { n: more })}</p>}
     </div>
   )
 }
@@ -183,13 +184,13 @@ export function OpsView({
 
   return (
     <div className="flex flex-col gap-6">
-      <section aria-label="Cần bạn">
-        <SectionHead title="Cần bạn" count={attention.length} hint="Xin quyền, chờ duyệt, bị dừng trong 24 giờ" />
+      <section aria-label={tr('Cần bạn')}>
+        <SectionHead title={tr('Cần bạn')} count={attention.length} hint={tr('Xin quyền, chờ duyệt, bị dừng trong 24 giờ')} />
         <AttentionGrid items={attention} tasks={tasks} projects={projects} onOpen={onOpen} />
       </section>
 
-      <section aria-label="Agent đang chạy">
-        <SectionHead title="Agent đang chạy" count={`${used}/${s.settings.maxParallel}`} hint="Task chờ quyền vẫn giữ slot" />
+      <section aria-label={tr('Agent đang chạy')}>
+        <SectionHead title={tr('Agent đang chạy')} count={`${used}/${s.settings.maxParallel}`} hint={tr('Task chờ quyền vẫn giữ slot')} />
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {slots.map((t, i) => (
             <AgentSlot key={t ? t.id : `empty-${i}`} index={i} task={t} project={project(t)} next={next} taskLink={taskLink} onOpen={onOpen} />
@@ -198,11 +199,11 @@ export function OpsView({
       </section>
 
       <section aria-label="Pipeline">
-        <SectionHead title="Pipeline" hint="Kéo thả đầy đủ ở view Bảng" />
+        <SectionHead title="Pipeline" hint={tr('Kéo thả đầy đủ ở view Bảng')} />
         <div className="grid gap-3 md:grid-cols-3">
-          <Lane status="queued" title="Hàng đợi" {...lane(queued)} taskLink={taskLink} now={now} />
-          <Lane status="backlog" title="Chờ chạy" {...lane(backlog)} taskLink={taskLink} now={now} />
-          <Lane status="done" title="Xong trong 24 giờ" {...lane(done)} taskLink={taskLink} now={now} />
+          <Lane status="queued" title={tr('Hàng đợi')} {...lane(queued)} taskLink={taskLink} now={now} />
+          <Lane status="backlog" title={tr('Chờ chạy')} {...lane(backlog)} taskLink={taskLink} now={now} />
+          <Lane status="done" title={tr('Xong trong 24 giờ')} {...lane(done)} taskLink={taskLink} now={now} />
         </div>
       </section>
     </div>

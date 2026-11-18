@@ -2,15 +2,16 @@
 // Không phụ thuộc React/DOM để test được (server/src/workView.test.ts).
 import type { PermissionRequest, Task, TaskStatus } from '../types.ts'
 import { fold } from './taskFilter.ts'
+import { tr } from './i18n.ts'
 
 export type WorkView = 'board' | 'ops' | 'triage'
 
 export const WORK_VIEWS: WorkView[] = ['board', 'ops', 'triage']
 
 export const VIEW_META: Record<WorkView, { label: string; key: string; hint: string }> = {
-  board: { label: 'Bảng', key: '1', hint: 'Lên kế hoạch, kéo thả task giữa các cột' },
-  ops: { label: 'Điều phối', key: '2', hint: 'Việc cần bạn, agent đang chạy và pipeline' },
-  triage: { label: 'Phân luồng', key: '3', hint: 'Danh sách bên trái, chi tiết bên phải, J/K để chuyển task' },
+  board: { label: tr('Bảng'), key: '1', hint: tr('Lên kế hoạch, kéo thả task giữa các cột') },
+  ops: { label: tr('Điều phối'), key: '2', hint: tr('Việc cần bạn, agent đang chạy và pipeline') },
+  triage: { label: tr('Phân luồng'), key: '3', hint: tr('Danh sách bên trái, chi tiết bên phải, J/K để chuyển task') },
 }
 
 /** Khoá localStorage nhớ cách xem gần nhất. */
@@ -203,9 +204,9 @@ export function logLine(e: { type: string; text?: string; tool?: string; input?:
     case 'tool_use':
       return { kind: 'tool', text: `${e.tool ?? ''} ${first(e.input)}`.trim() }
     case 'tool_result':
-      return e.isError ? { kind: 'error', text: `✗ ${e.tool ?? ''} lỗi` } : { kind: 'ok', text: `✓ ${e.tool ?? ''} xong` }
+      return e.isError ? { kind: 'error', text: tr('✗ {tool} lỗi', { tool: e.tool ?? '' }) } : { kind: 'ok', text: tr('✓ {tool} xong', { tool: e.tool ?? '' }) }
     case 'result':
-      return { kind: e.isError ? 'error' : 'ok', text: first(e.text) || (e.isError ? 'Kết thúc với lỗi' : 'Hoàn thành') }
+      return { kind: e.isError ? 'error' : 'ok', text: first(e.text) || (e.isError ? tr('Kết thúc với lỗi') : tr('Hoàn thành')) }
     default:
       return { kind: 'text', text: first(e.text) }
   }

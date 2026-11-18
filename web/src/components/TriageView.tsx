@@ -12,7 +12,8 @@ import type { Project, Task, TaskStatus } from '../types'
 function subline(t: Task, s: ReturnType<typeof useStore>): string {
   if (t.status === 'needs_input') {
     const p = s.permissions.find((x) => x.taskId === t.id && x.status === 'pending')
-    return p ? `Xin dùng ${p.tool}: ${p.input.trim().split('\n')[0]}` : 'Đang chờ bạn'
+    if (p?.questions?.length) return `Claude hỏi: ${p.questions[0].question}`
+    return p ? `Xin dùng ${p.tool}:${p.input.trim().split('\n')[0]}` : 'Đang chờ bạn'
   }
   if (t.status === 'review') {
     const f = s.diffs[t.id]

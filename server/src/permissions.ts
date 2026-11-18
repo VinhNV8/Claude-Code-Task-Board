@@ -8,6 +8,7 @@ import { bus, broadcast, type ServerMessage } from './bus.ts'
 import { db, events, projects, settings, tasks } from './db.ts'
 import { currentRunId, updateTask } from './runner.ts'
 import { describeInput, matchesAllowed, riskOf, rulesFor } from './permissionRules.ts'
+import { describeQuestions, isQuestionTool, noAnswerMessage, parseQuestions, validateAnswers, type Answers } from '../../web/src/lib/question.ts'
 import type { PermissionRequest } from './types.ts'
 
 type Input = Record<string, unknown>
@@ -50,6 +51,17 @@ interface Row {
   timeout_at: number
   decided_at: number | null
   deny_reason?: string | null
+  /** FR-40: đáp án JSON cho câu hỏi AskUserQuestion */
+  answers_json?: string | null
+}
+
+const answersOf = (r: Row): Answers | undefined => {
+  if (!r.answers_json) return undefined
+  try {
+    return JSON.parse(r.answers_json) as Answers
+  } catch {
+    return undefined
+  }
 }
 
 /** Độ dài tối đa của lý do từ chối (FR-46). */
@@ -76,6 +88,25 @@ const riskOfRow = (r: Row) => riskOf(r.tool, JSON.parse(r.input_json) as Input, 
 
 const toRequest = (r: Row): PermissionRequest => {
   const input = JSON.parse(r.input_json) as Input
+  if (isQuestionTool(r.tool)) {
+    // FR-40: câu hỏi của Claude, không phải xin quyền: không có quy tắc "Luôn cho phép", không xét rủi ro.
+    const questions = parseQuestions(input)
+    const answers = answersOf(r)
+    return {
+      id: r.id,
+      taskId: r.task_id,
+      tool: r.tool,
+      input: describeQuestions(questions),
+      rules: [],
+      risk: 'normal',
+      createdAt: r.created_at,
+      timeoutAt: r.timeout_at,
+      status: r.status,
+      questions,
+      ...(answers ? { answers } : {}),
+      ...(r.deny_reason ? { denyReason: r.deny_reason } : {}),
+    }
+  }
   const risk = riskOfRow(r)
   return {
     id: r.id,
@@ -125,11 +156,17 @@ function responseFor(r: Row): PollResponse | undefined {
   switch (r.status) {
     case 'pending':
       return undefined
-    case 'allowed':
-      return { decision: 'allow', updatedInput: JSON.parse(r.input_json) }
+    case 'allowed': {
+      const input = JSON.parse(r.input_json) as Input
+      // FR-40: đáp án đi trong updatedInput.answers, Claude nhận và chạy tiếp (spike S9)
+      const answers = answersOf(r)
+      return { decision: 'allow', updatedInput: answers ? { ...input, answers } : input }
+    }
     case 'timeout':
+      if (isQuestionTool(r.tool)) return { decision: 'deny', message: noAnswerMessage('timeout') }
       return { decision: 'deny', message: `Hết thời gian chờ duyệt quyền cho ${r.tool}, đã tự động từ chối.` }
     default:
+      if (isQuestionTool(r.tool)) return { decision: 'deny', message: noAnswerMessage('skipped', r.deny_reason) }
       return { decision: 'deny', message: denyMessage(r.tool, r.deny_reason) }
   }
 }
@@ -142,10 +179,19 @@ export function denyMessage(tool: string, reason?: string | null): string {
 }
 
 /** Chốt trạng thái một yêu cầu, trả lời các long-poll đang chờ, đưa task về Running nếu hết yêu cầu treo. */
-function settle(id: string, status: Exclude<PermissionRequest['status'], 'pending'>, note?: string, reason?: string) {
+function settle(
+  id: string,
+  status: Exclude<PermissionRequest['status'], 'pending'>,
+  note?: string,
+  reason?: string,
+  answers?: Answers,
+) {
+  // Đáp án ghi cùng câu UPDATE với trạng thái: không có lúc nào yêu cầu đã chốt mà thiếu đáp án
   const res = db
-    .prepare("UPDATE permission_requests SET status = ?, decided_at = ?, deny_reason = ? WHERE id = ? AND status = 'pending'")
-    .run(status, now(), status === 'denied' ? (reason ?? null) : null, id)
+    .prepare(
+      "UPDATE permission_requests SET status = ?, decided_at = ?, deny_reason = ?, answers_json = ? WHERE id = ? AND status = 'pending'",
+    )
+    .run(status, now(), status === 'denied' ? (reason ?? null) : null, status === 'allowed' && answers ? JSON.stringify(answers) : null, id)
   const row = getRow(id)
   if (!row || res.changes === 0) return row
 
@@ -158,9 +204,20 @@ function settle(id: string, status: Exclude<PermissionRequest['status'], 'pendin
   }
   broadcast({ type: 'permission', permission: toRequest(row) })
 
-  const label = { allowed: 'Đã cho phép', denied: 'Đã từ chối', timeout: 'Hết thời gian, tự động từ chối' }[status]
-  const why = row.deny_reason ? ` • lý do: ${row.deny_reason}` : ''
-  logToRun(row.task_id, `${label}: ${row.tool}(${describeInput(row.tool, JSON.parse(row.input_json))})${why}${note ? ` • ${note}` : ''}`)
+  if (isQuestionTool(row.tool)) {
+    const saved = answersOf(row)
+    const text =
+      status === 'allowed' && saved
+        ? `Đã trả lời câu hỏi của Claude: ${Object.entries(saved).map(([q, a]) => `${q} → ${a}`).join(' • ')}`
+        : status === 'timeout'
+          ? 'Hết thời gian, câu hỏi chưa được trả lời: Claude sẽ tự quyết'
+          : `Đã bỏ qua câu hỏi của Claude${row.deny_reason ? ` • ghi chú: ${row.deny_reason}` : ''}`
+    logToRun(row.task_id, `${text}${note ? ` • ${note}` : ''}`)
+  } else {
+    const label = { allowed: 'Đã cho phép', denied: 'Đã từ chối', timeout: 'Hết thời gian, tự động từ chối' }[status]
+    const why = row.deny_reason ? ` • lý do: ${row.deny_reason}` : ''
+    logToRun(row.task_id, `${label}: ${row.tool}(${describeInput(row.tool, JSON.parse(row.input_json))})${why}${note ? ` • ${note}` : ''}`)
+  }
 
   const t = tasks.get(row.task_id)
   if (t?.status === 'needs_input' && pendingRows(t.id).length === 0) updateTask(t.id, { status: 'running' })
@@ -248,12 +305,17 @@ export async function requestPermission(a: PermissionAsk, waitMs = POLL_WAIT_MS)
   const cwd = task.worktreePath ?? project?.repoPath
   // Lệnh rủi ro cao luôn phải duyệt tay, kể cả khi khớp allowlist (FR-45, AC-10)
   const highRisk = riskOf(a.toolName, a.input ?? {}, { cwd }).level === 'high'
-  if (project && !highRisk && matchesAllowed(project.allowedTools, a.toolName, a.input ?? {}, { cwd })) {
+  // FR-40: câu hỏi của Claude luôn chờ người trả lời. Tự "allow" mà không có đáp án thì Claude nhận
+  // "The user did not answer" và tự đoán (spike S9), nên không áp allowlist hay mode Auto ở đây.
+  const question = isQuestionTool(a.toolName)
+  if (question && !parseQuestions(a.input).length)
+    return { decision: 'deny', message: 'AskUserQuestion không có câu hỏi hợp lệ nào. Hãy gọi lại với ít nhất một câu hỏi.' }
+  if (!question && project && !highRisk && matchesAllowed(project.allowedTools, a.toolName, a.input ?? {}, { cwd })) {
     logToRun(task.id, `Tự động cho phép ${a.toolName}(${describeInput(a.toolName, a.input)}) theo quy tắc của project`)
     return { decision: 'allow', updatedInput: a.input }
   }
   // Mode Auto: mọi thao tác qua được kiểm tra an toàn đều được duyệt tự động, không cần người
-  if (task.permissionMode === 'auto' && !highRisk) {
+  if (!question && task.permissionMode === 'auto' && !highRisk) {
     logToRun(task.id, `Tự động cho phép ${a.toolName}(${describeInput(a.toolName, a.input)}) (mode Auto)`)
     return { decision: 'allow', updatedInput: a.input }
   }
@@ -278,7 +340,10 @@ export async function requestPermission(a: PermissionAsk, waitMs = POLL_WAIT_MS)
 
   const req = toRequest(row)
   broadcast({ type: 'permission', permission: req })
-  logToRun(task.id, `Claude xin quyền ${req.tool}(${req.input}), đang chờ bạn duyệt`)
+  logToRun(
+    task.id,
+    question ? `Claude hỏi: ${req.input.replaceAll('\n', ' • ')}, đang chờ bạn trả lời` : `Claude xin quyền ${req.tool}(${req.input}), đang chờ bạn duyệt`,
+  )
   if (task.status === 'running') updateTask(task.id, { status: 'needs_input' })
   return wait(row.id, waitMs)
 }
@@ -289,6 +354,9 @@ export function decidePermission(id: string, decision: Decision, reason?: string
   const row = getRow(id)
   if (!row) throw new PermissionError(404, 'Không tìm thấy yêu cầu xin quyền')
   if (row.status !== 'pending') throw new PermissionError(409, 'Yêu cầu này đã được xử lý')
+  // FR-40: câu hỏi chỉ trả lời (answerQuestion) hoặc bỏ qua (deny); "cho phép" suông sẽ để Claude tự đoán
+  if (isQuestionTool(row.tool) && (decision === 'allow' || decision === 'always'))
+    throw new PermissionError(400, 'Đây là câu hỏi của Claude: hãy chọn câu trả lời hoặc Bỏ qua')
 
   if (decision === 'always' && riskOfRow(row).level === 'high')
     throw new PermissionError(400, 'Lệnh rủi ro cao không thể đặt Luôn cho phép')
@@ -308,6 +376,17 @@ export function decidePermission(id: string, decision: Decision, reason?: string
   return toRequest(settle(id, status, note, why)!)
 }
 
+/** POST /api/permissions/:id/answer (FR-40): trả lời câu hỏi AskUserQuestion, Claude chạy tiếp với đáp án. */
+export function answerQuestion(id: string, rawAnswers: unknown, note?: string): PermissionRequest {
+  const row = getRow(id)
+  if (!row) throw new PermissionError(404, 'Không tìm thấy câu hỏi')
+  if (!isQuestionTool(row.tool)) throw new PermissionError(400, 'Yêu cầu này không phải câu hỏi của Claude')
+  if (row.status !== 'pending') throw new PermissionError(409, 'Câu hỏi này đã được xử lý')
+  const checked = validateAnswers(parseQuestions(JSON.parse(row.input_json)), rawAnswers)
+  if ('error' in checked) throw new PermissionError(400, checked.error)
+  return toRequest(settle(id, 'allowed', note, undefined, checked.answers)!)
+}
+
 export type BatchDecision = 'allow' | 'deny'
 
 /**
@@ -323,8 +402,10 @@ export function decidePermissionsBatch(ids: unknown, decision: unknown, reason?:
   let decided = 0
   let skipped = 0
   for (const id of new Set(ids as string[])) {
-    // Đồng bộ: kiểm pending rồi settle ngay, không có quyết định nào chen giữa
-    if (getRow(id)?.status !== 'pending') {
+    // Đồng bộ: kiểm pending rồi settle ngay, không có quyết định nào chen giữa.
+    // Câu hỏi của Claude (FR-40) phải trả lời từng câu, không duyệt hàng loạt.
+    const r = getRow(id)
+    if (r?.status !== 'pending' || isQuestionTool(r.tool)) {
       skipped++
       continue
     }

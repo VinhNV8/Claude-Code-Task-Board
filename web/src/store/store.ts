@@ -2,6 +2,7 @@
 // Giữ nguyên API với store giả lập (mock.ts) để giao diện không phải thay đổi.
 import { useSyncExternalStore } from 'react'
 import type {
+  Answers,
   DemoFlags,
   FileDiff,
   MergeCheck,
@@ -34,6 +35,8 @@ import { EMPTY_TEST_OUTPUT, appendTestOutput } from '../lib/testOutput'
 import type { ClaudeLimit } from '../lib/claudeLimit'
 import { checkStillAuthenticated, onUnauthorized } from '../lib/auth'
 import { showBrowserNotification, transitionNotice, type Notice } from '../lib/notify'
+import { tr } from '../lib/i18n'
+import type { ImportRequest, ImportResult } from '../lib/taskImport'
 
 export interface State {
   projects: Project[]
@@ -141,8 +144,8 @@ function warnBlockedDependents(prev: TaskStatus | undefined, task: Task) {
   if (!waiting.length) return
   toast({
     kind: 'error',
-    title: `#${task.id} lỗi: ${waiting.length} task đang chờ nó`,
-    body: `${waiting.map((t) => `#${t.id}`).join(', ')} sẽ đứng chờ tới khi #${task.id} Done (Chạy lại), hoặc gỡ phụ thuộc trong task đó.`,
+    title: tr('#{id} lỗi: {n} task đang chờ nó', { id: task.id, n: waiting.length }),
+    body: tr('{ids} sẽ đứng chờ tới khi #{id} Done (Chạy lại), hoặc gỡ phụ thuộc trong task đó.', { ids: waiting.map((t) => `#${t.id}`).join(', '), id: task.id }),
     taskId: task.id,
   })
 }
@@ -150,7 +153,7 @@ function warnBlockedDependents(prev: TaskStatus | undefined, task: Task) {
 function notifyTransition(prev: TaskStatus | undefined, task: Task) {
   const n = transitionNotice(prev, task, state.settings.notifyOn)
   if (n) notify(n)
-  else if (task.status === 'done' && prev === 'running') toast({ kind: 'success', title: `Hoàn thành: #${task.id}`, body: task.title, taskId: task.id })
+  else if (task.status === 'done' && prev === 'running') toast({ kind: 'success', title: tr('Hoàn thành: #{id}', { id: task.id }), body: task.title, taskId: task.id })
 }
 
 // ------------------------------------------------------------ REST
@@ -174,19 +177,20 @@ async function api<T = unknown>(method: string, path: string, body?: unknown): P
       body: body !== undefined ? JSON.stringify(body) : undefined,
     })
   } catch {
-    throw new ApiError('Không kết nối được tới backend')
+    throw new ApiError(tr('Không kết nối được tới backend'))
   }
   const data = await res.json().catch(() => ({}))
-  if (res.status === 401) onUnauthorized() // phiên đăng nhập hết hạn (PLAN 4.7)
+  // phiên đăng nhập hết hạn (PLAN 4.7)
+  if (res.status === 401) onUnauthorized()
   if (!res.ok) {
     const d = data as { error?: string; code?: string }
-    throw new ApiError(d.error ?? `Lỗi ${res.status}`, d.code)
+    throw new ApiError(d.error ?? tr('Lỗi {status}', { status: res.status }), d.code)
   }
   return data as T
 }
 
 /** Gọi API, lỗi thì hiện toast. Trả về undefined nếu lỗi. */
-async function act<T>(fn: () => Promise<T>, errorTitle = 'Thao tác thất bại'): Promise<T | undefined> {
+async function act<T>(fn: () => Promise<T>, errorTitle = tr('Thao tác thất bại')): Promise<T | undefined> {
   try {
     return await fn()
   } catch (e) {
@@ -222,11 +226,11 @@ export function ensureTestOutput(taskId: number, force = false) {
 }
 
 export async function runTests(taskId: number) {
-  const run = await act(() => api<TestRun>('POST', `/tasks/${taskId}/test`), 'Không chạy được test')
+  const run = await act(() => api<TestRun>('POST', `/tasks/${taskId}/test`), tr('Không chạy được test'))
   if (run) onMessage({ type: 'test_run', testRun: run })
 }
 
-export const stopTests = (taskId: number) => act(() => api('POST', `/tasks/${taskId}/test/stop`), 'Không dừng được test')
+export const stopTests = (taskId: number) => act(() => api('POST', `/tasks/${taskId}/test/stop`), tr('Không dừng được test'))
 
 // ------------------------------------------------------------ log theo lần chạy (tải khi cần)
 
@@ -339,7 +343,8 @@ function onMessage(m: ServerMessage) {
       const r = m.testRun
       const prev = state.testRuns.find((x) => x.taskId === r.taskId)
       const isNew = r.status === 'running' && prev?.startedAt !== r.startedAt
-      if (isNew) loadedTests.add(r.taskId) // lần chạy mới: output bắt đầu từ rỗng, không cần tải
+      // lần chạy mới: output bắt đầu từ rỗng, không cần tải
+      if (isNew) loadedTests.add(r.taskId)
       set((s) => ({
         testRuns: prev ? s.testRuns.map((x) => (x.taskId === r.taskId ? r : x)) : [...s.testRuns, r],
         testOutputs: isNew ? { ...s.testOutputs, [r.taskId]: EMPTY_TEST_OUTPUT } : s.testOutputs,
@@ -348,9 +353,11 @@ function onMessage(m: ServerMessage) {
     }
     case 'test_output': {
       const cur = state.testOutputs[m.taskId]
-      if (!cur) break // chưa mở panel test của task này
+      // chưa mở panel test của task này
+      if (!cur) break
       const next = appendTestOutput(cur, m.offset, m.chunk)
-      if (next === null) ensureTestOutput(m.taskId, true) // hụt dữ liệu (mất kết nối giữa chừng): tải lại
+      // hụt dữ liệu (mất kết nối giữa chừng): tải lại
+      if (next === null) ensureTestOutput(m.taskId, true)
       else if (next !== cur) set((s) => ({ testOutputs: { ...s.testOutputs, [m.taskId]: next } }))
       break
     }
@@ -383,7 +390,7 @@ function onMessage(m: ServerMessage) {
       if (m.run.taskId)
         toast({
           kind: 'info',
-          title: m.run.catchUp ? `Lịch đã tạo bù #${m.run.taskId}` : `Lịch đã tạo #${m.run.taskId}`,
+          title: m.run.catchUp ? tr('Lịch đã tạo bù #{id}', { id: m.run.taskId }) : tr('Lịch đã tạo #{id}', { id: m.run.taskId }),
           body: m.run.title,
           taskId: m.run.taskId,
         })
@@ -411,14 +418,14 @@ function onMessage(m: ServerMessage) {
     case 'notification':
       // Hook Notification của Claude (PLAN 3.6); nội dung cũng đã nằm trong log dưới dạng event system.
       if (state.settings.notifyOn.needsInput)
-        notify({ kind: 'warning', title: `#${m.taskId}: ${m.title ?? 'Claude gửi thông báo'}`, body: m.message, taskId: m.taskId })
+        notify({ kind: 'warning', title: `#${m.taskId}: ${m.title ?? tr('Claude gửi thông báo')}`, body: m.message, taskId: m.taskId })
       break
     case 'budgets':
       set(() => ({ budgets: m.budgets }))
       break
     case 'budget_alert':
       // P6 B2: mỗi mức chỉ báo một lần mỗi tháng (server đã lọc).
-      notify({ kind: m.level === 'over' ? 'error' : 'warning', title: m.level === 'over' ? 'Vượt budget tháng' : 'Sắp hết budget tháng', body: m.message })
+      notify({ kind: m.level === 'over' ? 'error' : 'warning', title: m.level === 'over' ? tr('Vượt budget tháng') : tr('Sắp hết budget tháng'), body: m.message })
       break
   }
 }
@@ -430,7 +437,8 @@ function connect() {
   ws.onopen = async () => {
     retry = 0
     try {
-      await loadState() // đồng bộ lại sau khi (tái) kết nối
+      // đồng bộ lại sau khi (tái) kết nối
+      await loadState()
       set(() => ({ connection: 'online' }))
     } catch {
       ws.close()
@@ -445,7 +453,8 @@ function connect() {
   }
   ws.onclose = () => {
     set(() => ({ connection: 'offline' }))
-    void checkStillAuthenticated() // WS bị từ chối do chưa đăng nhập thì quay về màn hình đăng nhập
+    // WS bị từ chối do chưa đăng nhập thì quay về màn hình đăng nhập
+    void checkStillAuthenticated()
     const delay = Math.min(10_000, 500 * 2 ** retry++)
     setTimeout(connect, delay)
   }
@@ -469,24 +478,31 @@ export interface NewTask {
 }
 
 export async function createTask(input: NewTask): Promise<number> {
-  const t = await act(() => api<Task>('POST', '/tasks', input), 'Không tạo được task')
+  const t = await act(() => api<Task>('POST', '/tasks', input), tr('Không tạo được task'))
   if (!t) throw new ApiError('create failed')
   set((s) => ({ tasks: upsert(s.tasks, t) }))
-  toast({ kind: 'success', title: input.run ? `Đã đưa #${t.id} vào hàng đợi` : `Đã lưu #${t.id} vào Backlog`, body: t.title })
+  toast({ kind: 'success', title: input.run ? tr('Đã đưa #{id} vào hàng đợi', { id: t.id }) : tr('Đã lưu #{id} vào Backlog', { id: t.id }), body: t.title })
   return t.id
 }
 
+/** FR-01a: kiểm tra (dryRun) hoặc tạo task hàng loạt. Lỗi ném ApiError (kèm `code`), modal tự hiển thị. */
+export async function importTasks(req: ImportRequest): Promise<ImportResult & { tasks: Task[] }> {
+  const r = await api<ImportResult & { tasks: Task[] }>('POST', '/tasks/import', req)
+  if (r.tasks.length) set((s) => ({ tasks: r.tasks.reduce((list, t) => upsert(list, t), s.tasks) }))
+  return r
+}
+
 export function updateTask(id: number, patch: Partial<Pick<Task, 'title' | 'prompt' | 'priority' | 'projectId' | 'tags' | 'permissionMode' | 'model' | 'dependsOn'>>) {
-  return act(() => api('PATCH', `/tasks/${id}`, patch), 'Không lưu được task')
+  return act(() => api('PATCH', `/tasks/${id}`, patch), tr('Không lưu được task'))
 }
 
 export async function deleteTask(id: number) {
-  if (await act(() => api('DELETE', `/tasks/${id}`), 'Không xoá được task')) toast({ kind: 'info', title: `Đã xoá task #${id}` })
+  if (await act(() => api('DELETE', `/tasks/${id}`), tr('Không xoá được task'))) toast({ kind: 'info', title: tr('Đã xoá task #{id}', { id }) })
 }
 
 export const queueTask = (id: number) => act(() => api('POST', `/tasks/${id}/queue`))
 export const unqueueTask = (id: number) => act(() => api('POST', `/tasks/${id}/unqueue`))
-export const stopTask = (id: number) => act(() => api('POST', `/tasks/${id}/stop`), 'Không dừng được task')
+export const stopTask = (id: number) => act(() => api('POST', `/tasks/${id}/stop`), tr('Không dừng được task'))
 
 /** Chạy ngay (kéo task sang cột Running). Hết slot thì server đưa vào hàng đợi. */
 export async function runTaskNow(id: number, ignoreDeps = false) {
@@ -496,10 +512,10 @@ export async function runTaskNow(id: number, ignoreDeps = false) {
   } catch (e) {
     // FR-08 (R8): còn chờ task chưa Done → hỏi xác nhận gỡ phụ thuộc rồi mới chạy.
     if (e instanceof ApiError && e.code === 'DEPS_PENDING') set(() => ({ depsConfirm: { taskId: id, message: e.message } }))
-    else toast({ kind: 'error', title: 'Không chạy được task', body: (e as Error).message })
+    else toast({ kind: 'error', title: tr('Không chạy được task'), body: (e as Error).message })
     return
   }
-  if (r && !r.started) toast({ kind: 'info', title: `Đã đưa #${id} vào hàng đợi`, body: 'Đang hết slot chạy, task sẽ chạy khi tới lượt.' })
+  if (r && !r.started) toast({ kind: 'info', title: tr('Đã đưa #{id} vào hàng đợi', { id }), body: tr('Đang hết slot chạy, task sẽ chạy khi tới lượt.') })
 }
 
 export const closeDepsConfirm = () => set(() => ({ depsConfirm: null }))
@@ -515,17 +531,17 @@ export const fetchDepSuggestions = (input: { projectId: string; title: string; p
   api<DepSuggestion[]>('POST', '/tasks/dep-suggest', input)
 
 export async function retryTask(id: number) {
-  if (await act(() => api('POST', `/tasks/${id}/retry`))) toast({ kind: 'info', title: `Đã đưa #${id} vào hàng đợi chạy lại` })
+  if (await act(() => api('POST', `/tasks/${id}/retry`))) toast({ kind: 'info', title: tr('Đã đưa #{id} vào hàng đợi chạy lại', { id }) })
 }
 
 /** Tiếp tục task bị tạm dừng / lỗi / hết giới hạn sử dụng: chạy tiếp phiên Claude cũ trên worktree đang dở. */
 export async function resumeTask(id: number) {
-  const r = await act(() => api<{ started: boolean }>('POST', `/tasks/${id}/resume`), 'Không tiếp tục được task')
+  const r = await act(() => api<{ started: boolean }>('POST', `/tasks/${id}/resume`), tr('Không tiếp tục được task'))
   if (r)
     toast(
       r.started
-        ? { kind: 'info', title: `Đang tiếp tục #${id}` }
-        : { kind: 'info', title: `Đã đưa #${id} vào hàng đợi tiếp tục`, body: 'Đang hết slot chạy, task sẽ chạy tiếp khi tới lượt.' },
+        ? { kind: 'info', title: tr('Đang tiếp tục #{id}', { id }) }
+        : { kind: 'info', title: tr('Đã đưa #{id} vào hàng đợi tiếp tục', { id }), body: tr('Đang hết slot chạy, task sẽ chạy tiếp khi tới lượt.') },
     )
 }
 
@@ -541,32 +557,32 @@ function applyReview(r: ReviewResult) {
 
 /** Chấp nhận output: task Done, không merge (output giữ nguyên trong thư mục project hoặc nhánh task ở local). */
 export async function approveTask(id: number): Promise<boolean> {
-  const r = await act(() => api<ReviewResult>('POST', `/tasks/${id}/review`, { action: 'approve' }), 'Không duyệt được')
+  const r = await act(() => api<ReviewResult>('POST', `/tasks/${id}/review`, { action: 'approve' }), tr('Không duyệt được'))
   if (!r) return false
   applyReview(r)
-  const body = r.task.branch ? `${r.task.title} · output ở nhánh ${r.task.branch}` : r.task.title
-  toast({ kind: 'success', title: `Đã chấp nhận output #${id}`, body })
+  const body = r.task.branch ? `${r.task.title} · ${tr('output ở nhánh {branch}', { branch: r.task.branch })}` : r.task.title
+  toast({ kind: 'success', title: tr('Đã chấp nhận output #{id}', { id }), body })
   return true
 }
 
 /** Tuỳ chọn (mode worktree): chấp nhận và merge nhánh task vào nhánh chính. */
 export async function mergeTask(id: number): Promise<boolean> {
-  const r = await act(() => api<ReviewResult>('POST', `/tasks/${id}/review`, { action: 'merge' }), 'Không merge được')
+  const r = await act(() => api<ReviewResult>('POST', `/tasks/${id}/review`, { action: 'merge' }), tr('Không merge được'))
   if (!r) return false
   applyReview(r)
   const main = state.projects.find((p) => p.id === r.task.projectId)?.mainBranch
-  toast({ kind: 'success', title: `Đã merge #${id}${main ? ` vào ${main}` : ''}`, body: r.task.title })
+  toast({ kind: 'success', title: main ? tr('Đã merge #{id} vào {main}', { id, main }) : tr('Đã merge #{id}', { id }), body: r.task.title })
   return true
 }
 
 export async function requestChanges(id: number, feedback: string, comments: ReviewComment[] = []): Promise<boolean> {
   const r = await act(
     () => api<ReviewResult>('POST', `/tasks/${id}/review`, { action: 'request_changes', feedback, comments }),
-    'Không gửi được feedback',
+    tr('Không gửi được feedback'),
   )
   if (!r) return false
   applyReview(r)
-  if (r.queued) toast({ kind: 'info', title: `Đã gửi feedback cho #${id}`, body: 'Đang hết slot chạy, Claude sẽ sửa khi tới lượt.' })
+  if (r.queued) toast({ kind: 'info', title: tr('Đã gửi feedback cho #{id}', { id }), body: tr('Đang hết slot chạy, Claude sẽ sửa khi tới lượt.') })
   return true
 }
 
@@ -581,7 +597,7 @@ export async function fetchMergeCheck(id: number): Promise<MergeCheck | null> {
 }
 
 export async function fetchTaskFile(id: number, path: string): Promise<string | null> {
-  const r = await act(() => api<{ content: string }>('GET', `/tasks/${id}/file?${new URLSearchParams({ path })}`), `Không đọc được ${path}`)
+  const r = await act(() => api<{ content: string }>('GET', `/tasks/${id}/file?${new URLSearchParams({ path })}`), tr('Không đọc được {path}', { path }))
   return r ? r.content : null
 }
 
@@ -597,24 +613,32 @@ export async function createPreviewLink(id: number, path: string, side: 'old' | 
 
 /** Lưu file Markdown đã sửa khi review: server ghi vào worktree, commit trên nhánh task và trả diff mới. */
 export async function saveTaskFile(id: number, path: string, content: string): Promise<boolean> {
-  const r = await act(() => api<{ committed: boolean; files: FileDiff[] }>('PUT', `/tasks/${id}/file`, { path, content }), `Không lưu được ${path}`)
+  const r = await act(() => api<{ committed: boolean; files: FileDiff[] }>('PUT', `/tasks/${id}/file`, { path, content }), tr('Không lưu được {path}', { path }))
   if (!r) return false
   set((s) => ({ diffs: { ...s.diffs, [id]: r.files } }))
-  toast({ kind: 'success', title: r.committed ? `Đã lưu và commit ${path}` : `${path} không có thay đổi` })
+  toast({ kind: 'success', title: r.committed ? tr('Đã lưu {path}', { path }) : tr('{path} không có thay đổi', { path }) })
   return true
 }
 
 export async function rejectTask(id: number): Promise<boolean> {
-  const r = await act(() => api<ReviewResult>('POST', `/tasks/${id}/review`, { action: 'reject' }), 'Không reject được')
+  const r = await act(() => api<ReviewResult>('POST', `/tasks/${id}/review`, { action: 'reject' }), tr('Không reject được'))
   if (!r) return false
-  applyReview(r) // task chuyển Failed ("Bị từ chối khi review") → đã có toast từ notifyTransition
+  // task chuyển Failed ("Bị từ chối khi review") → đã có toast từ notifyTransition
+  applyReview(r)
   return true
 }
 
 export async function decidePermission(reqId: string, decision: 'allow' | 'deny' | 'always' | 'timeout', reason?: string) {
   const body = decision === 'deny' && reason?.trim() ? { decision, reason: reason.trim() } : { decision }
-  const saved = await act(() => api<PermissionRequest>('POST', `/permissions/${reqId}`, body), 'Không gửi được quyết định')
+  const saved = await act(() => api<PermissionRequest>('POST', `/permissions/${reqId}`, body), tr('Không gửi được quyết định'))
   // Cập nhật ngay, không chờ WS (các tab khác nhận qua broadcast 'permission')
+  if (saved) onMessage({ type: 'permission', permission: saved })
+  return saved
+}
+
+/** FR-40: trả lời câu hỏi AskUserQuestion của Claude (khoá là nguyên văn câu hỏi). */
+export async function answerQuestion(reqId: string, answers: Answers) {
+  const saved = await act(() => api<PermissionRequest>('POST', `/permissions/${reqId}/answer`, { answers }), tr('Không gửi được câu trả lời'))
   if (saved) onMessage({ type: 'permission', permission: saved })
   return saved
 }
@@ -622,12 +646,12 @@ export async function decidePermission(reqId: string, decision: 'allow' | 'deny'
 /** FR-46: duyệt một lần nhiều yêu cầu giống hệt nhau. Từng yêu cầu đã chốt được server broadcast qua WS. */
 export async function decidePermissionsBatch(ids: string[], decision: 'allow' | 'deny', reason?: string) {
   const body = decision === 'deny' && reason?.trim() ? { ids, decision, reason: reason.trim() } : { ids, decision }
-  const r = await act(() => api<{ decided: number; skipped: number }>('POST', '/permissions/batch', body), 'Không gửi được quyết định')
+  const r = await act(() => api<{ decided: number; skipped: number }>('POST', '/permissions/batch', body), tr('Không gửi được quyết định'))
   if (r)
     toast({
       kind: 'success',
-      title: `${decision === 'allow' ? 'Đã cho phép' : 'Đã từ chối'} ${r.decided} yêu cầu`,
-      body: r.skipped ? `${r.skipped} yêu cầu đã được xử lý trước đó nên bỏ qua.` : undefined,
+      title: decision === 'allow' ? tr('Đã cho phép {n} yêu cầu', { n: r.decided }) : tr('Đã từ chối {n} yêu cầu', { n: r.decided }),
+      body: r.skipped ? tr('{n} yêu cầu đã được xử lý trước đó nên bỏ qua.', { n: r.skipped }) : undefined,
     })
   return r
 }
@@ -639,7 +663,7 @@ export async function saveProject(p: Project, onSaved?: (saved: Project) => void
     const saved = await api<Project>('POST', '/projects', p)
     set((s) => ({ projects: upsert(s.projects, saved) }))
     onSaved?.(saved)
-    toast({ kind: 'success', title: `Đã lưu project ${saved.name}` })
+    toast({ kind: 'success', title: tr('Đã lưu project {name}', { name: saved.name }) })
     return null
   } catch (e) {
     return (e as Error).message
@@ -647,7 +671,7 @@ export async function saveProject(p: Project, onSaved?: (saved: Project) => void
 }
 
 export function deleteProject(id: string) {
-  return act(() => api('DELETE', `/projects/${id}`), 'Không xoá được project')
+  return act(() => api('DELETE', `/projects/${id}`), tr('Không xoá được project'))
 }
 
 export type TemplateInput = Omit<PromptTemplate, 'id'> & { id?: string }
@@ -657,7 +681,7 @@ export async function saveTemplate(t: TemplateInput): Promise<string | null> {
   try {
     const saved = t.id ? await api<PromptTemplate>('PUT', `/templates/${t.id}`, t) : await api<PromptTemplate>('POST', '/templates', t)
     set((s) => ({ templates: upsert(s.templates, saved) }))
-    toast({ kind: 'success', title: `Đã lưu template ${saved.name}` })
+    toast({ kind: 'success', title: tr('Đã lưu template {name}', { name: saved.name }) })
     return null
   } catch (e) {
     return (e as Error).message
@@ -665,7 +689,7 @@ export async function saveTemplate(t: TemplateInput): Promise<string | null> {
 }
 
 export async function deleteTemplate(id: string) {
-  if (await act(() => api('DELETE', `/templates/${id}`), 'Không xoá được template')) {
+  if (await act(() => api('DELETE', `/templates/${id}`), tr('Không xoá được template'))) {
     set((s) => ({ templates: s.templates.filter((t) => t.id !== id) }))
   }
 }
@@ -679,7 +703,7 @@ export async function saveSchedule(input: ScheduleInput): Promise<string | null>
   try {
     const saved = input.id ? await api<Schedule>('PUT', `/schedules/${input.id}`, input) : await api<Schedule>('POST', '/schedules', input)
     set((s) => ({ schedules: upsert(s.schedules, saved) }))
-    toast({ kind: 'success', title: 'Đã lưu lịch', body: saved.title })
+    toast({ kind: 'success', title: tr('Đã lưu lịch'), body: saved.title })
     return null
   } catch (e) {
     return (e as Error).message
@@ -687,12 +711,12 @@ export async function saveSchedule(input: ScheduleInput): Promise<string | null>
 }
 
 export async function setScheduleEnabled(id: string, enabled: boolean) {
-  const saved = await act(() => api<Schedule>('PUT', `/schedules/${id}`, { enabled }), 'Không lưu được lịch')
+  const saved = await act(() => api<Schedule>('PUT', `/schedules/${id}`, { enabled }), tr('Không lưu được lịch'))
   if (saved) set((s) => ({ schedules: upsert(s.schedules, saved) }))
 }
 
 export async function deleteSchedule(id: string) {
-  if (await act(() => api('DELETE', `/schedules/${id}`), 'Không xoá được lịch')) set((s) => ({ schedules: s.schedules.filter((x) => x.id !== id) }))
+  if (await act(() => api('DELETE', `/schedules/${id}`), tr('Không xoá được lịch'))) set((s) => ({ schedules: s.schedules.filter((x) => x.id !== id) }))
 }
 
 /** Lịch sử task đã tạo của một lịch (mới nhất trước). */
@@ -719,7 +743,7 @@ export const fetchRuleSuggestions = (projectId: string) =>
 
 /** Bỏ qua một gợi ý; trả danh sách gợi ý mới (undefined nếu lỗi, đã có toast). */
 export const dismissRuleSuggestion = (projectId: string, rule: string) =>
-  act(() => api<RuleSuggestion[]>('POST', `/projects/${encodeURIComponent(projectId)}/rule-suggestions/dismiss`, { rule }), 'Không bỏ qua được gợi ý')
+  act(() => api<RuleSuggestion[]>('POST', `/projects/${encodeURIComponent(projectId)}/rule-suggestions/dismiss`, { rule }), tr('Không bỏ qua được gợi ý'))
 
 const ruleSuggestionListeners = new Set<(projectId: string, list: RuleSuggestion[]) => void>()
 /** Nghe gợi ý mới (realtime) của các project. */
@@ -741,9 +765,10 @@ export function fetchStats(days: StatsRange, projectId?: string): Promise<Stats>
 }
 
 export function updateSettings(patch: Partial<Omit<Settings, 'telegram'>>) {
-  set((s) => ({ settings: { ...s.settings, ...patch } })) // cập nhật ngay cho mượt
+  // cập nhật ngay cho mượt
+  set((s) => ({ settings: { ...s.settings, ...patch } }))
   // Giá trị đã chuẩn hoá (giới hạn min/max) quay về qua WS 'settings' cho mọi tab
-  return act(() => api<Settings>('PUT', '/settings', patch), 'Không lưu được cài đặt')
+  return act(() => api<Settings>('PUT', '/settings', patch), tr('Không lưu được cài đặt'))
 }
 
 /** Lưu cấu hình Telegram (FR-51). Trả về thông báo lỗi hoặc null khi thành công. */
@@ -772,16 +797,6 @@ export async function saveClaudeAuth(input: ClaudeAuthInput): Promise<string | n
   try {
     const saved = await api<Settings>('PUT', '/settings', { auth: input })
     set(() => ({ settings: saved }))
-    return null
-  } catch (e) {
-    return (e as Error).message
-  }
-}
-
-/** Kiểm tra API key đang nhập (bỏ trống thì kiểm tra key đang dùng). Không tốn phí. */
-export async function testClaudeAuth(apiKey?: string): Promise<string | null> {
-  try {
-    await api('POST', '/settings/claude-auth/test', { apiKey: apiKey || undefined })
     return null
   } catch (e) {
     return (e as Error).message

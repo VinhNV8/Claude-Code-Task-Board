@@ -1,5 +1,5 @@
 // Đọc / sửa file trong worktree của task khi review (G3): Preview và Edit file Markdown.
-import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs'
 import { isAbsolute, relative, resolve, sep } from 'node:path'
 import { projects, tasks } from './db.ts'
 import { commitAll, git, gitBuffer, snapshotShow, snapshotTree, taskBranch } from './git.ts'
@@ -10,9 +10,18 @@ import type { Task } from './types.ts'
 
 export const MAX_FILE_BYTES = 1024 * 1024
 
+/** `r` (đường dẫn tương đối) có đi ra ngoài thư mục gốc hoặc vào `.git` không. */
+function escapes(r: string) {
+  return !r || r.startsWith('..') || isAbsolute(r)
+}
+
 /**
  * Đường dẫn tuyệt đối của `rel` trong worktree. Từ chối đường dẫn tuyệt đối, đi ra ngoài worktree
  * (`..`) hoặc vào thư mục `.git`.
+ *
+ * Symlink/junction: file có thật thì kiểm tra cả **đường dẫn thật** (realpath). Repo hoặc Claude (bị prompt injection)
+ * có thể tạo `notes.md -> ~/.ssh/id_rsa`; không kiểm tra thì đọc/xem trước lộ file ngoài repo, sửa khi review thì ghi đè
+ * file đích. Trả về đường dẫn thật để lần đọc/ghi sau không đi qua liên kết nữa.
  */
 export function resolveInWorktree(worktree: string, rel: unknown): string {
   const p = typeof rel === 'string' ? rel.trim() : ''
@@ -21,9 +30,25 @@ export function resolveInWorktree(worktree: string, rel: unknown): string {
   const root = resolve(worktree)
   const abs = resolve(root, p)
   const r = relative(root, abs)
-  if (!r || r.startsWith('..') || isAbsolute(r)) throw new ReviewError(400, 'Đường dẫn file nằm ngoài thư mục của task')
+  if (escapes(r)) throw new ReviewError(400, 'Đường dẫn file nằm ngoài thư mục của task')
   if (r.split(sep).some((seg) => seg.toLowerCase() === '.git')) throw new ReviewError(400, 'Không được truy cập thư mục .git')
-  return abs
+
+  let real: string
+  try {
+    real = realpathSync.native(abs)
+  } catch {
+    return abs // chưa có file: nơi gọi tự báo 404
+  }
+  let realRoot: string
+  try {
+    realRoot = realpathSync.native(root)
+  } catch {
+    realRoot = root
+  }
+  const rr = relative(realRoot, real)
+  if (escapes(rr)) throw new ReviewError(400, 'File là liên kết (symlink) trỏ ra ngoài thư mục của task, không mở được')
+  if (rr.split(sep).some((seg) => seg.toLowerCase() === '.git')) throw new ReviewError(400, 'Không được truy cập thư mục .git')
+  return real
 }
 
 function worktreeOf(taskId: number): { task: Task; worktree: string } {

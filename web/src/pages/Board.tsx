@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type DragEvent } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { ChevronLeft, FolderGit2, KanbanSquare, Plus, Radar, Rows3 } from 'lucide-react'
+import { ChevronLeft, FileUp, FolderGit2, KanbanSquare, Plus, Radar, Rows3 } from 'lucide-react'
 import { queueTask, retryTask, runTaskNow, stopTask, unqueueTask, useStore } from '../store/store'
 import { STATUS_META } from '../lib/format'
 import { BOARD_COLUMNS, DRAG_MIME, applyDrop, canDrag, columnTasks, dropAction, isStale, type BoardColumn, type DropAction, type DropHandlers } from '../lib/board'
@@ -23,7 +23,7 @@ import {
   type WorkView,
 } from '../lib/workView'
 import { TaskCard } from '../components/TaskCard'
-import { useNewTask } from '../components/Layout'
+import { useImportTasks, useNewTask } from '../components/Layout'
 import { Button, ConfirmDialog, EmptyState, StatusGlyph, useMediaQuery } from '../components/ui'
 import { BoardFilterPanel, BoardToolbar } from '../components/BoardFilters'
 import { AttentionStrip } from '../components/Attention'
@@ -32,14 +32,15 @@ import { TriageList } from '../components/TriageView'
 import { TaskPanel } from '../components/TaskPanel'
 import { BLANK_PROJECT, ProjectModal } from './Projects'
 import type { Project, Task, TaskStatus } from '../types'
+import { tr } from '../lib/i18n'
 
 /** Nhãn gợi ý hiện trong cột đích khi đang kéo task qua. */
 const DROP_LABEL: Record<DropAction, string> = {
-  queue: 'Thả để đưa vào hàng đợi',
-  unqueue: 'Thả để bỏ khỏi hàng đợi',
-  run: 'Thả để chạy ngay',
-  retry: 'Thả để chạy lại',
-  stop: 'Thả để dừng task',
+  queue: tr('Thả để đưa vào hàng đợi'),
+  unqueue: tr('Thả để bỏ khỏi hàng đợi'),
+  run: tr('Thả để chạy ngay'),
+  retry: tr('Thả để chạy lại'),
+  stop: tr('Thả để dừng task'),
 }
 
 const DROP_HANDLERS: DropHandlers = {
@@ -51,10 +52,10 @@ const DROP_HANDLERS: DropHandlers = {
 }
 
 const HINT: Partial<Record<TaskStatus, string>> = {
-  backlog: 'Chưa chạy hoặc đã dừng',
-  queued: 'Tới lượt sẽ tự chạy',
-  running: 'Claude đang làm',
-  review: 'Chờ review output',
+  backlog: tr('Chưa chạy hoặc đã dừng'),
+  queued: tr('Tới lượt sẽ tự chạy'),
+  running: tr('Claude đang làm'),
+  review: tr('Chờ review output'),
 }
 
 /** Cột Kanban: task Cần bạn nằm ở dải phía trên nên không có cột riêng. */
@@ -85,7 +86,7 @@ function readStoredView(): string | null {
 
 function ViewSwitcher({ view, onChange }: { view: WorkView; onChange: (v: WorkView) => void }) {
   return (
-    <div role="tablist" aria-label="Cách xem" className="inline-flex rounded-lg bg-slate-100 p-0.5 dark:bg-slate-800/80">
+    <div role="tablist" aria-label={tr('Cách xem')} className="inline-flex rounded-lg bg-slate-100 p-0.5 dark:bg-slate-800/80">
       {WORK_VIEWS.map((v) => {
         const on = v === view
         return (
@@ -94,7 +95,7 @@ function ViewSwitcher({ view, onChange }: { view: WorkView; onChange: (v: WorkVi
             role="tab"
             aria-selected={on}
             onClick={() => onChange(v)}
-            title={`${VIEW_META[v].hint} (phím ${VIEW_META[v].key})`}
+            title={tr('{hint} (phím {key})', { hint: VIEW_META[v].hint, key: VIEW_META[v].key })}
             className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-sm ${
               on ? 'bg-white font-medium text-slate-900 shadow-sm dark:bg-slate-900 dark:text-slate-100' : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
             }`}
@@ -119,6 +120,7 @@ function ViewSwitcher({ view, onChange }: { view: WorkView; onChange: (v: WorkVi
 export function Board() {
   const s = useStore()
   const openNew = useNewTask()
+  const openImport = useImportTasks()
   const isDesktop = useMediaQuery('(min-width: 768px)')
   // Bộ lọc, cách xem và task đang mở nằm trên URL để chia sẻ/tải lại không mất (FR-07)
   const [params, setParams] = useSearchParams()
@@ -270,7 +272,8 @@ export function Board() {
   }
   const onColDragOver = (col: BoardColumn) => (e: DragEvent) => {
     if (!dragTask || !e.dataTransfer.types.includes(DRAG_MIME) || !dropAction(dragTask, col)) return
-    e.preventDefault() // cho phép thả
+    // cho phép thả
+    e.preventDefault()
     e.dataTransfer.dropEffect = 'move'
     if (overCol !== col) setOverCol(col)
   }
@@ -294,11 +297,11 @@ export function Board() {
       <>
         <EmptyState
           icon={<FolderGit2 size={48} />}
-          title="Bắt đầu bằng việc thêm project"
-          body="Khai báo một git repo trên máy. Claude sẽ làm việc trong repo đó khi bạn giao task."
+          title={tr('Bắt đầu bằng việc thêm project')}
+          body={tr('Khai báo một thư mục trên máy (có thể là git repo). Claude sẽ làm việc trong thư mục đó khi bạn giao task.')}
           action={
             <Button variant="primary" onClick={addProject}>
-              <Plus size={16} /> Thêm project
+              <Plus size={16} /> {tr('Thêm project')}
             </Button>
           }
         />
@@ -312,15 +315,18 @@ export function Board() {
     <div className="flex flex-1 items-center justify-center rounded-lg border border-dashed border-slate-300 bg-white py-10 dark:border-slate-700 dark:bg-slate-900">
       <EmptyState
         icon={<KanbanSquare size={48} />}
-        title="Chưa có task nào"
-        body="Giao việc đầu tiên cho Claude. Task sẽ tự chạy và hiện lên đây để bạn theo dõi, duyệt kết quả."
+        title={tr('Chưa có task nào')}
+        body={tr('Giao việc đầu tiên cho Claude. Task sẽ tự chạy và hiện lên đây để bạn theo dõi, duyệt kết quả.')}
         action={
           <div className="flex flex-col items-center gap-2">
             <Button variant="primary" onClick={() => openNew(singleProject)}>
-              <Plus size={16} /> Giao việc đầu tiên
+              <Plus size={16} /> {tr('Giao việc đầu tiên')}
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => openImport(singleProject)}>
+              <FileUp size={14} /> {tr('Import nhiều task từ CSV / Excel')}
             </Button>
             <span className="text-xs text-slate-400">
-              hoặc nhấn phím <kbd className="rounded border border-slate-300 px-1 font-mono dark:border-slate-600">N</kbd> ở bất kỳ trang nào
+              {tr('hoặc nhấn phím')} <kbd className="rounded border border-slate-300 px-1 font-mono dark:border-slate-600">N</kbd> {tr('ở bất kỳ trang nào')}
             </span>
           </div>
         }
@@ -343,7 +349,7 @@ export function Board() {
                 key={st}
                 onClick={() => setDoneCollapsed(false)}
                 className="flex w-11 shrink-0 flex-col items-center gap-2 rounded-lg border border-dashed border-slate-300 py-3 text-xs text-slate-500 hover:border-slate-400 hover:text-slate-800 dark:border-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
-                title="Mở cột Xong"
+                title={tr('Mở cột Xong')}
               >
                 <StatusGlyph status="done" />
                 <span className="[writing-mode:vertical-rl]">
@@ -385,7 +391,7 @@ export function Board() {
                   <button
                     onClick={() => openNew(singleProject)}
                     className="ml-auto rounded p-0.5 text-slate-400 hover:bg-white hover:text-slate-700 dark:hover:bg-slate-800"
-                    aria-label="Thêm task"
+                    aria-label={tr('Thêm task')}
                   >
                     <Plus size={16} />
                   </button>
@@ -394,8 +400,8 @@ export function Board() {
                   <button
                     onClick={() => setDoneCollapsed(true)}
                     className="ml-auto rounded p-0.5 text-slate-400 hover:bg-white hover:text-slate-700 dark:hover:bg-slate-800"
-                    aria-label="Thu gọn cột Xong"
-                    title="Thu gọn cột Xong"
+                    aria-label={tr('Thu gọn cột Xong')}
+                    title={tr('Thu gọn cột Xong')}
                   >
                     <ChevronLeft size={16} />
                   </button>
@@ -431,7 +437,7 @@ export function Board() {
                     />
                   )
                 })}
-                {list.length === 0 && !action && <p className="py-6 text-center text-xs text-slate-400">Trống</p>}
+                {list.length === 0 && !action && <p className="py-6 text-center text-xs text-slate-400">{tr('Trống')}</p>}
               </div>
             </section>
           )
@@ -489,10 +495,10 @@ export function Board() {
               />
               <p className="hidden gap-3 border-t border-slate-200 px-3.5 py-1.5 text-[11px] text-slate-400 md:flex dark:border-slate-800">
                 <span>
-                  <kbd className="font-mono">J</kbd> / <kbd className="font-mono">K</kbd> chuyển task
+                  <kbd className="font-mono">J</kbd> / <kbd className="font-mono">K</kbd> {tr('chuyển task')}
                 </span>
                 <span>
-                  <kbd className="font-mono">1</kbd> <kbd className="font-mono">2</kbd> <kbd className="font-mono">3</kbd> đổi cách xem
+                  <kbd className="font-mono">1</kbd> <kbd className="font-mono">2</kbd> <kbd className="font-mono">3</kbd> {tr('đổi cách xem')}
                 </span>
               </p>
             </div>
@@ -500,7 +506,7 @@ export function Board() {
               (shownId !== undefined ? (
                 <TaskPanel taskId={shownId} variant="dock" onClose={closeTask} taskLink={taskLink} />
               ) : (
-                <p className="flex-1 self-center text-center text-sm text-slate-400">Chọn một task để xem chi tiết</p>
+                <p className="flex-1 self-center text-center text-sm text-slate-400">{tr('Chọn một task để xem chi tiết')}</p>
               ))}
           </div>
         )}
@@ -514,9 +520,9 @@ export function Board() {
       <ConfirmDialog
         open={confirmStop !== null}
         onClose={() => setConfirmStop(null)}
-        title={`Tạm dừng task #${confirmStop?.id ?? ''}?`}
-        message="Claude sẽ bị dừng ngay và task quay về Chờ chạy kèm cờ Tạm dừng. Các thay đổi đang làm dở vẫn còn trong worktree, bạn có thể bấm Tiếp tục để chạy tiếp phiên cũ hoặc Chạy lại từ đầu."
-        confirmLabel="Tạm dừng"
+        title={tr('Tạm dừng task #{id}?', { id: confirmStop?.id ?? '' })}
+        message={tr('Claude sẽ bị dừng ngay và task quay về Chờ chạy kèm cờ Tạm dừng. Các thay đổi đang làm dở vẫn được giữ, bạn có thể bấm Tiếp tục để chạy tiếp phiên cũ hoặc Chạy lại từ đầu.')}
+        confirmLabel={tr('Tạm dừng')}
         danger
         onConfirm={() => confirmStop && applyDrop(confirmStop, 'backlog', DROP_HANDLERS)}
       />

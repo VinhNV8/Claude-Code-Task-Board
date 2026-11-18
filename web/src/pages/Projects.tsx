@@ -16,6 +16,7 @@ import { MODEL_OPTIONS, modelLabel } from '../lib/model'
 import { mergeRules } from '../lib/rules'
 import { PERMISSION_MODES } from '../lib/permissionMode'
 import type { PermissionMode, PermissionPreset, Project, RuleSuggestion } from '../types'
+import { tr } from '../lib/i18n'
 
 /** Project trống cho form "Thêm project" (dùng cả ở Bảng công việc) */
 export const BLANK_PROJECT: Project = {
@@ -35,13 +36,13 @@ export const BLANK_PROJECT: Project = {
 const DELIVERY_MODES: { value: Project['deliveryMode']; label: string; desc: string }[] = [
   {
     value: 'direct',
-    label: 'Ghi thẳng vào thư mục project',
-    desc: 'Output nằm ngay trong thư mục trên máy bạn, không cần git. Mỗi lúc chạy 1 task để các task không ghi đè nhau.',
+    label: tr('Ghi thẳng vào thư mục project'),
+    desc: tr('Output nằm ngay trong thư mục trên máy bạn, không cần git. Mỗi lúc chạy 1 task để các task không ghi đè nhau.'),
   },
   {
     value: 'worktree',
-    label: 'Nhánh git riêng cho từng task',
-    desc: 'Cần git repo. Mỗi task làm trên nhánh claude/task-<id> ở local, chạy song song được. Bạn tự merge/PR theo quy trình riêng.',
+    label: tr('Nhánh git riêng cho từng task'),
+    desc: tr('Cần git repo. Mỗi task làm trên nhánh claude/task-<id> ở local, chạy song song được. Bạn tự merge/PR theo quy trình riêng.'),
   },
 ]
 
@@ -55,12 +56,12 @@ export function Projects() {
       <div className="mb-4 flex items-center">
         <h1 className="text-lg font-semibold">Projects</h1>
         <Button variant="primary" className="ml-auto" onClick={() => setEditing(BLANK_PROJECT)}>
-          <Plus size={16} /> Thêm project
+          <Plus size={16} /> {tr('Thêm project')}
         </Button>
       </div>
 
       {s.projects.length === 0 ? (
-        <EmptyState icon={<FolderGit2 size={48} />} title="Chưa có project" body="Thêm một repo git để bắt đầu giao việc cho Claude." />
+        <EmptyState icon={<FolderGit2 size={48} />} title={tr('Chưa có project')} body={tr('Thêm một thư mục (có thể là git repo) để bắt đầu giao việc cho Claude.')} />
       ) : (
         <div className="grid gap-3 md:grid-cols-2">
           {s.projects.map((p) => {
@@ -76,10 +77,10 @@ export function Projects() {
                       {p.repoPath}
                     </p>
                   </div>
-                  <button onClick={() => setEditing(p)} className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800" aria-label="Sửa">
+                  <button onClick={() => setEditing(p)} className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800" aria-label={tr('Sửa')}>
                     <Pencil size={15} />
                   </button>
-                  <button onClick={() => setDel(p)} className="rounded p-1 text-slate-400 hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-950" aria-label="Xoá">
+                  <button onClick={() => setDel(p)} className="rounded p-1 text-slate-400 hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-950" aria-label={tr('Xoá')}>
                     <Trash2 size={15} />
                   </button>
                 </div>
@@ -90,7 +91,7 @@ export function Projects() {
                   <span className="inline-flex items-center gap-1">
                     <ShieldCheck size={12} /> {p.permissionMode}
                   </span>
-                  <span>{p.deliveryMode === 'direct' ? 'Ghi thẳng vào thư mục' : `Nhánh riêng · song song tối đa: ${p.maxParallel}`}</span>
+                  <span>{p.deliveryMode === 'direct' ? tr('Ghi thẳng vào thư mục') : tr('Nhánh riêng · song song tối đa: {n}', { n: p.maxParallel })}</span>
                   {p.testCommand && (
                     <span className="inline-flex items-center gap-1 font-mono">
                       <FlaskConical size={12} /> {p.testCommand}
@@ -122,9 +123,9 @@ export function Projects() {
       <ConfirmDialog
         open={!!del}
         onClose={() => setDel(null)}
-        title={`Xoá project ${del?.name}?`}
-        message="Chỉ xoá khỏi Claude Workspace, repo trên đĩa không bị ảnh hưởng."
-        confirmLabel="Xoá"
+        title={tr('Xoá project {name}?', { name: del?.name ?? '' })}
+        message={tr('Chỉ xoá khỏi Agent Task Board, thư mục trên đĩa không bị ảnh hưởng.')}
+        confirmLabel={tr('Xoá')}
         danger
         onConfirm={() => del && deleteProject(del.id)}
       />
@@ -153,22 +154,22 @@ export function ProjectModal({ project, onClose, onSaved }: { project: Project |
   }
   // Kiểm tra cơ bản ở client; việc có phải git repo hay không (mode worktree) do server kiểm tra
   const pathError = !p.repoPath.trim()
-    ? 'Nhập đường dẫn thư mục project'
+    ? tr('Nhập đường dẫn thư mục project')
     : !/^[A-Za-z]:[\\/]/.test(p.repoPath) && !p.repoPath.startsWith('/')
-      ? 'Đường dẫn phải là đường dẫn tuyệt đối'
+      ? tr('Đường dẫn phải là đường dẫn tuyệt đối')
       : serverError ?? undefined
-  const nameError = !p.name.trim() ? 'Nhập tên project' : undefined
+  const nameError = !p.name.trim() ? tr('Nhập tên project') : undefined
 
   return (
     <Modal
       open={!!project}
       onClose={onClose}
-      title={project?.id ? `Sửa project ${project.name}` : 'Thêm project'}
+      title={project?.id ? tr('Sửa project {name}', { name: project.name }) : tr('Thêm project')}
       wide
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>
-            Huỷ
+            {tr('Huỷ')}
           </Button>
           <Button
             variant="primary"
@@ -183,24 +184,28 @@ export function ProjectModal({ project, onClose, onSaved }: { project: Project |
               if (!err) onClose()
             }}
           >
-            {saving ? 'Đang kiểm tra…' : 'Lưu'}
+            {saving ? tr('Đang kiểm tra…') : tr('Lưu')}
           </Button>
         </>
       }
     >
       <div className="space-y-4">
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Tên" error={touched ? nameError : undefined}>
+          <Field label={tr('Tên')} error={touched ? nameError : undefined}>
             <input className={inputCls} value={p.name} onChange={(e) => setP({ ...p, name: e.target.value })} placeholder="shop-web" />
           </Field>
-          <Field label="Nhánh chính">
+          <Field label={tr('Nhánh chính')}>
             <input className={inputCls} value={p.mainBranch} onChange={(e) => setP({ ...p, mainBranch: e.target.value })} />
           </Field>
         </div>
         <Field
-          label="Thư mục project"
+          label={tr('Thư mục project')}
           error={touched ? pathError : undefined}
-          hint={p.deliveryMode === 'direct' ? 'Thư mục trên máy bạn, nơi Claude ghi output, ví dụ D:\Projects\my-repo' : 'Thư mục gốc chứa .git, ví dụ D:\Projects\my-repo'}
+          hint={
+            p.deliveryMode === 'direct'
+              ? tr('Thư mục trên máy bạn, nơi Claude ghi output, ví dụ {example}', { example: 'D:\\Projects\\my-repo' })
+              : tr('Thư mục gốc chứa .git, ví dụ {example}', { example: 'D:\\Projects\\my-repo' })
+          }
         >
           <input className={`${inputCls} font-mono`} value={p.repoPath} onChange={(e) => {
               setP({ ...p, repoPath: e.target.value })
@@ -208,7 +213,7 @@ export function ProjectModal({ project, onClose, onSaved }: { project: Project |
             }} placeholder="D:\Projects\my-repo" />
         </Field>
         <fieldset className="space-y-1">
-          <legend className="text-sm font-medium text-slate-700 dark:text-slate-200">Nơi lưu output</legend>
+          <legend className="text-sm font-medium text-slate-700 dark:text-slate-200">{tr('Nơi lưu output')}</legend>
           <div className="grid gap-2 sm:grid-cols-2">
             {DELIVERY_MODES.map((m) => {
               const active = p.deliveryMode === m.value
@@ -240,11 +245,11 @@ export function ProjectModal({ project, onClose, onSaved }: { project: Project |
             })}
           </div>
           <span className="block text-xs text-slate-500 dark:text-slate-400">
-            Duyệt task chỉ là chấp nhận output; Task Board không tự merge. Đổi lựa chọn chỉ áp dụng cho task chưa chạy.
+            {tr('Duyệt task chỉ là chấp nhận output; Task Board không tự merge. Đổi lựa chọn chỉ áp dụng cho task chưa chạy.')}
           </span>
         </fieldset>
         <fieldset className="space-y-1">
-          <legend className="text-sm font-medium text-slate-700 dark:text-slate-200">Mức quyền mặc định</legend>
+          <legend className="text-sm font-medium text-slate-700 dark:text-slate-200">{tr('Mức quyền mặc định')}</legend>
           <div className="grid gap-2 sm:grid-cols-2">
             {PERMISSION_MODES.map((m) => {
               const active = p.permissionMode === m.value
@@ -272,10 +277,10 @@ export function ProjectModal({ project, onClose, onSaved }: { project: Project |
               )
             })}
           </div>
-          <span className="block text-xs text-slate-500 dark:text-slate-400">Task mới của project sẽ dùng mức quyền này (có thể đổi riêng từng task).</span>
+          <span className="block text-xs text-slate-500 dark:text-slate-400">{tr('Task mới của project sẽ dùng mức quyền này (có thể đổi riêng từng task).')}</span>
         </fieldset>
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Số task song song tối đa" hint={p.deliveryMode === 'direct' ? 'Ghi thẳng vào thư mục: luôn chạy 1 task mỗi lúc' : undefined}>
+          <Field label={tr('Số task song song tối đa')} hint={p.deliveryMode === 'direct' ? tr('Ghi thẳng vào thư mục: luôn chạy 1 task mỗi lúc') : undefined}>
             <input
               type="number"
               min={1}
@@ -287,15 +292,15 @@ export function ProjectModal({ project, onClose, onSaved }: { project: Project |
             />
           </Field>
           <Field
-            label="Model mặc định"
+            label={tr('Model mặc định')}
             hint={
               p.defaultModel
-                ? 'Áp dụng cho task của project không chọn model riêng.'
-                : `Kế thừa hệ thống: ${modelLabel(systemModel) || 'mặc định của Claude CLI'}`
+                ? tr('Áp dụng cho task của project không chọn model riêng.')
+                : tr('Kế thừa hệ thống: {model}', { model: modelLabel(systemModel) || tr('mặc định của Claude CLI') })
             }
           >
             <select className={inputCls} value={p.defaultModel ?? ''} onChange={(e) => setP({ ...p, defaultModel: e.target.value || undefined })}>
-              <option value="">Kế thừa hệ thống</option>
+              <option value="">{tr('Kế thừa hệ thống')}</option>
               {MODEL_OPTIONS.map((o) => (
                 <option key={o.value} value={o.value}>
                   {o.label}
@@ -306,8 +311,8 @@ export function ProjectModal({ project, onClose, onSaved }: { project: Project |
           </Field>
         </div>
         <Field
-          label="Lệnh test (tuỳ chọn)"
-          hint="Chạy trong worktree của task khi bấm “Chạy test” trên trang Review. Không hỗ trợ &&, |, >: hãy dùng script, ví dụ npm run test:ci hoặc npm it (cài rồi test)."
+          label={tr('Lệnh test (tuỳ chọn)')}
+          hint={tr('Chạy trong thư mục của task khi bấm “Chạy test” trên trang Review. Không hỗ trợ &&, |, >: hãy dùng script, ví dụ npm run test:ci hoặc npm it (cài rồi test).')}
         >
           <input
             className={`${inputCls} font-mono`}
@@ -320,15 +325,16 @@ export function ProjectModal({ project, onClose, onSaved }: { project: Project |
           />
         </Field>
         <div>
-          <span className="text-sm font-medium">Tool được tự động cho phép (whitelist)</span>
+          <span className="text-sm font-medium">{tr('Tool được tự động cho phép (whitelist)')}</span>
           <p className="mb-2 text-xs text-slate-500">
-            Ví dụ: <span className="font-mono">Bash(npm test:*)</span> cho phép mọi lệnh bắt đầu bằng <span className="font-mono">npm test</span>. Lệnh ngoài danh sách sẽ chuyển task sang Needs Input.
+            {tr('Ví dụ:')} <span className="font-mono">Bash(npm test:*)</span> {tr('cho phép mọi lệnh bắt đầu bằng')} <span className="font-mono">npm test</span>.{' '}
+            {tr('Lệnh ngoài danh sách sẽ chuyển task sang Needs Input.')}
           </p>
           <div className="mb-2 flex flex-wrap gap-1">
             {p.allowedTools.map((t) => (
               <span key={t} className="inline-flex items-center gap-1 rounded bg-slate-100 py-0.5 pl-1.5 pr-1 font-mono text-xs dark:bg-slate-800">
                 {t}
-                <button onClick={() => setP({ ...p, allowedTools: p.allowedTools.filter((x) => x !== t) })} className="text-slate-400 hover:text-rose-600" aria-label={`Bỏ ${t}`}>
+                <button onClick={() => setP({ ...p, allowedTools: p.allowedTools.filter((x) => x !== t) })} className="text-slate-400 hover:text-rose-600" aria-label={tr('Bỏ {rule}', { rule: t })}>
                   <X size={12} />
                 </button>
               </span>
@@ -354,7 +360,7 @@ export function ProjectModal({ project, onClose, onSaved }: { project: Project |
                 setTool('')
               }}
             >
-              Thêm
+              {tr('Thêm')}
             </Button>
             <PresetMenu
               onPick={(preset) => {
@@ -363,8 +369,8 @@ export function ProjectModal({ project, onClose, onSaved }: { project: Project |
                 setP({ ...p, allowedTools: merged })
                 setPresetNote(
                   added > 0
-                    ? `Đã thêm ${added} rule mới từ “${preset.name}”. Bấm Lưu để áp dụng.`
-                    : `Mọi rule của “${preset.name}” đã có trong danh sách.`,
+                    ? tr('Đã thêm {n} rule mới từ “{name}”. Bấm Lưu để áp dụng.', { n: added, name: preset.name })
+                    : tr('Mọi rule của “{name}” đã có trong danh sách.', { name: preset.name }),
                 )
               }}
             />
@@ -389,7 +395,8 @@ function RuleSuggestions({ project }: { project: Project }) {
     let alive = true
     fetchRuleSuggestions(project.id)
       .then((l) => alive && setList(l))
-      .catch(() => alive && setList([])) // không chặn trang Projects khi lỗi tải gợi ý
+      // không chặn trang Projects khi lỗi tải gợi ý
+      .catch(() => alive && setList([]))
     const off = onRuleSuggestions((id, l) => id === project.id && setList(l))
     return () => {
       alive = false
@@ -403,7 +410,7 @@ function RuleSuggestions({ project }: { project: Project }) {
     setBusy(rule)
     const err = await saveProject({ ...latest, allowedTools: [...new Set([...latest.allowedTools, rule])] })
     setBusy(null)
-    if (err) toast({ kind: 'error', title: 'Không thêm được rule', body: err })
+    if (err) toast({ kind: 'error', title: tr('Không thêm được rule'), body: err })
     else setList((l) => l.filter((s) => s.rule !== rule))
   }
   const dismiss = async (rule: string) => {
@@ -416,7 +423,7 @@ function RuleSuggestions({ project }: { project: Project }) {
   return (
     <div className="mt-3 rounded-md border border-amber-200 bg-amber-50/60 p-2.5 dark:border-amber-900/60 dark:bg-amber-950/30">
       <p className="mb-1.5 flex items-center gap-1 text-xs font-medium text-amber-800 dark:text-amber-300">
-        <Lightbulb size={13} /> Gợi ý thêm vào allowlist
+        <Lightbulb size={13} /> {tr('Gợi ý thêm vào allowlist')}
       </p>
       <ul className="space-y-1.5">
         {list.map((s) => (
@@ -424,17 +431,17 @@ function RuleSuggestions({ project }: { project: Project }) {
             <div className="min-w-0 flex-1">
               <p className="flex flex-wrap items-baseline gap-x-2">
                 <span className="font-mono font-medium">{s.rule}</span>
-                <span className="text-slate-500">đã cho phép {s.count} lần</span>
+                <span className="text-slate-500">{tr('đã cho phép {n} lần', { n: s.count })}</span>
               </p>
               <p className="truncate font-mono text-[11px] text-slate-500" title={s.example}>
                 {s.example}
               </p>
             </div>
             <Button size="sm" disabled={busy === s.rule} onClick={() => add(s.rule)}>
-              Thêm
+              {tr('Thêm')}
             </Button>
             <Button size="sm" variant="ghost" disabled={busy === s.rule} onClick={() => dismiss(s.rule)}>
-              Bỏ qua
+              {tr('Bỏ qua')}
             </Button>
           </li>
         ))}
@@ -478,7 +485,7 @@ function PresetMenu({ onPick }: { onPick: (preset: PermissionPreset) => void }) 
   return (
     <div className="relative" ref={ref}>
       <Button onClick={() => setOpen((o) => !o)} aria-haspopup="menu" aria-expanded={open} className="whitespace-nowrap">
-        Thêm từ preset ▾
+        {tr('Thêm từ preset ▾')}
       </Button>
       {open && (
         <div
@@ -488,7 +495,7 @@ function PresetMenu({ onPick }: { onPick: (preset: PermissionPreset) => void }) 
           {error ? (
             <p className="px-3 py-2 text-xs text-rose-600">{error}</p>
           ) : !presets ? (
-            <p className="px-3 py-2 text-xs text-slate-500">Đang tải…</p>
+            <p className="px-3 py-2 text-xs text-slate-500">{tr('Đang tải…')}</p>
           ) : (
             presets.map((preset) => (
               <button

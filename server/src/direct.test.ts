@@ -120,3 +120,19 @@ test('direct: không merge được', async () => {
   await runOnce(t.id, () => writeFileSync(join(folder, 'm.md'), 'x\n'))
   await assert.rejects(r.mergeTask(t.id), (e: Error & { statusCode?: number }) => e.statusCode === 409)
 })
+
+test('direct: log do hook trên máy ghi vào .claude/logs không lọt vào diff; kho snapshot cũ cũng nhận danh sách bỏ qua mới', async () => {
+  // Giả lập kho snapshot tạo từ phiên bản cũ (exclude chưa có .claude/logs/)
+  await g.snapshotTree(project)
+  writeFileSync(join(g.snapshotGitDir(project.id), 'info', 'exclude'), 'node_modules/\n')
+  const t = newTask('hook ghi log')
+  const done = await runOnce(t.id, () => {
+    mkdirSync(join(folder, '.claude', 'logs'), { recursive: true })
+    writeFileSync(join(folder, '.claude', 'logs', 'token-usage.md'), '# log\n')
+    writeFileSync(join(folder, 'hook-output.txt'), 'output thật\n')
+  })
+  const files = (await g.taskDiff(project, done.id)).map((f) => f.path)
+  assert.ok(files.includes('hook-output.txt'), files.join(','))
+  assert.ok(!files.some((f) => f.startsWith('.claude/logs/')), files.join(','))
+  assert.match(readFileSync(join(g.snapshotGitDir(project.id), 'info', 'exclude'), 'utf8'), /^\.claude\/logs\/$/m)
+})

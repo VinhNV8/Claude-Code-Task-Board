@@ -9,6 +9,7 @@ import { scriptArgs } from './runtime.ts'
 
 export const SETTINGS_SUFFIX = '.settings.json'
 export const NOTIFICATION_HOOK_SCRIPT = join(import.meta.dirname, 'hooks', 'notification.ts')
+export const API_KEY_HELPER_SCRIPT = join(import.meta.dirname, 'hooks', 'apikey.ts')
 
 export interface HookOptions {
   port: number
@@ -21,6 +22,8 @@ export interface HookOptions {
   /** Đường dẫn tuyệt đối tới script hook. */
   scriptPath?: string
   platform?: NodeJS.Platform
+  /** Chế độ API key: token của run để script apiKeyHelper lấy key từ backend (apiKeyBroker.ts). */
+  apiKeyToken?: string
 }
 
 /**
@@ -51,9 +54,31 @@ export function buildNotificationCommand(o: HookOptions) {
   return parts.map((p) => quoteArg(p, platform)).join(' ')
 }
 
-/** Nội dung file `--settings`: chỉ thêm hook, các thiết lập khác của người dùng vẫn được Claude gộp như thường. */
+/** Lệnh `apiKeyHelper`: Claude CLI chạy để lấy API key, thay cho biến môi trường ANTHROPIC_API_KEY. */
+export function buildApiKeyHelperCommand(o: HookOptions & { apiKeyToken: string }) {
+  const platform = o.platform ?? process.platform
+  const parts = [
+    o.nodePath ?? process.execPath,
+    ...(o.tsxLoader
+      ? ['--import', o.tsxLoader, API_KEY_HELPER_SCRIPT]
+      : scriptArgs({ tsScript: API_KEY_HELPER_SCRIPT, bundled: 'apikey.mjs', tsxLoader: resolveTsxLoader })),
+    '--port',
+    String(o.port),
+    '--task',
+    String(o.taskId),
+    '--token',
+    o.apiKeyToken,
+  ]
+  return parts.map((p) => quoteArg(p, platform)).join(' ')
+}
+
+/**
+ * Nội dung file `--settings`: thêm hook (và apiKeyHelper ở chế độ API key);
+ * các thiết lập khác của người dùng vẫn được Claude gộp như thường.
+ */
 export function buildHookSettings(o: HookOptions) {
   return {
+    ...(o.apiKeyToken ? { apiKeyHelper: buildApiKeyHelperCommand({ ...o, apiKeyToken: o.apiKeyToken }) } : {}),
     hooks: {
       Notification: [
         {

@@ -15,7 +15,8 @@ export function defaultAuthMode(env: NodeJS.ProcessEnv = process.env): ClaudeAut
   return env.TASKBOARD_DEFAULT_AUTH_MODE?.trim() === 'apiKey' ? 'apiKey' : 'subscription'
 }
 
-// Chỉ kiểm tra hình thức chung; key có dùng được hay không do testApiKey (gọi API) xác nhận.
+// Chỉ kiểm tra hình thức chung. Task Board không tự gọi API của Anthropic để thử key (SPEC C1):
+// key sai sẽ lộ ra ở lần chạy đầu tiên, authFailureHint dịch lỗi của CLI sang tiếng Việt.
 const KEY_RE = /^[A-Za-z0-9_-]{20,300}$/
 
 export function validateApiKey(raw: unknown): string {
@@ -76,30 +77,4 @@ export function authFailureHint(text: string | undefined): string | undefined {
   if (/invalid (x-)?api[ -]?key|authentication_error/i.test(text))
     return 'API key không hợp lệ hoặc đã bị thu hồi. Kiểm tra lại trong Cài đặt → Xác thực Claude.'
   return undefined
-}
-
-export type FetchLike = (url: string, init: { method: string; headers: Record<string, string>; signal?: AbortSignal }) => Promise<{ ok: boolean; status: number }>
-
-const MODELS_URL = 'https://api.anthropic.com/v1/models?limit=1'
-
-/**
- * Kiểm tra key bằng cách liệt kê model: không tốn token, không tốn tiền.
- * Chỉ xác nhận key hợp lệ, không kiểm tra số dư credit.
- * Gọi thẳng HTTP (không dùng SDK) để bundle gọn. Thông báo lỗi tự viết, không bao giờ chứa key.
- */
-export async function testApiKey(apiKey: string, fetchImpl: FetchLike = fetch as unknown as FetchLike, timeoutMs = 15_000): Promise<void> {
-  let res: Awaited<ReturnType<FetchLike>>
-  try {
-    res = await fetchImpl(MODELS_URL, {
-      method: 'GET',
-      headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
-      signal: AbortSignal.timeout(timeoutMs),
-    })
-  } catch {
-    throw new ClaudeAuthError('Không kết nối được tới API của Anthropic. Kiểm tra mạng rồi thử lại.')
-  }
-  if (res.ok || res.status === 429) return // 429: key hợp lệ, chỉ đang bị giới hạn tốc độ
-  if (res.status === 401) throw new ClaudeAuthError('API key không hợp lệ hoặc đã bị thu hồi')
-  if (res.status === 403) throw new ClaudeAuthError('API key không có quyền truy cập API')
-  throw new ClaudeAuthError(`API của Anthropic trả lỗi ${res.status}`)
 }

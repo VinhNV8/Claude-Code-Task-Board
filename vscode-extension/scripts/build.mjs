@@ -1,5 +1,5 @@
 // Build extension: bundle extension + server (+ script MCP/hook) bằng esbuild, chép giao diện web đã build.
-// Kết quả trong dist/: extension.js, server/{index,permission,notification}.mjs, web/.
+// Kết quả trong dist/: extension.js, server/{index,permission,notification,apikey}.mjs, web/.
 // Tham số: --skip-web     không build lại web (dùng web/dist có sẵn).
 //          --no-telegram  thay telegram.ts / telegramApprove.ts bằng bản rỗng trong src/stubs (không có mã gọi Telegram).
 import { build } from 'esbuild'
@@ -51,6 +51,7 @@ await build({
     index: join(repo, 'server', 'src', 'index.ts'),
     permission: join(repo, 'server', 'src', 'mcp', 'permission.ts'),
     notification: join(repo, 'server', 'src', 'hooks', 'notification.ts'),
+    apikey: join(repo, 'server', 'src', 'hooks', 'apikey.ts'),
   },
   outdir: join(dist, 'server'),
   outExtension: { '.js': '.mjs' },

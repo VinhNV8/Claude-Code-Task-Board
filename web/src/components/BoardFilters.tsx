@@ -17,6 +17,7 @@ import {
   type FacetCounts,
 } from '../lib/taskFilter'
 import { inputCls } from './ui'
+import { tr } from '../lib/i18n'
 
 type ProjectLite = { id: string; name: string; repoPath?: string }
 
@@ -60,8 +61,8 @@ export function BoardFilterPanel({ collapsed, onCollapsedChange, mobileOpen, ...
             type="button"
             onClick={() => onCollapsedChange(false)}
             className="relative rounded p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-800 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-100"
-            aria-label="Mở panel Bộ lọc"
-            title="Mở panel Bộ lọc"
+            aria-label={tr('Mở panel Bộ lọc')}
+            title={tr('Mở panel Bộ lọc')}
           >
             <ListFilter size={18} />
             {count > 0 && <span className="absolute -right-1 -top-1 grid h-4 min-w-4 place-items-center rounded-full bg-indigo-600 px-1 text-[10px] font-medium text-white">{count}</span>}
@@ -70,8 +71,8 @@ export function BoardFilterPanel({ collapsed, onCollapsedChange, mobileOpen, ...
             type="button"
             onClick={onAddProject}
             className="rounded p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-800 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-100"
-            aria-label="Thêm project"
-            title="Thêm project"
+            aria-label={tr('Thêm project')}
+            title={tr('Thêm project')}
           >
             <Plus size={18} />
           </button>
@@ -81,12 +82,12 @@ export function BoardFilterPanel({ collapsed, onCollapsedChange, mobileOpen, ...
 
   return (
     <aside
-      aria-label="Bộ lọc"
+      aria-label={tr('Bộ lọc')}
       className={`${mobileOpen ? 'flex' : 'hidden'} w-full shrink-0 flex-col rounded-lg border border-slate-200 bg-white md:flex md:w-60 dark:border-slate-800 dark:bg-slate-900 ${stickyCls}`}
     >
       <div className="flex items-center gap-2 border-b border-slate-200 px-3 py-2.5 dark:border-slate-800">
         <ListFilter size={15} className="text-slate-500" />
-        <span className="text-sm font-semibold">Bộ lọc</span>
+        <span className="text-sm font-semibold">{tr('Bộ lọc')}</span>
         {count > 0 && <span className="rounded-full bg-indigo-600 px-1.5 text-xs font-medium text-white">{count}</span>}
         <button
           type="button"
@@ -94,14 +95,14 @@ export function BoardFilterPanel({ collapsed, onCollapsedChange, mobileOpen, ...
           onClick={() => onChange(clearFilters(filter))}
           className="ml-auto text-xs text-indigo-600 hover:underline disabled:invisible dark:text-indigo-300"
         >
-          Đặt lại
+          {tr('Đặt lại')}
         </button>
         <button
           type="button"
           onClick={() => onCollapsedChange(true)}
           className="hidden rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700 md:block dark:hover:bg-slate-800 dark:hover:text-slate-200"
-          aria-label="Thu gọn panel Bộ lọc"
-          title="Thu gọn panel Bộ lọc"
+          aria-label={tr('Thu gọn panel Bộ lọc')}
+          title={tr('Thu gọn panel Bộ lọc')}
         >
           <PanelLeftClose size={16} />
         </button>
@@ -114,7 +115,7 @@ export function BoardFilterPanel({ collapsed, onCollapsedChange, mobileOpen, ...
 /** Panel thu gọn trên desktop nhưng người dùng mở trên mobile: vẫn hiện bản đầy đủ (chỉ mobile). */
 function MobilePanel(props: BodyProps) {
   return (
-    <aside aria-label="Bộ lọc" className="flex w-full flex-col rounded-lg border border-slate-200 bg-white md:hidden dark:border-slate-800 dark:bg-slate-900">
+    <aside aria-label={tr('Bộ lọc')} className="flex w-full flex-col rounded-lg border border-slate-200 bg-white md:hidden dark:border-slate-800 dark:bg-slate-900">
       <PanelBody {...props} />
     </aside>
   )
@@ -138,14 +139,14 @@ function PanelBody({ filter, onChange, projects, tags, counts, attention, onAddP
             type="button"
             onClick={onAddProject}
             className="rounded p-0.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200"
-            aria-label="Thêm project"
-            title="Thêm project"
+            aria-label={tr('Thêm project')}
+            title={tr('Thêm project')}
           >
             <Plus size={14} />
           </button>
         }
       >
-        {projects.length >= SEARCH_THRESHOLD && <SearchBox value={pq} onChange={setPq} placeholder="Tìm project…" />}
+        {projects.length >= SEARCH_THRESHOLD && <SearchBox value={pq} onChange={setPq} placeholder={tr('Tìm project…')} />}
         {shownProjects.map((p) => (
           <FacetRow
             key={p.id}
@@ -158,10 +159,10 @@ function PanelBody({ filter, onChange, projects, tags, counts, attention, onAddP
             onOnly={() => onChange({ ...filter, projectIds: [p.id] })}
           />
         ))}
-        {shownProjects.length === 0 && <Empty>Không thấy project</Empty>}
+        {shownProjects.length === 0 && <Empty>{tr('Không thấy project')}</Empty>}
       </Section>
 
-      <Section title="Độ ưu tiên" selected={filter.priorities.length} onClear={() => onChange({ ...filter, priorities: [] })}>
+      <Section title={tr('Độ ưu tiên')} selected={filter.priorities.length} onClear={() => onChange({ ...filter, priorities: [] })}>
         {PRIORITY_VALUES.map((p) => (
           <FacetRow
             key={p}
@@ -176,8 +177,8 @@ function PanelBody({ filter, onChange, projects, tags, counts, attention, onAddP
       </Section>
 
       {tags.length > 0 && (
-        <Section title="Tag (cần có đủ)" selected={filter.tags.length} onClear={() => onChange({ ...filter, tags: [] })}>
-          {tags.length >= SEARCH_THRESHOLD && <SearchBox value={tq} onChange={setTq} placeholder="Tìm tag…" />}
+        <Section title={tr('Tag (cần có đủ)')} selected={filter.tags.length} onClear={() => onChange({ ...filter, tags: [] })}>
+          {tags.length >= SEARCH_THRESHOLD && <SearchBox value={tq} onChange={setTq} placeholder={tr('Tìm tag…')} />}
           <div className="max-h-56 overflow-y-auto">
             {shownTags.map((t) => (
               <FacetRow
@@ -188,14 +189,14 @@ function PanelBody({ filter, onChange, projects, tags, counts, attention, onAddP
                 onToggle={() => onChange({ ...filter, tags: toggleValue(filter.tags, t) })}
               />
             ))}
-            {shownTags.length === 0 && <Empty>Không thấy tag</Empty>}
+            {shownTags.length === 0 && <Empty>{tr('Không thấy tag')}</Empty>}
           </div>
         </Section>
       )}
 
       <label className="flex items-center gap-2 px-4 py-3 text-xs text-slate-600 dark:text-slate-300">
         <input type="checkbox" checked={filter.showAll} onChange={(e) => onChange({ ...filter, showAll: e.target.checked })} />
-        Hiện cả Done cũ hơn 24 giờ
+        {tr('Hiện cả Done cũ hơn 24 giờ')}
       </label>
     </div>
   )
@@ -209,7 +210,7 @@ function Section({ title, selected, onClear, action, children }: { title: string
         <div className="ml-auto flex items-center gap-1.5">
           {selected > 0 && (
             <button type="button" onClick={onClear} className="text-[11px] text-indigo-600 hover:underline dark:text-indigo-300">
-              Bỏ chọn ({selected})
+              {tr('Bỏ chọn ({n})', { n: selected })}
             </button>
           )}
           {action}
@@ -266,10 +267,10 @@ function FacetRow({
         <button
           type="button"
           onClick={onOnly}
-          aria-label={`Chỉ lọc ${label}`}
+          aria-label={tr('Chỉ lọc {label}', { label })}
           className="hidden shrink-0 rounded px-1.5 py-0.5 text-[11px] text-indigo-600 hover:bg-indigo-50 group-focus-within:block group-hover:block dark:text-indigo-300 dark:hover:bg-indigo-950"
         >
-          chỉ
+          {tr('chỉ')}
         </button>
       )}
     </div>
@@ -278,7 +279,7 @@ function FacetRow({
 
 function AttentionBadge({ n }: { n: number }) {
   return (
-    <span className="shrink-0 rounded-full bg-violet-500 px-1.5 text-[11px] font-semibold text-white" title="Cần xử lý (Review + Needs input)">
+    <span className="shrink-0 rounded-full bg-violet-500 px-1.5 text-[11px] font-semibold text-white" title={tr('Cần xử lý (Review + Needs input)')}>
       {n}
     </span>
   )
@@ -321,7 +322,7 @@ export function BoardToolbar({ filter, onChange, projects, shown, total, showChi
 
   return (
     <div className="mb-4 flex flex-wrap items-center gap-2">
-      <h1 className="text-lg font-semibold">Công việc</h1>
+      <h1 className="text-lg font-semibold">{tr('Công việc')}</h1>
       {ids.length > 0 && (
         <span className="mr-1 max-w-[16rem] truncate text-lg text-slate-400" title={ids.map(projectName).join(', ')}>
           / <span className="text-slate-700 dark:text-slate-200">{ids.length === 1 ? projectName(ids[0]) : `${ids.length} project`}</span>
@@ -331,8 +332,8 @@ export function BoardToolbar({ filter, onChange, projects, shown, total, showChi
         <Search size={15} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
         <input
           className={`${inputCls} w-56 py-1.5 pl-8`}
-          placeholder="Tìm theo tiêu đề, prompt, tag, #id"
-          aria-label="Tìm task"
+          placeholder={tr('Tìm theo tiêu đề, prompt, tag, #id')}
+          aria-label={tr('Tìm task')}
           value={filter.q}
           onChange={(e) => onChange({ ...filter, q: e.target.value })}
         />
@@ -346,7 +347,7 @@ export function BoardToolbar({ filter, onChange, projects, shown, total, showChi
           count > 0 ? 'border-indigo-500 text-indigo-700 dark:text-indigo-300' : 'border-slate-300 text-slate-700 dark:border-slate-700 dark:text-slate-200'
         }`}
       >
-        <ListFilter size={15} /> Bộ lọc
+        <ListFilter size={15} /> {tr('Bộ lọc')}
         {count > 0 && <span className="rounded-full bg-indigo-600 px-1.5 text-xs font-medium text-white">{count}</span>}
       </button>
 
@@ -355,9 +356,9 @@ export function BoardToolbar({ filter, onChange, projects, shown, total, showChi
           <span key={`${c.kind}:${c.value}`} className="inline-flex items-center gap-1 rounded bg-indigo-50 px-1.5 py-0.5 text-xs text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300">
             {c.kind === 'tag' && <Tag size={11} />}
             {c.kind === 'project' && <span className="opacity-60">Project:</span>}
-            {c.kind === 'priority' && <span className="opacity-60">Ưu tiên:</span>}
+            {c.kind === 'priority' && <span className="opacity-60">{tr('Ưu tiên:')}</span>}
             {chipLabel(c)}
-            <button type="button" onClick={() => onChange(removeChip(filter, c))} className="rounded hover:text-indigo-900 dark:hover:text-white" aria-label={`Bỏ lọc ${chipLabel(c)}`}>
+            <button type="button" onClick={() => onChange(removeChip(filter, c))} className="rounded hover:text-indigo-900 dark:hover:text-white" aria-label={tr('Bỏ lọc {label}', { label: chipLabel(c) })}>
               <X size={12} />
             </button>
           </span>
@@ -369,7 +370,7 @@ export function BoardToolbar({ filter, onChange, projects, shown, total, showChi
             {shown}/{total} task
           </span>
           <button type="button" onClick={() => onChange(clearFilters(filter, false))} className="text-xs text-slate-500 hover:underline dark:text-slate-400">
-            Xoá tất cả
+            {tr('Xoá tất cả')}
           </button>
         </>
       )}

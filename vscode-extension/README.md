@@ -21,7 +21,7 @@ You don't need to install Node or run any commands. The extension runs its serve
 - **git**.
 - One of these ways to authenticate:
   - **Claude Code, signed in** (Pro/Max plan). Install the [Claude Code extension](https://marketplace.visualstudio.com/items?itemName=anthropic.claude-code), which includes the CLI, or install the `claude` CLI, then sign in. The extension finds the CLI automatically and tells you if you aren't signed in. You can also run **Agent Task Board: Sign in to Claude Code**.
-  - **An Anthropic API key** (billed per token). Open **Settings → Claude authentication**, paste the key and click Test. In this mode each project's monthly budget is a hard limit.
+  - **An Anthropic API key** (billed per token). Open **Settings → Claude authentication** and paste the key; an invalid key is reported on the first task run. In this mode each project's monthly budget is a hard limit. Tasks still run through the Claude Code CLI, so it must be installed (signing in is not needed).
 
 ## Commands
 

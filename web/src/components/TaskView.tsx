@@ -58,15 +58,16 @@ import { STOP_REASON, canResume, isWaitingRateLimit } from '../lib/resume'
 import { permissionModeOf } from '../lib/permissionMode'
 import { canDeleteTask } from '../lib/taskDelete'
 import type { ReviewComment, Run, Task } from '../types'
+import { LOCALE, tr } from '../lib/i18n'
 
 export type TaskTab = 'log' | 'review' | 'result' | 'history' | 'prompt'
 type Tab = TaskTab
 
 const RUN_KIND: Record<Run['kind'], string> = {
-  initial: 'Lần đầu',
-  resume: 'Sửa theo feedback',
-  retry: 'Chạy lại',
-  continue: 'Tiếp tục',
+  initial: tr('Lần đầu'),
+  resume: tr('Sửa theo feedback'),
+  retry: tr('Chạy lại'),
+  continue: tr('Tiếp tục'),
 }
 
 const TABS: Tab[] = ['log', 'review', 'result', 'history', 'prompt']
@@ -149,7 +150,8 @@ export function TaskView({
         if (await approveTask(task.id)) draft.clear()
       } else if (action === 'merge') {
         if (await mergeTask(task.id)) draft.clear()
-        else void merge.refresh() // bị chặn: cập nhật trạng thái repo chính trong hộp thoại
+        // bị chặn: cập nhật trạng thái repo chính trong hộp thoại
+    else void merge.refresh()
       } else if (action === 'reject') {
         if (await rejectTask(task.id)) draft.clear()
       } else if (await requestChanges(task.id, feedback.trim(), draft.comments)) {
@@ -196,16 +198,16 @@ export function TaskView({
     return (
       <EmptyState
         icon={<XCircle size={48} />}
-        title="Không tìm thấy task"
-        body="Task có thể đã bị xoá."
+        title={tr('Không tìm thấy task')}
+        body={tr('Task có thể đã bị xoá.')}
         action={
           panel ? (
             <Button size="sm" onClick={onClose}>
-              Đóng
+              {tr('Đóng')}
             </Button>
           ) : (
             <Link to="/" className="text-sm text-indigo-600 underline">
-              Về trang Công việc
+              {tr('Về trang Công việc')}
             </Link>
           )
         }
@@ -221,12 +223,12 @@ export function TaskView({
   // Chọn lần chạy để xem (dùng chung cho tab Log và Kết quả)
   const runPicker = runs.length > 1 && (
     <div className="mb-2 flex items-center gap-2 text-sm">
-      <span className="text-slate-500">Lần chạy:</span>
+      <span className="text-slate-500">{tr('Lần chạy:')}</span>
       <select className={`${inputCls} w-auto py-1`} value={shownRun?.id} onChange={(e) => setRunId(e.target.value)}>
         {runs.map((r, i) => (
           <option key={r.id} value={r.id}>
             #{i + 1} · {RUN_KIND[r.kind]} · {clock(r.startedAt)}
-            {r.id === latestRun?.id ? ' (mới nhất)' : ''}
+            {r.id === latestRun?.id ? ` ${tr('(mới nhất)')}` : ''}
           </option>
         ))}
       </select>
@@ -255,35 +257,35 @@ export function TaskView({
       count: diffs.length,
       hidden: diffs.length === 0 && task.status !== 'review' && !diffLoading,
     },
-    { id: 'result', label: 'Kết quả', icon: <Check size={15} /> },
-    { id: 'history', label: 'Lịch sử', icon: <History size={15} />, count: runs.length },
-    { id: 'prompt', label: 'Yêu cầu', icon: <FileText size={15} /> },
+    { id: 'result', label: tr('Kết quả'), icon: <Check size={15} /> },
+    { id: 'history', label: tr('Lịch sử'), icon: <History size={15} />, count: runs.length },
+    { id: 'prompt', label: tr('Yêu cầu'), icon: <FileText size={15} /> },
   ]
 
   return (
     <div className={panel ? '' : 'mx-auto max-w-6xl'}>
       {panel ? (
         <div className="mb-2 flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400">
-          <span>Chi tiết task</span>
+          <span>{tr('Chi tiết task')}</span>
           <Link
             to={`/tasks/${task.id}${tab !== 'log' ? `?tab=${tab}` : ''}`}
             className="ml-auto inline-flex items-center gap-1 rounded px-1.5 py-1 hover:bg-slate-100 hover:text-slate-800 dark:hover:bg-slate-800 dark:hover:text-slate-200"
-            title="Mở toàn trang"
+            title={tr('Mở toàn trang')}
           >
-            <Maximize2 size={13} /> Mở toàn trang
+            <Maximize2 size={13} /> {tr('Mở toàn trang')}
           </Link>
           <button
             onClick={onClose}
             className="rounded p-1 hover:bg-slate-100 hover:text-slate-800 dark:hover:bg-slate-800 dark:hover:text-slate-200"
-            aria-label="Đóng khung chi tiết"
-            title="Đóng (Esc)"
+            aria-label={tr('Đóng khung chi tiết')}
+            title={tr('Đóng (Esc)')}
           >
             <X size={16} />
           </button>
         </div>
       ) : (
         <button onClick={() => navigate(-1)} className="mb-3 inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-800 dark:hover:text-slate-200">
-          <ArrowLeft size={15} /> Quay lại
+          <ArrowLeft size={15} /> {tr('Quay lại')}
         </button>
       )}
 
@@ -303,57 +305,57 @@ export function TaskView({
           </div>
           <h1 className={`${panel ? 'text-lg' : 'text-xl'} font-semibold`}>{task.title}</h1>
           <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-            Tạo {timeAgo(task.createdAt, now)} · Cập nhật {timeAgo(task.updatedAt, now)}
-            {task.status === 'running' && task.startedAt && <> · Đang chạy {duration(now - task.startedAt)}</>}
-            {totalCost > 0 && <> · Tổng chi phí {usd(totalCost)}</>}
+            {tr('Tạo {created} · Cập nhật {updated}', { created: timeAgo(task.createdAt, now), updated: timeAgo(task.updatedAt, now) })}
+            {task.status === 'running' && task.startedAt && <> · {tr('Đang chạy {time}', { time: duration(now - task.startedAt) })}</>}
+            {totalCost > 0 && <> · {tr('Tổng chi phí {cost}', { cost: usd(totalCost) })}</>}
           </p>
         </div>
 
         <div className="flex flex-wrap gap-2">
           {task.status === 'backlog' && (
             <Button variant="primary" onClick={() => queueTask(task.id)}>
-              <Play size={16} /> Chạy
+              <Play size={16} /> {tr('Chạy')}
             </Button>
           )}
           {task.status === 'queued' && (
             <Button onClick={() => unqueueTask(task.id)}>
-              <Undo2 size={16} /> Bỏ khỏi hàng đợi
+              <Undo2 size={16} /> {tr('Bỏ khỏi hàng đợi')}
             </Button>
           )}
           {editable && (
             <>
               <Button onClick={() => setEdit(true)}>
-                <Pencil size={16} /> Sửa
+                <Pencil size={16} /> {tr('Sửa')}
               </Button>
             </>
           )}
           {canDeleteTask(task.status) && (
             <Button variant="ghost" onClick={() => setConfirm('delete')} className="text-rose-600">
-              <Trash2 size={16} /> Xoá
+              <Trash2 size={16} /> {tr('Xoá')}
             </Button>
           )}
           {(task.status === 'running' || task.status === 'needs_input') && (
             <Button variant="danger" onClick={() => setConfirm('stop')}>
-              <Square size={14} /> Tạm dừng
+              <Square size={14} /> {tr('Tạm dừng')}
             </Button>
           )}
           {waiting && (
-            <Button variant="primary" onClick={() => resumeTask(task.id)} title="Không chờ tới giờ reset giới hạn sử dụng">
-              <StepForward size={16} /> Tiếp tục ngay
+            <Button variant="primary" onClick={() => resumeTask(task.id)} title={tr('Không chờ tới giờ reset giới hạn sử dụng')}>
+              <StepForward size={16} /> {tr('Tiếp tục ngay')}
             </Button>
           )}
           {task.status === 'failed' && resumable && (
-            <Button variant="primary" onClick={() => resumeTask(task.id)} title="Giữ thay đổi đang dở, chạy tiếp phiên Claude cũ">
-              <StepForward size={16} /> Tiếp tục
+            <Button variant="primary" onClick={() => resumeTask(task.id)} title={tr('Giữ thay đổi đang dở, chạy tiếp phiên Claude cũ')}>
+              <StepForward size={16} /> {tr('Tiếp tục')}
             </Button>
           )}
           {task.status === 'failed' && (
             <Button
               variant={resumable ? 'secondary' : 'primary'}
               onClick={() => (resumable ? setConfirm('retry') : retryTask(task.id))}
-              title="Bỏ thay đổi đang dở, chạy lại từ đầu trên nhánh chính"
+              title={tr('Bỏ thay đổi đang dở, chạy lại từ đầu')}
             >
-              <RotateCcw size={16} /> Chạy lại
+              <RotateCcw size={16} /> {tr('Chạy lại')}
             </Button>
           )}
         </div>
@@ -369,11 +371,11 @@ export function TaskView({
         <div className="mb-4 flex gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300">
           <Pause size={18} className="shrink-0" />
           <div>
-            <p className="font-medium">Task đã tạm dừng</p>
+            <p className="font-medium">{tr('Task đã tạm dừng')}</p>
             <p>
               {resumable
-                ? 'Bấm Tiếp tục để Claude chạy tiếp phiên cũ trên các thay đổi đang dở, hoặc Chạy lại để làm lại từ đầu.'
-                : 'Không còn worktree của lần chạy trước, chỉ có thể Chạy lại từ đầu.'}
+                ? tr('Bấm Tiếp tục để Claude chạy tiếp phiên cũ trên các thay đổi đang dở, hoặc Chạy lại để làm lại từ đầu.')
+                : tr('Không còn thay đổi của lần chạy trước, chỉ có thể Chạy lại từ đầu.')}
             </p>
           </div>
         </div>
@@ -384,10 +386,10 @@ export function TaskView({
         <div className="mb-4 flex gap-2 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-300">
           <XCircle size={18} className="shrink-0" />
           <div>
-            <p className="font-medium">Task thất bại</p>
+            <p className="font-medium">{tr('Task thất bại')}</p>
             <p>{task.failReason}</p>
             {resumable && (
-              <p className="mt-1 text-xs opacity-80">Có thể bấm Tiếp tục để chạy tiếp phiên cũ mà không mất thay đổi đang dở.</p>
+              <p className="mt-1 text-xs opacity-80">{tr('Có thể bấm Tiếp tục để chạy tiếp phiên cũ mà không mất thay đổi đang dở.')}</p>
             )}
           </div>
         </div>
@@ -396,16 +398,17 @@ export function TaskView({
         <div className="mb-4 flex gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300">
           <Hourglass size={18} className="shrink-0" />
           <p>
-            Đã gặp giới hạn sử dụng của gói Claude. Task sẽ tự chạy tiếp lúc {hhmm(task.notBefore!)}
-            {task.rateLimitRetries ? ` (lần tự thử lại ${task.rateLimitRetries})` : ''}. Bấm Tiếp tục ngay nếu gói đã có lượt
-            dùng trở lại.
+            {tr('Đã gặp giới hạn sử dụng của gói Claude. Task sẽ tự chạy tiếp lúc {time}', { time: hhmm(task.notBefore!) })}
+            {task.rateLimitRetries ? ` ${tr('(lần tự thử lại {n})', { n: task.rateLimitRetries })}` : ''}.{' '}
+            {tr('Bấm Tiếp tục ngay nếu gói đã có lượt dùng trở lại.')}
           </p>
         </div>
       )}
       {task.status === 'queued' && !waiting && (
         <div className="mb-4 rounded-lg border border-sky-200 bg-sky-50 p-3 text-sm text-sky-800 dark:border-sky-900 dark:bg-sky-950/40 dark:text-sky-300">
-          Đang chờ tới lượt. Task sẽ tự {task.resumeNext ? 'chạy tiếp phiên cũ' : 'chạy'} khi có slot trống (tối đa{' '}
-          {s.settings.maxParallel} task cùng lúc).
+          {task.resumeNext
+            ? tr('Đang chờ tới lượt. Task sẽ tự chạy tiếp phiên cũ khi có slot trống (tối đa {n} task cùng lúc).', { n: s.settings.maxParallel })
+            : tr('Đang chờ tới lượt. Task sẽ tự chạy khi có slot trống (tối đa {n} task cùng lúc).', { n: s.settings.maxParallel })}
         </div>
       )}
 
@@ -446,14 +449,14 @@ export function TaskView({
           )}
           {task.status === 'review' && (
             <div className="rounded-lg border border-slate-200 bg-white p-3 text-sm dark:border-slate-800 dark:bg-slate-900">
-              <span className="mb-2 block text-xs font-medium uppercase tracking-wide text-slate-400">Output của Claude</span>
+              <span className="mb-2 block text-xs font-medium uppercase tracking-wide text-slate-400">{tr('Output của Claude')}</span>
               {latestRun?.summary ? (
                 <div className="max-h-[28rem] overflow-y-auto pr-1">
                   <Markdown text={latestRun.summary} />
                 </div>
               ) : (
                 <p className="text-slate-500 dark:text-slate-400">
-                  Claude không trả về nội dung kết quả. Xem chi tiết ở tab{' '}
+                  {tr('Claude không trả về nội dung kết quả. Xem chi tiết ở tab')}{' '}
                   <button onClick={() => setTab('log')} className="text-indigo-600 underline">
                     Log
                   </button>
@@ -465,18 +468,18 @@ export function TaskView({
           <TestPanel task={task} project={project} now={now} />
           {loadedDiff === undefined && diffLoading ? (
             <p className="flex items-center justify-center gap-2 py-8 text-sm text-slate-400">
-              <Loader2 size={16} className="animate-spin" /> Đang tải thay đổi…
+              <Loader2 size={16} className="animate-spin" /> {tr('Đang tải thay đổi…')}
             </p>
           ) : loadedDiff === undefined && diffError ? (
             <div className="flex flex-wrap items-center justify-center gap-2 py-8 text-sm text-rose-600 dark:text-rose-400">
               <span>{diffError}</span>
               <Button size="sm" onClick={() => loadDiff(true)}>
-                <RotateCcw size={14} /> Thử lại
+                <RotateCcw size={14} /> {tr('Thử lại')}
               </Button>
             </div>
           ) : diffs.length === 0 ? (
             <p className="rounded-lg border border-dashed border-slate-300 p-3 text-center text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
-              Task này không thay đổi code. Duyệt output ở trên: đạt thì <b>Approve</b> (chuyển Done), chưa đạt thì <b>Request changes</b>.
+              {tr('Task này không thay đổi code. Duyệt output ở trên: đạt thì Chấp nhận output (chuyển Done), chưa đạt thì Request changes.')}
             </p>
           ) : (
             <DiffView files={diffs} review={diffReview} />
@@ -487,19 +490,19 @@ export function TaskView({
               {feedbackOpen ? (
                 <div className="space-y-2">
                     <label className="text-sm font-medium">
-                      Feedback chung cho Claude (Claude sẽ tiếp tục trong cùng phiên)
-                      {draft.comments.length > 0 && <span className="font-normal text-slate-500">, không bắt buộc khi đã có nhận xét theo dòng</span>}
+                      {tr('Feedback chung cho Claude (Claude sẽ tiếp tục trong cùng phiên)')}
+                      {draft.comments.length > 0 && <span className="font-normal text-slate-500">{tr(', không bắt buộc khi đã có nhận xét theo dòng')}</span>}
                     </label>
                     <textarea
                       autoFocus
                       className={`${inputCls} min-h-[90px]`}
                       value={feedback}
                       onChange={(e) => setFeedback(e.target.value)}
-                      placeholder="VD: Thông báo lỗi cần có role=&quot;alert&quot;; đổi tên biến cho rõ nghĩa…"
+                      placeholder={tr('VD: Thông báo lỗi cần có role="alert"; đổi tên biến cho rõ nghĩa…')}
                     />
                     {draft.comments.length > 0 && (
                       <div className="rounded-md border border-slate-200 p-2 text-xs dark:border-slate-800">
-                        <p className="mb-1 font-medium text-slate-600 dark:text-slate-300">Gửi kèm {draft.comments.length} nhận xét theo file/dòng:</p>
+                        <p className="mb-1 font-medium text-slate-600 dark:text-slate-300">{tr('Gửi kèm {n} nhận xét theo file/dòng:', { n: draft.comments.length })}</p>
                         <ul className="max-h-40 space-y-1 overflow-y-auto">
                           {sortComments(draft.comments).map((c) => (
                             <li key={c.id} className="flex gap-2">
@@ -507,7 +510,7 @@ export function TaskView({
                               <span className="min-w-0 flex-1 truncate text-slate-600 dark:text-slate-300" title={c.text}>
                                 {c.text}
                               </span>
-                              <button title="Bỏ nhận xét này" className="shrink-0 text-slate-400 hover:text-rose-600" onClick={() => draft.removeComment(c.id)}>
+                              <button title={tr('Bỏ nhận xét này')} className="shrink-0 text-slate-400 hover:text-rose-600" onClick={() => draft.removeComment(c.id)}>
                                 <X size={13} />
                               </button>
                             </li>
@@ -517,15 +520,15 @@ export function TaskView({
                     )}
                     <div className="flex justify-end gap-2">
                       <Button variant="ghost" disabled={!!busy} onClick={() => setFeedbackOpen(false)}>
-                        Huỷ
+                        {tr('Huỷ')}
                       </Button>
                       <Button
                         variant="primary"
                         disabled={!!busy || !feedbackValid}
-                        title={!feedbackValid ? `Nhập ít nhất ${MIN_FEEDBACK} ký tự hoặc thêm nhận xét theo dòng` : undefined}
+                        title={!feedbackValid ? tr('Nhập ít nhất {n} ký tự hoặc thêm nhận xét theo dòng', { n: MIN_FEEDBACK }) : undefined}
                         onClick={() => submitReview('request_changes')}
                       >
-                        {busy === 'request_changes' ? <Loader2 size={16} className="animate-spin" /> : <MessageSquareReply size={16} />} Gửi feedback
+                        {busy === 'request_changes' ? <Loader2 size={16} className="animate-spin" /> : <MessageSquareReply size={16} />} {tr('Gửi feedback')}
                       </Button>
                     </div>
                   </div>
@@ -534,14 +537,14 @@ export function TaskView({
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="mr-auto text-sm text-slate-500 dark:text-slate-400">
                       {diffs.length === 0 ? (
-                        'Không có file nào thay đổi: Chấp nhận sẽ chuyển task sang Done'
+                        tr('Không có file nào thay đổi: Chấp nhận sẽ chuyển task sang Done')
                       ) : task.baseRef ? (
                         <>
-                          Output đã nằm trong thư mục project <span className="font-mono text-xs">{project?.repoPath}</span>
+                          {tr('Output đã nằm trong thư mục project')} <span className="font-mono text-xs">{project?.repoPath}</span>
                         </>
                       ) : (
                         <>
-                          Output ở nhánh <span className="font-mono">{task.branch}</span> (local). Bạn tự merge/PR theo quy trình riêng.
+                          {tr('Output ở nhánh')} <span className="font-mono">{task.branch}</span> {tr('(local). Bạn tự merge/PR theo quy trình riêng.')}
                         </>
                       )}
                     </span>
@@ -549,20 +552,20 @@ export function TaskView({
                       {busy === 'reject' ? <Loader2 size={16} className="animate-spin" /> : <X size={16} />} Reject
                     </Button>
                     <Button disabled={!!busy} onClick={() => setFeedbackOpen(true)}>
-                      <MessageSquareReply size={16} /> Request changes{draft.comments.length > 0 && ` (${draft.comments.length} nhận xét)`}
+                      <MessageSquareReply size={16} /> Request changes{draft.comments.length > 0 && ` ${tr('({n} nhận xét)', { n: draft.comments.length })}`}
                     </Button>
                     {canMerge && (
-                      <Button disabled={!!busy} title={`Tuỳ chọn: merge ${task.branch} vào ${project?.mainBranch}`} onClick={() => setConfirm('merge')}>
+                      <Button disabled={!!busy} title={tr('Tuỳ chọn: merge {branch} vào {main}', { branch: task.branch ?? '', main: project?.mainBranch ?? '' })} onClick={() => setConfirm('merge')}>
                         {busy === 'merge' ? <Loader2 size={16} className="animate-spin" /> : <GitMerge size={16} />} Merge…
                       </Button>
                     )}
                     <Button
                       variant="success"
                       disabled={!!busy}
-                      title="Output đạt yêu cầu: chuyển task sang Done (không merge)"
+                      title={tr('Output đạt yêu cầu: chuyển task sang Done (không merge)')}
                       onClick={() => (draft.comments.length ? setConfirm('approve') : submitReview('approve'))}
                     >
-                      {busy === 'approve' ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />} Chấp nhận output
+                      {busy === 'approve' ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />} {tr('Chấp nhận output')}
                     </Button>
                   </div>
                 </div>
@@ -579,9 +582,9 @@ export function TaskView({
               {runPicker}
               <div className={`grid grid-cols-2 gap-3 ${panel ? '' : 'sm:grid-cols-4'}`}>
                 {[
-                  ['Thời gian chạy', shownRun.endedAt ? duration(shownRun.endedAt - shownRun.startedAt) : duration(now - shownRun.startedAt)],
-                  ['Số lượt (turns)', shownRun.numTurns ?? '—'],
-                  ['Chi phí ước tính (quy đổi)', usd(shownRun.costUsd)],
+                  [tr('Thời gian chạy'), shownRun.endedAt ? duration(shownRun.endedAt - shownRun.startedAt) : duration(now - shownRun.startedAt)],
+                  [tr('Số lượt (turns)'), shownRun.numTurns ?? '—'],
+                  [tr('Chi phí ước tính (quy đổi)'), usd(shownRun.costUsd)],
                   ['Exit code', shownRun.exitCode ?? '—'],
                 ].map(([k, v]) => (
                   <div key={k as string} className="rounded-lg border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900">
@@ -592,14 +595,14 @@ export function TaskView({
               </div>
               <div className="rounded-lg border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
                 <p className="flex items-center gap-1.5 border-b border-slate-100 px-5 py-2.5 text-xs font-medium uppercase tracking-wide text-slate-500 dark:border-slate-800 dark:text-slate-400">
-                  <FileText size={14} /> Tóm tắt của Claude
+                  <FileText size={14} /> {tr('Tóm tắt của Claude')}
                 </p>
                 <div className="px-5 py-4">
                   {shownRun.summary ? (
                     <Markdown text={shownRun.summary} className="max-w-3xl" />
                   ) : (
                     <span className="text-sm text-slate-400">
-                      {shownRun.endedAt === undefined ? 'Chưa có, Claude vẫn đang làm việc.' : 'Lần chạy này không có tóm tắt.'}
+                      {shownRun.endedAt === undefined ? tr('Chưa có, Claude vẫn đang làm việc.') : tr('Lần chạy này không có tóm tắt.')}
                     </span>
                   )}
                 </div>
@@ -607,14 +610,14 @@ export function TaskView({
               {task.sessionId && <p className="font-mono text-xs text-slate-400">session: {task.sessionId}</p>}
             </>
           ) : (
-            <p className="py-8 text-center text-sm text-slate-400">Task chưa chạy.</p>
+            <p className="py-8 text-center text-sm text-slate-400">{tr('Task chưa chạy.')}</p>
           )}
         </div>
       )}
 
       {tab === 'history' && (
         <ol className="relative space-y-4 border-l border-slate-200 pl-6 dark:border-slate-800">
-          {runs.length === 0 && <p className="text-sm text-slate-400">Chưa có lần chạy nào.</p>}
+          {runs.length === 0 && <p className="text-sm text-slate-400">{tr('Chưa có lần chạy nào.')}</p>}
           {history.map((item) => {
             if (item.kind === 'review') {
               const rv = item.review
@@ -624,7 +627,7 @@ export function TaskView({
                     <span className="absolute -left-[31px] top-1 h-3 w-3 rounded-full bg-violet-400 ring-4 ring-slate-50 dark:ring-slate-950" />
                     <p className="rounded-md bg-violet-50 p-2 text-sm text-violet-900 dark:bg-violet-950/40 dark:text-violet-200">
                       <MessageSquareReply size={13} className="mr-1 inline" />
-                      Feedback ({timeAgo(rv.createdAt, now)}){task.pendingFeedback && task.status === 'queued' ? ', đang chờ slot chạy' : ''}: {rv.feedback}
+                      Feedback ({timeAgo(rv.createdAt, now)}){task.pendingFeedback && task.status === 'queued' ? tr(', đang chờ slot chạy') : ''}: {rv.feedback}
                     </p>
                     <CommentList comments={rv.comments} />
                   </li>
@@ -633,7 +636,7 @@ export function TaskView({
                 <li key={rv.id} className="relative">
                   <span className={`absolute -left-[31px] top-1 h-3 w-3 rounded-full ring-4 ring-slate-50 dark:ring-slate-950 ${rv.action === 'approve' || rv.action === 'merge' ? 'bg-emerald-500' : 'bg-rose-500'}`} />
                   <p className="text-sm">
-                    {rv.action === 'approve' ? 'Bạn đã chấp nhận output' : rv.action === 'merge' ? 'Bạn đã chấp nhận và merge' : 'Bạn đã Reject'} · <span className="text-xs text-slate-500">{timeAgo(rv.createdAt, now)}</span>
+                    {rv.action === 'approve' ? tr('Bạn đã chấp nhận output') : rv.action === 'merge' ? tr('Bạn đã chấp nhận và merge') : tr('Bạn đã Reject')} · <span className="text-xs text-slate-500">{timeAgo(rv.createdAt, now)}</span>
                   </p>
                   {rv.feedback && <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{rv.feedback}</p>}
                 </li>
@@ -650,11 +653,11 @@ export function TaskView({
                 <div className="rounded-lg border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900">
                   <div className="flex flex-wrap items-center gap-2 text-sm">
                     <span className="font-medium">
-                      Lần {i + 1}: {RUN_KIND[r.kind]}
+                      {tr('Lần {n}: {kind}', { n: i + 1, kind: RUN_KIND[r.kind] })}
                     </span>
-                    <span className="text-xs text-slate-500">{new Date(r.startedAt).toLocaleString('vi-VN')}</span>
+                    <span className="text-xs text-slate-500">{new Date(r.startedAt).toLocaleString(LOCALE)}</span>
                     <span className="ml-auto text-xs text-slate-500">
-                      {r.endedAt ? duration(r.endedAt - r.startedAt) : 'đang chạy'} · {usd(r.costUsd)}
+                      {r.endedAt ? duration(r.endedAt - r.startedAt) : tr('đang chạy')} · {usd(r.costUsd)}
                     </span>
                   </div>
                   {r.feedback && (
@@ -669,8 +672,8 @@ export function TaskView({
                       <summary className="cursor-pointer list-none text-sm text-slate-600 dark:text-slate-300">
                         <span className="line-clamp-2 group-open:hidden">{stripMarkdown(r.summary)}</span>
                         <span className="text-xs text-indigo-600 dark:text-indigo-400">
-                          <span className="group-open:hidden">Xem đầy đủ</span>
-                          <span className="hidden group-open:inline">Thu gọn</span>
+                          <span className="group-open:hidden">{tr('Xem đầy đủ')}</span>
+                          <span className="hidden group-open:inline">{tr('Thu gọn')}</span>
                         </span>
                       </summary>
                       <Markdown text={r.summary} className="mt-2" />
@@ -684,7 +687,7 @@ export function TaskView({
                       }}
                       className="text-indigo-600 hover:underline dark:text-indigo-400"
                     >
-                      Xem kết quả →
+                      {tr('Xem kết quả →')}
                     </button>
                     <button
                       onClick={() => {
@@ -693,7 +696,7 @@ export function TaskView({
                       }}
                       className="text-indigo-600 hover:underline dark:text-indigo-400"
                     >
-                      Xem log →
+                      {tr('Xem log →')}
                     </button>
                   </div>
                 </div>
@@ -708,7 +711,7 @@ export function TaskView({
           <pre className="whitespace-pre-wrap rounded-lg border border-slate-200 bg-white p-4 font-sans text-sm dark:border-slate-800 dark:bg-slate-900">{task.prompt}</pre>
           <div className="grid gap-2 text-sm sm:grid-cols-2">
             <p>
-              <span className="text-slate-500">Mức quyền:</span> <span>{permissionModeOf(task.permissionMode).label}</span>
+              <span className="text-slate-500">{tr('Mức quyền:')}</span> <span>{permissionModeOf(task.permissionMode).label}</span>
             </p>
             <p>
               <span className="text-slate-500">Repo:</span> <span className="font-mono text-xs">{project?.repoPath}</span>
@@ -724,13 +727,13 @@ export function TaskView({
       <ConfirmDialog
         open={confirm === 'delete'}
         onClose={() => setConfirm(null)}
-        title={`Xoá task #${task.id}?`}
+        title={tr('Xoá task #{id}?', { id: task.id })}
         message={
           task.status === 'failed'
-            ? 'Task, lịch sử chạy và worktree/nhánh riêng của task (nếu có) sẽ bị xoá vĩnh viễn.'
-            : 'Task sẽ bị xoá vĩnh viễn.'
+            ? tr('Task, lịch sử chạy và worktree/nhánh riêng của task (nếu có) sẽ bị xoá vĩnh viễn.')
+            : tr('Task sẽ bị xoá vĩnh viễn.')
         }
-        confirmLabel="Xoá"
+        confirmLabel={tr('Xoá')}
         danger
         onConfirm={() => {
           deleteTask(task.id)
@@ -741,27 +744,27 @@ export function TaskView({
       <ConfirmDialog
         open={confirm === 'approve'}
         onClose={() => setConfirm(null)}
-        title={`Chấp nhận output task #${task.id}?`}
-        message={`Bạn còn ${draft.comments.length} nhận xét chưa gửi cho Claude. Chấp nhận sẽ bỏ các nhận xét này. Muốn Claude sửa theo nhận xét thì chọn Request changes.`}
-        confirmLabel="Vẫn chấp nhận"
+        title={tr('Chấp nhận output task #{id}?', { id: task.id })}
+        message={tr('Bạn còn {n} nhận xét chưa gửi cho Claude. Chấp nhận sẽ bỏ các nhận xét này. Muốn Claude sửa theo nhận xét thì chọn Request changes.', { n: draft.comments.length })}
+        confirmLabel={tr('Vẫn chấp nhận')}
         onConfirm={() => void submitReview('approve')}
       />
       <ConfirmDialog
         open={confirm === 'merge'}
         onClose={() => setConfirm(null)}
-        title={`Merge task #${task.id} vào ${project?.mainBranch ?? 'nhánh chính'}?`}
+        title={tr('Merge task #{id} vào {main}?', { id: task.id, main: project?.mainBranch ?? tr('nhánh chính') })}
         message={
           <div className="space-y-2">
             <p>
-              Không bắt buộc: dùng khi bạn muốn Task Board merge luôn nhánh <span className="font-mono">{task.branch}</span> vào{' '}
-              <span className="font-mono">{project?.mainBranch}</span> trong repo local. Nếu team merge qua PR/quy trình riêng, hãy dùng{' '}
-              <b>Chấp nhận output</b> thay vì nút này.
+              {tr('Không bắt buộc: dùng khi bạn muốn Task Board merge luôn nhánh')} <span className="font-mono">{task.branch}</span> {tr('vào')}{' '}
+              <span className="font-mono">{project?.mainBranch}</span> {tr('trong repo local. Nếu team merge qua PR/quy trình riêng, hãy dùng')}{' '}
+              <b>{tr('Chấp nhận output')}</b> {tr('thay vì nút này.')}
             </p>
-            {draft.comments.length > 0 && <p>Bạn còn {draft.comments.length} nhận xét chưa gửi, merge sẽ bỏ các nhận xét này.</p>}
+            {draft.comments.length > 0 && <p>{tr('Bạn còn {n} nhận xét chưa gửi, merge sẽ bỏ các nhận xét này.', { n: draft.comments.length })}</p>}
             <MergeStatus check={merge.check} loading={merge.loading} onRefresh={() => void merge.refresh()} />
           </div>
         }
-        confirmLabel={mergeBlocked ? 'Repo chưa sẵn sàng' : 'Merge'}
+        confirmLabel={mergeBlocked ? tr('Repo chưa sẵn sàng') : 'Merge'}
         onConfirm={() => {
           if (!mergeBlocked) void submitReview('merge')
         }}
@@ -772,15 +775,15 @@ export function TaskView({
         title={`Reject task #${task.id}?`}
         message={
           <>
-            Task chuyển sang Failed. Output <b>không bị xoá</b>
+            {tr('Task chuyển sang Failed. Output')} <b>{tr('không bị xoá')}</b>
             {task.baseRef ? (
-              <>: các file vẫn nằm trong thư mục project, bạn tự giữ hoặc xoá.</>
+              <>{tr(': các file vẫn nằm trong thư mục project, bạn tự giữ hoặc xoá.')}</>
             ) : (
               <>
-                : vẫn còn trên nhánh <span className="font-mono">{task.branch}</span>.
+                {tr(': vẫn còn trên nhánh')} <span className="font-mono">{task.branch}</span>.
               </>
             )}{' '}
-            Có thể bấm Chạy lại để Claude làm lại từ đầu.
+            {tr('Có thể bấm Chạy lại để Claude làm lại từ đầu.')}
           </>
         }
         confirmLabel="Reject"
@@ -790,22 +793,22 @@ export function TaskView({
       <ConfirmDialog
         open={confirm === 'stop'}
         onClose={() => setConfirm(null)}
-        title={`Tạm dừng task #${task.id}?`}
-        message="Claude sẽ bị dừng ngay. Các thay đổi đang làm dở vẫn còn trong worktree, bạn có thể bấm Tiếp tục để chạy tiếp phiên cũ hoặc Chạy lại từ đầu."
-        confirmLabel="Tạm dừng"
+        title={tr('Tạm dừng task #{id}?', { id: task.id })}
+        message={tr('Claude sẽ bị dừng ngay. Các thay đổi đang làm dở vẫn được giữ, bạn có thể bấm Tiếp tục để chạy tiếp phiên cũ hoặc Chạy lại từ đầu.')}
+        confirmLabel={tr('Tạm dừng')}
         danger
         onConfirm={() => stopTask(task.id)}
       />
       <ConfirmDialog
         open={confirm === 'retry'}
         onClose={() => setConfirm(null)}
-        title={`Chạy lại task #${task.id} từ đầu?`}
+        title={tr('Chạy lại task #{id} từ đầu?', { id: task.id })}
         message={
           task.baseRef
-            ? 'Claude bắt đầu phiên mới trong thư mục project. File hiện có không bị xoá hay hoàn tác; diff khi review vẫn so với trước lần giao task đầu tiên.'
-            : 'Toàn bộ thay đổi đang dở trong worktree sẽ bị bỏ và Claude bắt đầu phiên mới trên nhánh chính. Muốn giữ thay đổi và làm tiếp, hãy chọn Tiếp tục.'
+            ? tr('Claude bắt đầu phiên mới trong thư mục project. File hiện có không bị xoá hay hoàn tác; diff khi review vẫn so với trước lần giao task đầu tiên.')
+            : tr('Toàn bộ thay đổi đang dở trong worktree sẽ bị bỏ và Claude bắt đầu phiên mới trên nhánh chính. Muốn giữ thay đổi và làm tiếp, hãy chọn Tiếp tục.')
         }
-        confirmLabel="Chạy lại từ đầu"
+        confirmLabel={tr('Chạy lại từ đầu')}
         danger
         onConfirm={() => retryTask(task.id)}
       />
@@ -834,13 +837,13 @@ function DepsInfo({ task, tasks, link }: { task: Task; tasks: Task[]; link: (id:
     >
       {deps.length > 0 && (
         <div className="flex flex-wrap items-center gap-1.5">
-          <span className="text-slate-500">{waiting ? 'Đang chờ (chạy khi tất cả Done):' : 'Chờ task:'}</span>
+          <span className="text-slate-500">{waiting ? tr('Đang chờ (chạy khi tất cả Done):') : tr('Chờ task:')}</span>
           {deps.map(item)}
         </div>
       )}
       {dependents.length > 0 && (
         <div className="flex flex-wrap items-center gap-1.5">
-          <span className="text-slate-500">Task đang chờ task này:</span>
+          <span className="text-slate-500">{tr('Task đang chờ task này:')}</span>
           {dependents.map(item)}
         </div>
       )}

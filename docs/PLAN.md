@@ -13,9 +13,9 @@
 |---|---|---|
 | PT | ✅ Hoàn thành, đã duyệt | `npm run dev:mock` để xem lại |
 | P0 | ✅ Hoàn thành | Spike S1–S8 đều đạt, xem [P0-SPIKE.md](P0-SPIKE.md). SQLite dùng `node:sqlite` thay `better-sqlite3` (không cần build native) |
-| P1 | ✅ Hoàn thành, **chờ điểm duyệt #1** | Xem “Kết quả kiểm thử P1” bên dưới |
-| P2 | ✅ Đã hiện thực, **chờ điểm duyệt #2** | Worktree, diff, Approve/Request changes/Reject, Retry có unit test (`git`, `capture`, `diff`, `review`, `retry`) |
-| P3 | ✅ Hoàn thành, **chờ điểm duyệt #3** | Xem “Kết quả kiểm thử P3” bên dưới. Phần cần Claude thật: chạy tay theo hướng dẫn |
+| P1 | ✅ Hoàn thành, **đã qua điểm duyệt #1** (2026-11-18) | Xem “Kết quả kiểm thử P1” bên dưới |
+| P2 | ✅ Hoàn thành, **đã qua điểm duyệt #2** (2026-11-18) | Worktree, diff, Approve/Request changes/Reject, Retry có unit test (`git`, `capture`, `diff`, `review`, `retry`) |
+| P3 | ✅ Hoàn thành, **đã qua điểm duyệt #3** (2026-11-18) | Xem “Kết quả kiểm thử P3” bên dưới. Phần cần Claude thật: chạy tay theo hướng dẫn |
 | P5 | 🟡 Đang làm, **P5-08 bị chặn** | P5-01, 03, 04, 07 đạt. P5-02, 05 chưa làm; P5-06 mới có hàm thuần, runner chưa gọi. Xem “Kết quả kiểm thử P5” |
 | P6 | ⏳ Đã lập kế hoạch, task ở Backlog | Budget theo project (P6-01..02) |
 | P7 | ⏳ Đã lập kế hoạch, task ở Backlog | Cải tiến duyệt quyền (P7-01..05) |
@@ -30,7 +30,7 @@
 | Dừng task đang chạy | ✅ Failed “Đã dừng bởi người dùng”, không còn tiến trình `claude.exe` mồ côi |
 | Giới hạn song song theo project (=1), ưu tiên | ✅ Task thứ 2 chờ, chỉ chạy khi task 1 xong |
 | Khởi động lại server khi task đang chạy (NFR-05) | ✅ Task → Failed kèm lý do, run được đóng, không có tiến trình mồ côi |
-| Giao diện (bấm tay trên trình duyệt) | ⏳ Bạn kiểm tra ở điểm duyệt #1 |
+| Giao diện (bấm tay trên trình duyệt) | ✅ Chủ dự án đã kiểm tra, đạt (điểm duyệt #1, 2026-11-18) |
 
 ### Kết quả kiểm thử P3 (2026-11-12)
 
@@ -47,7 +47,7 @@
 | Bổ trợ (đã có): server khởi động lại khi đang chờ, task Stop/tiến trình kết thúc khi đang chờ, “Luôn cho phép”, sai token, mất kết nối backend | ✅ (`permissions.test.ts`, `mcp/permission.test.ts`) |
 | Tổng `npm test -w server` / `npm run typecheck` | ✅ 195/195 · ✅ không lỗi |
 
-**Chạy tay với Claude thật** (điểm duyệt #3):
+**Chạy tay với Claude thật** (điểm duyệt #3, ✅ chủ dự án đã chạy, đạt 2026-11-18):
 1. `npm run dev`, mở `http://localhost:3000`. Project nháp ở Settings/Projects: mức quyền `manual`, allowedTools chỉ gồm `Read`, `Bash(git status:*)`. Settings → bật thông báo trình duyệt, bấm cho phép.
 2. **Ngoài whitelist:** task “Chạy `npm init -y` rồi `npm install left-pad`”, Lưu & Chạy. Kỳ vọng: thẻ sang **Needs Input**, badge “Cần xử lý” tăng, tiêu đề tab có số, có thông báo trình duyệt (khi tab đang ẩn). Bấm **Allow** → log có “Đã cho phép: Bash(npm install…)”, task chạy tiếp, lên Review.
 3. **Deny:** lặp lại bước 2 với task mới, bấm **Deny** → Claude nhận từ chối, log có “Đã từ chối…”, Claude tự giải thích/đổi cách và kết thúc (Review hoặc Done).
@@ -61,7 +61,7 @@
 | FR | Ưu tiên | Trạng thái | Căn cứ |
 |---|---|---|---|
 | FR-01 Tạo task (tiêu đề, prompt, project, ưu tiên, mức quyền) | Must | ✅ | `POST /api/tasks`, modal tạo task |
-| FR-02 Sửa/xóa khi Backlog/Queued | Must | ✅ (lệch nhẹ) | `PATCH` chặn ngoài Backlog/Queued (409). `DELETE` rộng hơn PLAN 1.3: xóa được mọi task không đang chạy (để dọn Done/Failed). Cần bạn xác nhận giữ hay siết lại |
+| FR-02 Sửa/xóa khi Backlog/Queued | Must | ✅ | `PATCH` chặn ngoài Backlog/Queued (409). `DELETE` cho Backlog/Queued/Failed (`taskDelete.ts`, task #2). Chủ dự án chốt giữ cách này 2026-11-18, SPEC FR-02 đã cập nhật |
 | FR-03 Đưa vào hàng đợi | Must | ✅ | `/queue`, runner theo ưu tiên + `max_parallel` |
 | FR-04 Stop | Must | ✅ | `/stop`, `taskkill /T /F` (kiểm thử P1) |
 | FR-05 Retry | Should | ✅ | `/retry`, `retry.test.ts` |
@@ -76,7 +76,7 @@
 | FR-31 Approve & Merge | Must | ✅ | `review.ts` (chặn repo bẩn/sai nhánh, conflict giữ Review) |
 | FR-32 Request changes (`--resume`) | Must | ✅ | `review.ts`, run `kind=resume` |
 | FR-33 Reject | Must | ✅ | xóa worktree + nhánh |
-| FR-40 Needs Input khi xin quyền / hỏi lại | Must | ✅ (một phần “hỏi lại”) | Xin quyền: MCP prompt tool (kiểm thử trên). “Hỏi lại”: ở chế độ `-p` Claude không chờ trả lời được; câu hỏi nằm trong kết quả, bạn trả lời bằng Request changes. Hook `Notification` chỉ gửi thông báo |
+| FR-40 Needs Input khi xin quyền / hỏi lại | Must | ✅ | Xin quyền: MCP prompt tool (kiểm thử trên). Hỏi lại (2026-11-18): tool gốc `AskUserQuestion` đi qua cùng prompt tool, luôn chờ người, đáp án trả về qua `updatedInput.answers` và Claude chạy tiếp trong cùng tiến trình (spike S9; `web/src/lib/question.ts`, `permissions.ts`, `PermissionCard.tsx`, Telegram; `questions.test.ts` 15 test; đã chạy thật với Haiku ở mode Auto) |
 | FR-41 Allow/Deny trên web | Should | ✅ | `POST /api/permissions/:id`, kiểm thử (1)(3) |
 | FR-50 Web Notification (Review, Needs Input, Failed) | Should | ✅ (cần xác nhận tay) | `lib/notify.ts`, `notifyOn` trong Settings; chỉ kiểm được trên trình duyệt |
 | FR-60 Nhiều project | Must | ✅ | `/api/projects`, validate git repo |
@@ -474,7 +474,7 @@ Vấn đề: hàng đợi chỉ sắp theo ưu tiên và thời gian tạo, nên
 
 ## Phê duyệt kế hoạch
 
-- [ ] Đồng ý các giả định (SPEC Mục 10, dùng mặc định)
-- [ ] Đồng ý thứ tự và phạm vi PT, P0–P3
-- [ ] Chọn hạng mục P4 muốn làm: ____
-- [ ] Cho phép bắt đầu **PT (Prototype)**
+- [x] Đồng ý các giả định (SPEC Mục 10, dùng mặc định) — 2026-11-18
+- [x] Đồng ý thứ tự và phạm vi PT, P0–P3 — 2026-11-18
+- [x] Chọn hạng mục P4 muốn làm: **giữ tất cả 4.1–4.7** (đã triển khai) — 2026-11-18
+- [x] Cho phép bắt đầu **PT (Prototype)** — 2026-11-18 (xác nhận sau: PT đã duyệt 2026-11-11)

@@ -137,7 +137,8 @@ export function Modal({
   title: string
   children: ReactNode
   footer?: ReactNode
-  wide?: boolean
+  /** true: 2xl; 'xl': 4xl (form nhiều trường, tránh quá cao phải cuộn) */
+  wide?: boolean | 'xl'
 }) {
   useEffect(() => {
     if (!open) return
@@ -149,7 +150,7 @@ export function Modal({
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/50 p-4 pt-[8vh]" onMouseDown={onClose}>
       <div
-        className={`w-full ${wide ? 'max-w-2xl' : 'max-w-md'} rounded-xl bg-white shadow-xl dark:bg-slate-900 dark:ring-1 dark:ring-slate-800`}
+        className={`w-full ${wide === 'xl' ? 'max-w-4xl' : wide ? 'max-w-2xl' : 'max-w-md'} rounded-xl bg-white shadow-xl dark:bg-slate-900 dark:ring-1 dark:ring-slate-800`}
         onMouseDown={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"

@@ -12,7 +12,26 @@ import { EN } from '../../web/src/i18n/en.ts'
 const WEB_SRC = join(import.meta.dirname, '..', '..', 'web', 'src')
 
 /** File giao diện đã dịch hết. Dịch xong file nào thì thêm vào đây. */
-const TRANSLATED = ['components/Layout.tsx']
+const TRANSLATED = [
+  'components/Layout.tsx',
+  'pages/Board.tsx',
+  'components/TaskCard.tsx',
+  'components/BoardFilters.tsx',
+  'components/TaskFormModal.tsx',
+  'lib/workView.ts',
+  'lib/format.ts',
+  'components/TaskView.tsx',
+  'components/DiffView.tsx',
+  'components/PermissionCard.tsx',
+  'components/Attention.tsx',
+  'components/OpsView.tsx',
+  'components/ImportModal.tsx',
+  'pages/Settings.tsx',
+  'pages/Projects.tsx',
+  'store/store.ts',
+  'components/ScheduleManager.tsx',
+  'pages/Stats.tsx',
+]
 
 test('normalizeLang / resolveLang: lựa chọn đã lưu → URL → trình duyệt', () => {
   assert.equal(normalizeLang('vi-VN'), 'vi')

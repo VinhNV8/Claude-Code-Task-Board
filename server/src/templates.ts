@@ -30,6 +30,70 @@ export const DEFAULT_TEMPLATES: PromptTemplate[] = [
     prompt: 'Tính năng: <mô tả>\nYêu cầu:\n- \n- \n\nHãy triển khai, viết test và tóm tắt các thay đổi.',
     tags: ['feature'],
   },
+  {
+    id: 'tpl-improve',
+    name: 'Cải thiện',
+    title: 'Cải thiện ',
+    prompt: 'Cải thiện <phần code/tính năng> về <hiệu năng / UX / độ ổn định / khả năng đọc>.\nHiện trạng: <vấn đề đang gặp>\nMục tiêu: <kết quả mong muốn>\n\nHãy phân tích hiện trạng, đề xuất và thực hiện cải thiện, giữ nguyên hành vi hiện có (trừ phần cần cải thiện), chạy test và tóm tắt các thay đổi.',
+    tags: ['improve'],
+  },
+  {
+    id: 'tpl-review',
+    name: 'Review code',
+    title: 'Review ',
+    prompt: 'Review <file/nhánh/diff>.\nTìm bug, lỗ hổng bảo mật, vấn đề hiệu năng và code khó bảo trì.\n\nLiệt kê theo mức độ nghiêm trọng, kèm vị trí (file:dòng) và cách sửa đề xuất. Không tự sửa code nếu chưa được yêu cầu.',
+    tags: ['review'],
+  },
+  {
+    id: 'tpl-explain',
+    name: 'Tìm hiểu code',
+    title: 'Tìm hiểu ',
+    prompt: 'Giải thích <module/luồng/tính năng> hoạt động thế nào: các file chính, luồng dữ liệu, các phụ thuộc và điểm cần lưu ý khi sửa.\n\nChỉ đọc code, không thay đổi gì.',
+    tags: ['docs'],
+  },
+  // ---- Requirement
+  {
+    id: 'tpl-req-clarify',
+    name: 'Làm rõ yêu cầu',
+    title: 'Làm rõ yêu cầu: ',
+    prompt: 'Yêu cầu thô: <dán yêu cầu / mô tả từ khách hàng>\nBối cảnh: <người dùng, mục tiêu nghiệp vụ>\n\nHãy đọc code và tài liệu hiện có, rồi:\n1. Tóm tắt lại yêu cầu theo cách hiểu của bạn.\n2. Chỉ ra điểm mơ hồ, mâu thuẫn, thiếu sót (gap) và giả định ngầm.\n3. Liệt kê câu hỏi cần hỏi stakeholder, xếp theo mức độ ưu tiên.\n\nKhông sửa code.',
+    tags: ['requirement'],
+  },
+  {
+    id: 'tpl-req-story',
+    name: 'Viết user story',
+    title: 'User story: ',
+    prompt: 'Yêu cầu: <mô tả>\n\nChuyển thành các user story dạng "Là <vai trò>, tôi muốn <hành động> để <lợi ích>". Mỗi story có tiêu chí chấp nhận (acceptance criteria) dạng Given/When/Then, gồm cả trường hợp lỗi và trường hợp biên. Đánh dấu story nào phụ thuộc story nào.\n\nGhi kết quả vào <docs/stories/ten-file.md>. Không sửa code.',
+    tags: ['requirement'],
+  },
+  {
+    id: 'tpl-req-spec',
+    name: 'Viết đặc tả (SPEC)',
+    title: 'Đặc tả: ',
+    prompt: 'Tính năng: <mô tả>\n\nViết tài liệu đặc tả vào <docs/ten-file.md> gồm: mục tiêu, phạm vi (trong / ngoài phạm vi), luồng nghiệp vụ chính và luồng ngoại lệ, yêu cầu chức năng (đánh mã FR-xx), yêu cầu phi chức năng, dữ liệu / API liên quan, câu hỏi còn mở.\n\nĐối chiếu với code hiện có để đặc tả khớp thực tế. Không sửa code.',
+    tags: ['requirement', 'docs'],
+  },
+  {
+    id: 'tpl-req-breakdown',
+    name: 'Phân rã thành task',
+    title: 'Phân rã: ',
+    prompt: 'Yêu cầu / tính năng: <mô tả hoặc đường dẫn tài liệu>\n\nPhân rã thành danh sách task nhỏ, mỗi task làm xong được trong một lần chạy. Mỗi task ghi: tiêu đề, mô tả, file/module dự kiến thay đổi, tiêu chí hoàn thành, task phụ thuộc. Sắp theo thứ tự nên làm và đánh dấu task có thể chạy song song.\n\nKhông sửa code.',
+    tags: ['requirement', 'plan'],
+  },
+  {
+    id: 'tpl-req-impact',
+    name: 'Phân tích tác động',
+    title: 'Tác động của thay đổi: ',
+    prompt: 'Thay đổi dự kiến: <mô tả thay đổi yêu cầu>\n\nPhân tích tác động lên hệ thống hiện tại: module/file bị ảnh hưởng, thay đổi dữ liệu / API / migration, rủi ro hồi quy, test cần bổ sung hoặc sửa, ước lượng độ lớn (S/M/L) cho từng phần. Đề xuất cách triển khai ít rủi ro nhất.\n\nKhông sửa code.',
+    tags: ['requirement', 'plan'],
+  },
+  {
+    id: 'tpl-req-verify',
+    name: 'Đối chiếu yêu cầu với code',
+    title: 'Đối chiếu yêu cầu: ',
+    prompt: 'Tài liệu yêu cầu: <đường dẫn SPEC / user story / danh sách tiêu chí>\n\nKiểm tra code hiện tại đã đáp ứng từng yêu cầu chưa. Lập bảng: mã yêu cầu | trạng thái (Đạt / Một phần / Chưa có / Khác yêu cầu) | bằng chứng (file:dòng, test) | ghi chú. Cuối cùng liệt kê các gap cần làm tiếp.\n\nKhông sửa code.',
+    tags: ['requirement', 'review'],
+  },
 ]
 
 export class TemplateError extends Error {}

@@ -7,14 +7,15 @@ import { deleteSchedule, fetchScheduleRuns, onScheduleRun, previewCron, saveSche
 import { PRIORITY_META } from '../lib/format'
 import type { Priority, Schedule, ScheduleRun } from '../types'
 import { Button, ConfirmDialog, Field, Modal, StatusBadge, inputCls } from './ui'
+import { LOCALE, tr } from '../lib/i18n'
 
 const fmt = (ts: number) =>
-  new Date(ts).toLocaleString('vi-VN', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+  new Date(ts).toLocaleString(LOCALE, { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
 
 const CRON_EXAMPLES: [string, string][] = [
-  ['0 9 * * 1-5', '9:00 các ngày thứ 2–6'],
-  ['0 */6 * * *', 'mỗi 6 giờ'],
-  ['30 8 1 * *', '8:30 ngày 1 hằng tháng'],
+  ['0 9 * * 1-5', tr('9:00 các ngày thứ 2–6')],
+  ['0 */6 * * *', tr('mỗi 6 giờ')],
+  ['30 8 1 * *', tr('8:30 ngày 1 hằng tháng')],
 ]
 
 function ScheduleFormModal({ open, onClose, editing }: { open: boolean; onClose: () => void; editing?: Schedule }) {
@@ -70,15 +71,15 @@ function ScheduleFormModal({ open, onClose, editing }: { open: boolean; onClose:
     <Modal
       open={open}
       onClose={onClose}
-      title={editing ? 'Sửa lịch' : 'Thêm lịch'}
+      title={editing ? tr('Sửa lịch') : tr('Thêm lịch')}
       wide
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>
-            Huỷ
+            {tr('Huỷ')}
           </Button>
           <Button variant="primary" disabled={saving} onClick={submit}>
-            Lưu lịch
+            {tr('Lưu lịch')}
           </Button>
         </>
       }
@@ -86,11 +87,11 @@ function ScheduleFormModal({ open, onClose, editing }: { open: boolean; onClose:
       <div className="space-y-4">
         {error && <div className="rounded-md bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:bg-rose-950/40 dark:text-rose-300">{error}</div>}
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <Field label="Biểu thức cron" hint="phút giờ ngày tháng thứ · theo giờ của máy chạy server">
+          <Field label={tr('Biểu thức cron')} hint={tr('phút giờ ngày tháng thứ · theo giờ của máy chạy server')}>
             <input autoFocus className={`${inputCls} font-mono`} value={cron} onChange={(e) => setCron(e.target.value)} placeholder="0 9 * * 1-5" />
           </Field>
           <div className="text-xs text-slate-500">
-            <p className="mb-1 text-sm font-medium text-slate-700 dark:text-slate-200">Lần chạy kế tiếp</p>
+            <p className="mb-1 text-sm font-medium text-slate-700 dark:text-slate-200">{tr('Lần chạy kế tiếp')}</p>
             {preview.error ? (
               <p className="text-rose-600">{preview.error}</p>
             ) : preview.next ? (
@@ -103,7 +104,7 @@ function ScheduleFormModal({ open, onClose, editing }: { open: boolean; onClose:
               <p>—</p>
             )}
             <p className="mt-2">
-              Ví dụ:{' '}
+              {tr('Ví dụ:')}{' '}
               {CRON_EXAMPLES.map(([ex, label], i) => (
                 <span key={ex}>
                   {i > 0 && ' · '}
@@ -116,7 +117,7 @@ function ScheduleFormModal({ open, onClose, editing }: { open: boolean; onClose:
           </div>
           <Field label="Project">
             <select className={inputCls} value={projectId} onChange={(e) => setProjectId(e.target.value)}>
-              {projects.length === 0 && <option value="">(chưa có project)</option>}
+              {projects.length === 0 && <option value="">{tr('(chưa có project)')}</option>}
               {projects.map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.name}
@@ -124,7 +125,7 @@ function ScheduleFormModal({ open, onClose, editing }: { open: boolean; onClose:
               ))}
             </select>
           </Field>
-          <Field label="Độ ưu tiên">
+          <Field label={tr('Độ ưu tiên')}>
             <select className={inputCls} value={priority} onChange={(e) => setPriority(e.target.value as Priority)}>
               {(['urgent', 'high', 'normal', 'low'] as Priority[]).map((p) => (
                 <option key={p} value={p}>
@@ -134,15 +135,15 @@ function ScheduleFormModal({ open, onClose, editing }: { open: boolean; onClose:
             </select>
           </Field>
         </div>
-        <Field label="Tiêu đề task">
-          <input className={inputCls} value={title} onChange={(e) => setTitle(e.target.value)} placeholder="VD: Cập nhật dependencies hằng tuần" />
+        <Field label={tr('Tiêu đề task')}>
+          <input className={inputCls} value={title} onChange={(e) => setTitle(e.target.value)} placeholder={tr('VD: Cập nhật dependencies hằng tuần')} />
         </Field>
-        <Field label="Prompt" hint="Task tạo ra sẽ vào thẳng Queued">
+        <Field label="Prompt" hint={tr('Task tạo ra sẽ vào thẳng Queued')}>
           <textarea className={`${inputCls} min-h-[140px] font-mono text-[13px]`} value={prompt} onChange={(e) => setPrompt(e.target.value)} />
         </Field>
         <label className="inline-flex items-center gap-2 text-sm">
           <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
-          Bật lịch
+          {tr('Bật lịch')}
         </label>
       </div>
     </Modal>
@@ -170,8 +171,8 @@ function ScheduleHistory({ scheduleId }: { scheduleId: string }) {
   }, [scheduleId])
 
   if (error) return <p className="text-xs text-rose-600">{error}</p>
-  if (!runs) return <p className="text-xs text-slate-500">Đang tải…</p>
-  if (runs.length === 0) return <p className="text-xs text-slate-500">Chưa tạo task nào.</p>
+  if (!runs) return <p className="text-xs text-slate-500">{tr('Đang tải…')}</p>
+  if (runs.length === 0) return <p className="text-xs text-slate-500">{tr('Chưa tạo task nào.')}</p>
   return (
     <ul className="space-y-1 text-xs">
       {runs.map((r) => {
@@ -184,15 +185,15 @@ function ScheduleHistory({ scheduleId }: { scheduleId: string }) {
                 #{task.id} {task.title}
               </Link>
             ) : (
-              <span className="text-slate-400 line-through" title="Task đã bị xoá">
+              <span className="text-slate-400 line-through" title={tr('Task đã bị xoá')}>
                 {r.taskId !== undefined ? `#${r.taskId} ` : ''}
                 {r.title}
               </span>
             )}
             {task && <StatusBadge status={task.status} />}
             {r.catchUp && (
-              <span className="rounded bg-amber-100 px-1.5 py-0.5 text-amber-800 dark:bg-amber-950 dark:text-amber-300" title={`Theo lịch: ${fmt(r.scheduledFor)}`}>
-                tạo bù
+              <span className="rounded bg-amber-100 px-1.5 py-0.5 text-amber-800 dark:bg-amber-950 dark:text-amber-300" title={tr('Theo lịch: {time}', { time: fmt(r.scheduledFor) })}>
+                {tr('tạo bù')}
               </span>
             )}
           </li>
@@ -214,7 +215,7 @@ export function ScheduleManager() {
   return (
     <>
       {schedules.length === 0 ? (
-        <p className="text-sm text-slate-500">Chưa có lịch nào. Lịch sẽ tự tạo task ở Queued theo biểu thức cron.</p>
+        <p className="text-sm text-slate-500">{tr('Chưa có lịch nào. Lịch sẽ tự tạo task ở Queued theo biểu thức cron.')}</p>
       ) : (
         <ul className="divide-y divide-slate-200 rounded-md border border-slate-200 dark:divide-slate-800 dark:border-slate-800">
           {schedules.map((s) => (
@@ -222,7 +223,7 @@ export function ScheduleManager() {
               <div className="flex items-start gap-3">
                 <button
                   className="mt-0.5 rounded p-0.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800"
-                  title="Lịch sử task đã tạo"
+                  title={tr('Lịch sử task đã tạo')}
                   onClick={() => setExpanded(expanded === s.id ? null : s.id)}
                 >
                   {expanded === s.id ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
@@ -235,17 +236,17 @@ export function ScheduleManager() {
                     <span className={`text-xs ${PRIORITY_META[s.priority].cls}`}>· {PRIORITY_META[s.priority].label}</span>
                   </div>
                   <p className="text-xs text-slate-500">
-                    {s.enabled ? (s.nextRunAt ? `Lần kế tiếp: ${fmt(s.nextRunAt)}` : 'Không có lần chạy kế tiếp') : 'Đang tắt'}
-                    {s.lastRunAt ? ` · Lần gần nhất: ${fmt(s.lastRunAt)}` : ''}
+                    {s.enabled ? (s.nextRunAt ? tr('Lần kế tiếp: {time}', { time: fmt(s.nextRunAt) }) : tr('Không có lần chạy kế tiếp')) : tr('Đang tắt')}
+                    {s.lastRunAt ? ` · ${tr('Lần gần nhất: {time}', { time: fmt(s.lastRunAt) })}` : ''}
                   </p>
                 </div>
-                <label className="inline-flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-300" title={s.enabled ? 'Tắt lịch' : 'Bật lịch'}>
+                <label className="inline-flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-300" title={s.enabled ? tr('Tắt lịch') : tr('Bật lịch')}>
                   <input type="checkbox" checked={s.enabled} onChange={(e) => setScheduleEnabled(s.id, e.target.checked)} />
-                  Bật
+                  {tr('Bật')}
                 </label>
                 <button
                   className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800"
-                  title="Sửa"
+                  title={tr('Sửa')}
                   onClick={() => {
                     setEditing(s)
                     setFormOpen(true)
@@ -253,7 +254,7 @@ export function ScheduleManager() {
                 >
                   <Pencil size={16} />
                 </button>
-                <button className="rounded p-1 text-slate-400 hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-950/40" title="Xoá" onClick={() => setDel(s)}>
+                <button className="rounded p-1 text-slate-400 hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-950/40" title={tr('Xoá')} onClick={() => setDel(s)}>
                   <Trash2 size={16} />
                 </button>
               </div>
@@ -269,22 +270,22 @@ export function ScheduleManager() {
       <Button
         size="sm"
         disabled={projects.length === 0}
-        title={projects.length === 0 ? 'Cần thêm project trước' : undefined}
+        title={projects.length === 0 ? tr('Cần thêm project trước') : undefined}
         onClick={() => {
           setEditing(undefined)
           setFormOpen(true)
         }}
       >
-        <Plus size={14} /> Thêm lịch
+        <Plus size={14} /> {tr('Thêm lịch')}
       </Button>
 
       <ScheduleFormModal open={formOpen} onClose={() => setFormOpen(false)} editing={editing} />
       <ConfirmDialog
         open={!!del}
         onClose={() => setDel(null)}
-        title={`Xoá lịch "${del?.title}"?`}
-        message="Lịch sử của lịch này bị xoá theo. Task đã tạo không bị ảnh hưởng."
-        confirmLabel="Xoá"
+        title={tr('Xoá lịch "{title}"?', { title: del?.title ?? '' })}
+        message={tr('Lịch sử của lịch này bị xoá theo. Task đã tạo không bị ảnh hưởng.')}
+        confirmLabel={tr('Xoá')}
         danger
         onConfirm={() => del && deleteSchedule(del.id)}
       />

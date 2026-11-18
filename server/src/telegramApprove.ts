@@ -1,11 +1,18 @@
 // Duyệt quyền qua Telegram (P7-03, FR-46): tin nhắn kèm nút inline + long polling getUpdates.
 // Chỉ mở rộng luồng duyệt có sẵn (permissions.ts): quyết định vẫn đi qua decidePermission.
 // Mọi phụ thuộc (fetch, DB, đồng hồ, sleep) truyền vào để test không cần mạng/DB.
-import type { PermissionRequest, Settings, Task } from './types.ts'
+import type { Answers, PermissionRequest, Settings, Task } from './types.ts'
 import { taskLink, type FetchLike, type TelegramConfig } from './telegram.ts'
 
 type Action = 'allow' | 'always' | 'deny'
 const ACTIONS: Action[] = ['allow', 'always', 'deny']
+
+/** FR-40: câu hỏi của Claude (AskUserQuestion) trả lời được bằng nút khi chỉ có một câu, chọn một đáp án. */
+export const isQuestion = (req: Pick<PermissionRequest, 'questions'>) => !!req.questions?.length
+export const buttonQuestion = (req: Pick<PermissionRequest, 'questions'>) => {
+  const qs = req.questions ?? []
+  return qs.length === 1 && !qs[0].multiSelect && qs[0].options.length > 0 ? qs[0] : undefined
+}
 
 // ---------------------------------------------------------------- gọi Bot API
 
@@ -65,6 +72,7 @@ export function formatPermissionMessage(
   task: Pick<Task, 'id' | 'title'> | undefined,
   opts: { projectName?: string; appUrl: string; now: number },
 ) {
+  if (isQuestion(req)) return formatQuestionMessage(req, task, opts)
   const label = req.tool === 'Bash' ? 'Lệnh' : PATH_TOOLS.has(req.tool) ? 'Đường dẫn' : 'Chi tiết'
   const lines = [`🔐 Claude xin quyền: #${req.taskId}`]
   if (task?.title) lines.push(task.title)
@@ -79,12 +87,45 @@ export function formatPermissionMessage(
   return lines.join('\n')
 }
 
-export const callbackData = (requestId: string, action: Action) => `perm:${requestId}:${action}`
+function formatQuestionMessage(
+  req: PermissionRequest,
+  task: Pick<Task, 'id' | 'title'> | undefined,
+  opts: { projectName?: string; appUrl: string; now: number },
+) {
+  const lines = [`❓ Claude hỏi: #${req.taskId}`]
+  if (task?.title) lines.push(task.title)
+  if (opts.projectName) lines.push(`Project: ${opts.projectName}`)
+  for (const q of req.questions ?? []) {
+    lines.push('', clip(q.question) + (q.multiSelect ? ' (chọn nhiều)' : ''))
+    q.options.forEach((o, i) => lines.push(`${i + 1}. ${clip(o.label, 100)}${o.description ? ` — ${clip(o.description, 150)}` : ''}`))
+  }
+  const mins = Math.max(0, Math.round((req.timeoutAt - opts.now) / 60_000))
+  lines.push('', `Hạn chờ: ${hhmm(req.timeoutAt)} (còn ${mins} phút, quá hạn Claude sẽ tự quyết)`)
+  const link = taskLink(opts.appUrl, req.taskId)
+  if (!buttonQuestion(req)) lines.push('Câu hỏi này cần trả lời trên web.')
+  if (link) lines.push('', `${buttonQuestion(req) ? 'Mở task' : 'Trả lời trên web'}: ${link}`)
+  return lines.join('\n')
+}
 
-export function parseCallbackData(data: unknown): { id: string; action: Action } | undefined {
+export const callbackData = (requestId: string, action: Action | `o${number}`) => `perm:${requestId}:${action}`
+
+export type ParsedCallback = { id: string; action: Action } | { id: string; action: 'option'; option: number }
+
+export function parseCallbackData(data: unknown): ParsedCallback | undefined {
   if (typeof data !== 'string') return
-  const m = /^perm:(.+):(allow|always|deny)$/.exec(data)
-  return m ? { id: m[1], action: m[2] as Action } : undefined
+  const m = /^perm:(.+):(allow|always|deny|o(\d{1,2}))$/.exec(data)
+  if (!m) return
+  return m[3] !== undefined ? { id: m[1], action: 'option', option: Number(m[3]) } : { id: m[1], action: m[2] as Action }
+}
+
+/** Bàn phím cho câu hỏi: mỗi lựa chọn một nút (một hàng) khi trả lời được bằng nút, luôn có "Bỏ qua". */
+export function questionKeyboard(req: Pick<PermissionRequest, 'id' | 'questions'>) {
+  const q = buttonQuestion(req)
+  const rows = (q?.options ?? []).map((o, i) => [{ text: clip(o.label, 60), callback_data: callbackData(req.id, `o${i}`) }])
+  rows.push([{ text: '⏭ Bỏ qua (Claude tự quyết)', callback_data: callbackData(req.id, 'deny') }])
+  for (const r of rows)
+    if (Buffer.byteLength(r[0].callback_data) > 64) throw new Error(`callback_data quá 64 byte cho yêu cầu ${req.id}`)
+  return { inline_keyboard: rows }
 }
 
 /** Bàn phím inline; lệnh rủi ro cao (FR-45) không có nút "Luôn cho phép". */
@@ -99,7 +140,11 @@ export function permissionKeyboard(req: Pick<PermissionRequest, 'id' | 'risk'>) 
 const RESULT: Record<Action, string> = { allow: '✅ Đã cho phép', always: '♾ Đã luôn cho phép', deny: '⛔ Đã từ chối' }
 
 /** Dòng kết quả khi yêu cầu được chốt ở nơi khác (web, hết hạn, task dừng). */
-export function outsideResultLine(status: PermissionRequest['status'], at: number) {
+export function outsideResultLine(status: PermissionRequest['status'], at: number, question = false) {
+  if (question) {
+    if (status === 'timeout') return `⌛ Hết thời gian lúc ${hhmm(at)}, Claude tự quyết`
+    return `🖥 Đã xử lý trên web lúc ${hhmm(at)} (${status === 'allowed' ? 'đã trả lời' : 'bỏ qua'})`
+  }
   if (status === 'timeout') return `⌛ Hết thời gian, đã tự từ chối lúc ${hhmm(at)}`
   return `🖥 Đã xử lý trên web lúc ${hhmm(at)} (${status === 'allowed' ? 'cho phép' : 'từ chối'})`
 }
@@ -120,6 +165,8 @@ export interface ApproveDeps {
   projectName: (projectId: string) => string | undefined
   /** decidePermission của permissions.ts; ném lỗi có statusCode khi không hợp lệ */
   decide: (id: string, decision: Action) => unknown
+  /** answerQuestion của permissions.ts (FR-40). Không truyền thì nút lựa chọn báo "trả lời trên web". */
+  answer?: (id: string, answers: Answers) => unknown
   now: () => number
   log: (msg: string) => void
 }
@@ -149,6 +196,8 @@ export function createTelegramApprover(deps: ApproveDeps) {
   const sent = new Map<string, SentMessage>()
   /** Yêu cầu đã/đang gửi tin, tránh gửi trùng khi bus phát lại cùng yêu cầu pending. */
   const announced = new Set<string>()
+  /** FR-40: câu hỏi đã gửi (requestId → câu hỏi), để biết nút số i ứng với nhãn nào. */
+  const questions = new Map<string, NonNullable<PermissionRequest['questions']>>()
 
   const api = (token: string, method: string, body: Record<string, unknown>) => callTelegram(token, method, body, deps.fetchImpl)
 
@@ -182,9 +231,10 @@ export function createTelegramApprover(deps: ApproveDeps) {
         chat_id: cfg.chatId,
         text: text.slice(0, 4000),
         disable_web_page_preview: true,
-        reply_markup: permissionKeyboard(req),
+        reply_markup: isQuestion(req) ? questionKeyboard(req) : permissionKeyboard(req),
       }) as { message_id: number; chat?: { id: number } }
       sent.set(req.id, { chatId: cfg.chatId, messageId: msg.message_id, text })
+      if (isQuestion(req)) questions.set(req.id, req.questions!)
     } catch (e) {
       deps.log(`Gửi Telegram duyệt quyền cho task #${req.taskId} thất bại: ${(e as Error)?.message ?? e}`)
     }
@@ -200,12 +250,13 @@ export function createTelegramApprover(deps: ApproveDeps) {
         return announce(req)
       }
       announced.delete(req.id)
+      questions.delete(req.id)
       const msg = sent.get(req.id)
       if (!msg) return
       sent.delete(req.id)
       const token = deps.getToken()
       if (!token) return
-      return edit(token, msg, outsideResultLine(req.status, deps.now()))
+      return edit(token, msg, outsideResultLine(req.status, deps.now(), isQuestion(req)))
     } catch (e) {
       deps.log(`Lỗi xử lý duyệt quyền Telegram: ${(e as Error)?.message ?? e}`)
       return
@@ -229,10 +280,23 @@ export function createTelegramApprover(deps: ApproveDeps) {
 
     const m = cq.message!
     const msg: SentMessage = sent.get(parsed.id) ?? { chatId: String(m.chat.id), messageId: m.message_id, text: m.text ?? '' }
+    const qs = questions.get(parsed.id)
+    let resultLine: string
+    if (parsed.action === 'option') {
+      // FR-40: nút lựa chọn của câu hỏi một đáp án
+      const q = qs?.length === 1 && !qs[0].multiSelect ? qs[0] : undefined
+      const opt = q?.options[parsed.option]
+      if (!q || !opt || !deps.answer) return answer('Hãy trả lời câu hỏi này trên web')
+      resultLine = `✅ Đã trả lời: ${clip(opt.label, 100)}`
+    } else resultLine = qs && parsed.action === 'deny' ? '⏭ Đã bỏ qua, Claude tự quyết' : RESULT[parsed.action]
     // Xoá trước khi quyết định: settle() phát bus đồng bộ, không để onMessage sửa thành "trên web"
     sent.delete(parsed.id)
     try {
-      deps.decide(parsed.id, parsed.action)
+      if (parsed.action === 'option') {
+        const q = qs![0]
+        deps.answer!(parsed.id, { [q.question]: q.options[parsed.option].label })
+      } else deps.decide(parsed.id, parsed.action)
+      questions.delete(parsed.id)
     } catch (e) {
       const code = (e as { statusCode?: number })?.statusCode
       if (code === 409 || code === 404) {
@@ -243,12 +307,11 @@ export function createTelegramApprover(deps: ApproveDeps) {
       sent.set(parsed.id, msg) // yêu cầu vẫn còn chờ: giữ để sửa tin sau
       return answer(code === 400 ? (e as Error).message.slice(0, 190) : 'Lỗi khi xử lý, hãy duyệt trên web')
     }
-    const line = `${RESULT[parsed.action]} lúc ${hhmm(deps.now())}`
-    await answer(RESULT[parsed.action])
-    await edit(cfg.token, msg, line)
+    await answer(resultLine)
+    await edit(cfg.token, msg, `${resultLine} lúc ${hhmm(deps.now())}`)
   }
 
-  return { onMessage, handleCallback, sent }
+  return { onMessage, handleCallback, sent, questions }
 }
 
 // ---------------------------------------------------------------- long polling
