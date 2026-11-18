@@ -32,7 +32,15 @@ jobs:
 
       - run: npm ci
       - run: npm run typecheck
-      - run: npm test -w server
+      # Ghi thêm TAP để khi lỗi, đưa các test hỏng lên annotation (xem được trên trang run mà không cần mở log)
+      - name: Test server
+        working-directory: server
+        shell: bash
+        run: node --test --import tsx --test-reporter=spec --test-reporter-destination=stdout --test-reporter=tap --test-reporter-destination="$RUNNER_TEMP/server.tap" "src/**/*.test.ts"
+      - name: Annotate failed server tests
+        if: failure()
+        shell: bash
+        run: node scripts/ci-annotate-tap.mjs "$RUNNER_TEMP/server.tap" "Server tests (${{ matrix.os }})"
 
       - name: Build extension
         run: npm run build -w vscode-extension
