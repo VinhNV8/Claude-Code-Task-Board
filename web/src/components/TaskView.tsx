@@ -56,6 +56,7 @@ import { commentLocation, sortComments } from '../lib/reviewComments'
 import { useReviewDraft } from '../lib/reviewDraft'
 import { STOP_REASON, canResume, isWaitingRateLimit } from '../lib/resume'
 import { permissionModeOf } from '../lib/permissionMode'
+import { canDeleteTask } from '../lib/taskDelete'
 import type { ReviewComment, Run, Task } from '../types'
 
 export type TaskTab = 'log' | 'review' | 'result' | 'history' | 'prompt'
@@ -324,10 +325,12 @@ export function TaskView({
               <Button onClick={() => setEdit(true)}>
                 <Pencil size={16} /> Sửa
               </Button>
-              <Button variant="ghost" onClick={() => setConfirm('delete')} className="text-rose-600">
-                <Trash2 size={16} /> Xoá
-              </Button>
             </>
+          )}
+          {canDeleteTask(task.status) && (
+            <Button variant="ghost" onClick={() => setConfirm('delete')} className="text-rose-600">
+              <Trash2 size={16} /> Xoá
+            </Button>
           )}
           {(task.status === 'running' || task.status === 'needs_input') && (
             <Button variant="danger" onClick={() => setConfirm('stop')}>
@@ -722,7 +725,11 @@ export function TaskView({
         open={confirm === 'delete'}
         onClose={() => setConfirm(null)}
         title={`Xoá task #${task.id}?`}
-        message="Task sẽ bị xoá vĩnh viễn."
+        message={
+          task.status === 'failed'
+            ? 'Task, lịch sử chạy và worktree/nhánh riêng của task (nếu có) sẽ bị xoá vĩnh viễn.'
+            : 'Task sẽ bị xoá vĩnh viễn.'
+        }
         confirmLabel="Xoá"
         danger
         onConfirm={() => {
