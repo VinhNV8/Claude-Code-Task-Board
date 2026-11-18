@@ -24,7 +24,8 @@ import { findClaudeBin } from './claude.ts'
 import { HttpError } from './httpError.ts'
 import { modelSuggestFor, normalizeModel } from './model.ts'
 import { adjustByHistory } from './modelHistoryService.ts'
-import { taskDiff } from './git.ts'
+import { removeWorktree, taskDiff } from './git.ts'
+import { canDeleteTask } from '../../web/src/lib/taskDelete.ts'
 import { INTERNAL_TOKEN } from './config.ts'
 import { decidePermission, decidePermissionsBatch, initPermissions, listPermissions, requestPermission, type Decision } from './permissions.ts'
 import { BudgetError, parseBudgetAction, parseUsd } from './budget.ts'
@@ -423,7 +424,14 @@ export async function routes(app: FastifyInstance) {
   app.delete<{ Params: { id: string } }>('/api/tasks/:id', async (req) => {
     const t = getTask(req.params.id)
     if (isRunning(t.id)) throw new HttpError(409, 'Task đang chạy, hãy dừng trước khi xoá')
+    if (!canDeleteTask(t.status)) throw new HttpError(409, 'Chỉ xoá được task chưa chạy (Backlog, Hàng đợi) hoặc đã thất bại/bị dừng')
     await stopTests(t.id, 'Task đã bị xoá.')
+    // Task thất bại có thể còn worktree + nhánh riêng: dọn để không để rác trong repo.
+    // Mode direct (baseRef) làm thẳng trong thư mục người dùng nên không đụng vào.
+    if (!t.baseRef && (t.branch || t.worktreePath)) {
+      const project = projects.get(t.projectId)
+      if (project) await removeWorktree(project, t.id).catch(() => {})
+    }
     const hadCost = runs.byTask(t.id).some((r) => r.costUsd)
     tasks.remove(t.id)
     broadcast({ type: 'task_deleted', id: t.id })
