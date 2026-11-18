@@ -1,0 +1,83 @@
+name: Release extension
+
+# Đẩy tag ext-v<version> (vd. ext-v0.1.1) để build, kiểm tra và đưa file .vsix lên GitHub Releases.
+# Version trong tag phải trùng "version" của vscode-extension/package.json,
+# và CHANGELOG.md phải có mục "## <version>" (làm release notes).
+on:
+  push:
+    tags: ['ext-v*']
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # node:sqlite có sẵn (không cần cờ) từ Node 22.13
+          node-version: 22
+          cache: npm
+
+      - name: Check version
+        id: v
+        working-directory: vscode-extension
+        run: |
+          version=$(node -p "require('./package.json').version")
+          if [ "${GITHUB_REF_NAME}" != "ext-v${version}" ]; then
+            echo "::error::Tag ${GITHUB_REF_NAME} không khớp version ${version} trong vscode-extension/package.json (cần ext-v${version})"
+            exit 1
+          fi
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "vsix=agent-task-board-${version}.vsix" >> "$GITHUB_OUTPUT"
+
+      # Kiểm tra CHANGELOG sớm, trước khi build
+      - name: Release notes
+        working-directory: vscode-extension
+        run: node scripts/release-notes.mjs "${{ steps.v.outputs.version }}" "${{ steps.v.outputs.vsix }}" > "$RUNNER_TEMP/notes.md"
+
+      # Một số test tạo commit trong repo tạm
+      - name: Git identity
+        run: |
+          git config --global user.name "CI"
+          git config --global user.email "ci@example.com"
+          git config --global init.defaultBranch main
+
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test -w server
+
+      - name: Build extension
+        run: npm run build -w vscode-extension
+      - name: Test extension
+        run: npm test -w vscode-extension
+
+      - name: Package
+        working-directory: vscode-extension
+        run: |
+          npx vsce package --no-dependencies -o "${{ steps.v.outputs.vsix }}"
+          sha256sum "${{ steps.v.outputs.vsix }}" > "${{ steps.v.outputs.vsix }}.sha256"
+          cat "${{ steps.v.outputs.vsix }}.sha256"
+
+      - name: Create GitHub Release
+        working-directory: vscode-extension
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="${{ steps.v.outputs.version }}"
+          prerelease=""
+          case "$version" in *-*) prerelease="--prerelease" ;; esac
+          gh release create "$GITHUB_REF_NAME" \
+            "${{ steps.v.outputs.vsix }}" \
+            "${{ steps.v.outputs.vsix }}.sha256" \
+            --title "Agent Task Board ${version}" \
+            --notes-file "$RUNNER_TEMP/notes.md" \
+            --verify-tag \
+            $prerelease

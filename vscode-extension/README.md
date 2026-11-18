@@ -8,7 +8,7 @@ A task board inside VS Code for handing work to **Claude Code**. By default Clau
 
 ## Getting started
 
-1. Install the extension.
+1. Download the `.vsix` file from [Releases](https://github.com/VinhNV8/Claude-Code-Task-Board/releases) and install it (Extensions → **…** → **Install from VSIX…**). See [INSTALL.md](https://github.com/VinhNV8/Claude-Code-Task-Board/blob/main/vscode-extension/INSTALL.md) for details.
 2. Click the **Agent Task Board** icon in the Activity Bar.
 3. If the open workspace is a git repository, the extension offers to add it as a project. Choose **Add**.
 4. Create a task, describe what you want done, and run it.

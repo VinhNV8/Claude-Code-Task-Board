@@ -8,7 +8,7 @@ Bảng công việc ngay trong VS Code để giao việc cho **Claude Code**. M�
 
 ## Bắt đầu
 
-1. Cài extension.
+1. Tải file `.vsix` ở trang [Releases](https://github.com/VinhNV8/Claude-Code-Task-Board/releases) rồi cài (Extensions → **…** → **Install from VSIX…**). Xem chi tiết trong [INSTALL.vi.md](https://github.com/VinhNV8/Claude-Code-Task-Board/blob/main/vscode-extension/INSTALL.vi.md).
 2. Bấm biểu tượng **Agent Task Board** ở thanh bên trái.
 3. Nếu workspace đang mở là git repo, extension hỏi có thêm nó làm project không. Chọn **Thêm**.
 4. Tạo task, mô tả việc cần làm, rồi bấm Chạy.

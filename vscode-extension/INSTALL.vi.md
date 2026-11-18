@@ -1,6 +1,8 @@
 # Hướng dẫn cài đặt Agent Task Board
 
-Agent Task Board là extension cho VS Code, dùng để giao việc cho Claude Code theo dạng bảng công việc. Bạn sẽ nhận được một file có đuôi **`.vsix`**, ví dụ `agent-task-board-0.1.0.vsix`. Đây là file cài đặt của extension.
+Agent Task Board là extension cho VS Code, dùng để giao việc cho Claude Code theo dạng bảng công việc. Extension được phát hành dưới dạng file **`.vsix`** (ví dụ `agent-task-board-0.1.1.vsix`) tại trang [Releases](https://github.com/VinhNV8/Claude-Code-Task-Board/releases), không có trên VS Code Marketplace.
+
+[English](INSTALL.md)
 
 ## 1. Chuẩn bị
 
@@ -10,10 +12,15 @@ Agent Task Board là extension cho VS Code, dùng để giao việc cho Claude C
   2. Tìm **Claude Code**, chọn extension của **Anthropic**, rồi bấm **Install**.
   3. Mở Claude Code và đăng nhập bằng tài khoản Claude (gói Pro hoặc Max).
 
-  Nếu bạn dùng API key của Anthropic thay vì tài khoản Claude, có thể bỏ qua bước này và nhập key sau khi cài (xem mục 3).
-- **Git** (nên có): dùng để mỗi task chạy trên một nhánh riêng. Tải tại https://git-scm.com nếu máy chưa có.
+  Nếu bạn dùng API key của Anthropic thay vì tài khoản Claude, vẫn cần cài Claude Code (bước 1–2) nhưng không cần đăng nhập. Nhập key sau khi cài (xem mục 3).
+- **Git** (không bắt buộc): chỉ cần nếu muốn mỗi task chạy trên một nhánh riêng. Mặc định task ghi thẳng vào thư mục dự án. Tải tại https://git-scm.com nếu máy chưa có.
 
 ## 2. Cài extension từ file `.vsix`
+
+### Tải file
+Mở trang [Releases](https://github.com/VinhNV8/Claude-Code-Task-Board/releases), chọn bản mới nhất, tải file `agent-task-board-<phiên bản>.vsix` trong mục **Assets**.
+
+Muốn kiểm tra file không bị sửa đổi: so mã SHA-256 của file với nội dung file `.vsix.sha256` đi kèm. Windows: `certutil -hashfile agent-task-board-0.1.1.vsix SHA256`. macOS/Linux: `shasum -a 256 agent-task-board-0.1.1.vsix`.
 
 ### Cách 1: Dùng giao diện (khuyên dùng)
 1. Lưu file `.vsix` vào máy, ví dụ vào thư mục **Downloads**.
@@ -29,7 +36,7 @@ Cách khác: kéo thả file `.vsix` vào khung Extensions của VS Code.
 ### Cách 2: Dùng dòng lệnh
 Mở Terminal ở thư mục chứa file rồi chạy:
 ```
-code --install-extension agent-task-board-0.1.0.vsix
+code --install-extension agent-task-board-0.1.1.vsix
 ```
 Nếu báo không tìm thấy lệnh `code`: trong VS Code, nhấn `Ctrl+Shift+P` (macOS: `Cmd+Shift+P`), gõ **Shell Command: Install 'code' command in PATH** rồi chạy lại lệnh trên. Trên Windows, lệnh `code` thường có sẵn.
 
@@ -48,7 +55,7 @@ Nếu báo không tìm thấy lệnh `code`: trong VS Code, nhấn `Ctrl+Shift+P
 
 ## 4. Cập nhật lên bản mới
 
-Bản cài từ file **không tự cập nhật**. Khi nhận được file `.vsix` mới, cài lại theo mục 2. Bản mới sẽ thay bản cũ, dữ liệu task và project vẫn được giữ. Sau khi cài, bấm **Reload** hoặc mở lại VS Code.
+Bản cài từ file **không tự cập nhật**. Theo dõi trang [Releases](https://github.com/VinhNV8/Claude-Code-Task-Board/releases) (trên GitHub có thể bấm **Watch → Custom → Releases** để nhận thông báo), tải file `.vsix` mới rồi cài lại theo mục 2. Bản mới sẽ thay bản cũ, dữ liệu task và project vẫn được giữ. Sau khi cài, bấm **Reload** hoặc mở lại VS Code.
 
 ## 5. Gỡ cài đặt
 
@@ -64,7 +71,7 @@ code --uninstall-extension vinhnguyen.agent-task-board
 | Hiện tượng | Cách xử lý |
 |---|---|
 | Báo "requires VS Code 1.101 or later" hoặc không cài được | Cập nhật VS Code lên bản mới nhất (**Help → Check for Updates**) |
-| Báo "Claude Code was not found" | Cài extension **Claude Code** của Anthropic (mục 1), rồi mở lại Task Board |
+| Báo "Claude Code was not found" | Cài extension **Claude Code** của Anthropic (mục 1), rồi chạy **Agent Task Board: Restart server** |
 | Báo "Claude Code is not signed in" | Bấm **Sign in** trong thông báo, hoặc `Ctrl+Shift+P` → **Agent Task Board: Sign in to Claude Code** |
 | Bảng công việc trắng hoặc không mở được | `Ctrl+Shift+P` → **Agent Task Board: Restart server**. Nếu vẫn lỗi, chạy **Agent Task Board: Show server log** và gửi nội dung log cho người hỗ trợ |
 | Copy/paste không chạy trong bảng | `Ctrl+Shift+P` → **Agent Task Board: Open in browser** để mở bảng trong trình duyệt |
@@ -73,5 +80,5 @@ code --uninstall-extension vinhnguyen.agent-task-board
 
 ## Lưu ý
 - Đây là extension độc lập, không phải sản phẩm của Anthropic.
-- Code của bạn được gửi tới Anthropic qua Claude Code, theo tài khoản hoặc API key của chính bạn. Extension không gửi dữ liệu đi nơi nào khác.
-- Chỉ cài file `.vsix` nhận từ nguồn bạn tin cậy.
+- Code của bạn được gửi tới Anthropic qua Claude Code, theo tài khoản hoặc API key của chính bạn. Extension không gửi dữ liệu đi nơi nào khác, trừ thông báo Telegram nếu bạn bật.
+- Chỉ cài file `.vsix` tải từ trang [Releases](https://github.com/VinhNV8/Claude-Code-Task-Board/releases) chính thức hoặc từ nguồn bạn tin cậy.
