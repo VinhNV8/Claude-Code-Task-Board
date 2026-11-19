@@ -86,6 +86,27 @@ export interface Project {
 
 export type DeliveryMode = 'direct' | 'worktree'
 
+/** Một task trong kế hoạch đổi mức quyền theo project (FR-48). */
+export interface PermissionSyncTask {
+  id: number
+  title: string
+  status: TaskStatus
+  permissionMode: PermissionMode
+}
+
+/**
+ * FR-48: các task chưa chạy (Backlog, Queued, Failed) sẽ đổi sang mức quyền mới của project, và các task bị bỏ qua.
+ * Lấy từ POST /api/projects/permission-sync; lưu project kèm `syncTaskPermissions: true` để áp dụng.
+ */
+export interface PermissionSyncPlan {
+  mode: PermissionMode
+  apply: PermissionSyncTask[]
+  /** Task ở mode Plan: không tự nới thành task được sửa code. */
+  skippedPlan: PermissionSyncTask[]
+  /** Task chọn agent riêng không chạy được ở mức mới. */
+  skippedAgent: (PermissionSyncTask & { reason: string })[]
+}
+
 export type BudgetAction = 'warn' | 'pause'
 
 /** Bộ rule allowlist có sẵn (PLAN P7-01), lấy từ GET /api/permission-presets. */
@@ -161,6 +182,8 @@ export interface Task {
   activeAgent?: AgentId
   /** Giới hạn chi phí mỗi lần chạy (USD, truyền `--max-budget-usd`). Không có: không giới hạn. */
   maxCostUsd?: number
+  /** Phạm vi ghi (FR-49): mẫu đường dẫn task được phép sửa, ví dụ `docs/**`. Không có: không giới hạn. */
+  writeScope?: string[]
   /** Lý do task Queued đang bị giữ lại (ví dụ project vượt budget, P6 B3). Chỉ tính lúc chạy, không lưu DB. */
   blockedReason?: string
   /** Các task phải Done trước khi task này được chạy (SPEC FR-08). Lưu ở bảng task_deps. */

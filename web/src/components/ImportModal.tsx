@@ -45,6 +45,7 @@ const fieldLabel = (f: ImportField) =>
     agent: 'Agent',
     permissionMode: tr('Mức quyền'),
     maxCostUsd: tr('Giới hạn chi phí'),
+    writeScope: tr('Phạm vi ghi'),
   })[f]
 
 const encodingLabel = (e: CsvEncoding) =>

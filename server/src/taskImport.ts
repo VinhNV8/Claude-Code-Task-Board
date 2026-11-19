@@ -38,6 +38,7 @@ interface Planned {
     model?: string
     agent?: AgentId
     maxCostUsd?: number
+    writeScope?: string[]
   }
   /** Phụ thuộc đã giải mã: task đã có và dòng khác trong file. */
   depTasks: number[]
@@ -65,6 +66,7 @@ function cleanRow(raw: unknown, index: number): ImportRow {
     agent: str(r.agent).trim() || undefined,
     permissionMode: str(r.permissionMode).trim() || undefined,
     maxCostUsd: str(r.maxCostUsd).trim() || undefined,
+    writeScope: str(r.writeScope).trim() || undefined,
   }
 }
 
@@ -130,7 +132,7 @@ function plan(req: ReturnType<typeof validateRequest>): Planned[] {
   for (const p of planned) {
     const { row, result } = p
     const errors: string[] = []
-    const long = (['title', 'prompt', 'key', 'project', 'model', 'agent', 'priority', 'permissionMode', 'maxCostUsd'] as const).filter(
+    const long = (['title', 'prompt', 'key', 'project', 'model', 'agent', 'priority', 'permissionMode', 'maxCostUsd', 'writeScope'] as const).filter(
       (f) => str(row[f]).length > IMPORT_MAX_CELL,
     )
     if (long.length) errors.push(`Ô quá dài (tối đa ${IMPORT_MAX_CELL.toLocaleString('vi-VN')} ký tự): ${long.join(', ')}`)
@@ -145,6 +147,7 @@ function plan(req: ReturnType<typeof validateRequest>): Planned[] {
       tags: check(errors, () => validateTask({ tags: row.tags ?? [] }, true).tags),
       model: check(errors, () => validateTask({ model: row.model ?? '' }, true).model),
       maxCost: check(errors, () => validateTask({ maxCostUsd: row.maxCostUsd ?? '' }, true).maxCostUsd),
+      scope: check(errors, () => validateTask({ writeScope: row.writeScope ?? '' }, true).writeScope),
     }
     const agentRaw = normalizeAgent(row.agent)
     const agent = parseAgent(agentRaw)
@@ -167,6 +170,7 @@ function plan(req: ReturnType<typeof validateRequest>): Planned[] {
           model: v.model || undefined,
           agent: agent ?? undefined,
           maxCostUsd: (v.maxCost as number | null | undefined) ?? undefined,
+          writeScope: (v.scope as string[] | undefined)?.length ? (v.scope as string[]) : undefined,
         }
     }
     if (errors.length) {

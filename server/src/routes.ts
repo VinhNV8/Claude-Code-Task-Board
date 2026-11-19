@@ -10,7 +10,7 @@ import { PREVIEW_PORT, PREVIEW_TTL_MS, signPreviewToken } from './preview.ts'
 import { retryTask } from './retry.ts'
 import { resumeTask } from './resume.ts'
 import { checkKeyToken } from './apiKeyBroker.ts'
-import { claudeApiKey, events, projects, reviews, runs, scheduleRuns, schedules, settings, taskDeps, tasks, telegramToken, templates, testRuns } from './db.ts'
+import { claudeApiKey, events, inTransaction, projects, reviews, runs, scheduleRuns, schedules, settings, taskDeps, tasks, telegramToken, templates, testRuns } from './db.ts'
 import { ClaudeAuthError, mergeAuth } from './claudeAuth.ts'
 import { ScheduleError, checkCron, validateSchedule, type ScheduleInput } from './schedules.ts'
 import { nextRuns } from './cron.ts'
@@ -35,6 +35,7 @@ import { getBudgets, isProjectBlocked, refreshBudgets, withBlockedReason } from 
 import { getClaudeLimit } from './claudeLimit.ts'
 import { DepsError, pendingDeps, suggestDeps, validateDeps } from './taskDeps.ts'
 import { MODES, validateTask, type TaskBody } from './taskValidate.ts'
+import { planPermissionSync } from './permissionSync.ts'
 import { agentProblem, listAgents } from './agents/index.ts'
 import { parseAgent, parseChain, resolveAgent } from '../../web/src/lib/agent.ts'
 import { importTasks } from './taskImport.ts'
@@ -274,8 +275,29 @@ export async function routes(app: FastifyInstance) {
     return cmd
   }
 
-  app.post<{ Body: Partial<Project> }>('/api/projects', async (req) => {
-    const p = projects.upsert(await validateProject(req.body))
+  // FR-48: xem trước các task sẽ đổi theo mức quyền mới của project (form chưa lưu: dùng agent mặc định trong form).
+  app.post<{ Body: { id?: unknown; permissionMode?: unknown; defaultAgent?: unknown } }>('/api/projects/permission-sync', async (req) => {
+    const cur = typeof req.body?.id === 'string' ? projects.get(req.body.id) : undefined
+    if (!cur) throw new HttpError(404, 'Không tìm thấy project')
+    const mode = req.body.permissionMode as PermissionMode
+    if (!MODES.includes(mode)) throw new HttpError(400, `Mức quyền không hợp lệ: ${String(mode)}`)
+    const defaultAgent = 'defaultAgent' in req.body ? parseAgent(req.body.defaultAgent) : cur.defaultAgent
+    if (defaultAgent === null) throw new HttpError(400, 'Agent không hợp lệ')
+    return planPermissionSync({ id: cur.id, defaultAgent }, mode, tasks.all(), settings.get())
+  })
+
+  app.post<{ Body: Partial<Project> & { syncTaskPermissions?: unknown } }>('/api/projects', async (req) => {
+    const next = await validateProject(req.body)
+    const before = projects.get(next.id)
+    // FR-48: tính lại lúc lưu (không dùng danh sách lúc xem trước): task vừa chuyển Running trong lúc hộp thoại mở thì giữ mức cũ.
+    const sync = req.body.syncTaskPermissions === true && before && before.permissionMode !== next.permissionMode
+    const { p, changed } = inTransaction(() => {
+      const p = projects.upsert(next)
+      const plan = sync ? planPermissionSync(p, p.permissionMode, tasks.all(), settings.get()) : undefined
+      const changed = (plan?.apply ?? []).map((t) => tasks.patch(t.id, { permissionMode: p.permissionMode })!)
+      return { p, changed }
+    })
+    for (const t of changed) broadcast({ type: 'task', task: t })
     broadcast({ type: 'project', project: p })
     refreshBudgets() // đổi budget/hành động: tính lại mức, cảnh báo và trạng thái chặn
     pump()
@@ -352,6 +374,7 @@ export async function routes(app: FastifyInstance) {
       model: v.model || undefined,
       agent: v.agent || undefined,
       maxCostUsd: (v.maxCostUsd as number | null | undefined) ?? undefined,
+      writeScope: (v.writeScope as string[] | undefined) ?? undefined,
       status: req.body.run ? 'queued' : 'backlog',
     })
     if (deps.length) taskDeps.set(created.id, deps)

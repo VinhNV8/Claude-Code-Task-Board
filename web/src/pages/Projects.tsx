@@ -6,6 +6,7 @@ import {
   fetchPermissionPresets,
   fetchRuleSuggestions,
   onRuleSuggestions,
+  previewPermissionSync,
   saveProject,
   toast,
   useStore,
@@ -16,8 +17,8 @@ import { MODEL_OPTIONS, modelLabel } from '../lib/model'
 import { AgentSelect, ChainEditor, agentHint, useAgents } from '../components/AgentSelect'
 import { AGENT_NAMES } from '../lib/agent'
 import { mergeRules } from '../lib/rules'
-import { PERMISSION_MODES } from '../lib/permissionMode'
-import type { FailoverMode, PermissionMode, PermissionPreset, Project, RuleSuggestion } from '../types'
+import { PERMISSION_MODES, permissionModeOf } from '../lib/permissionMode'
+import type { FailoverMode, PermissionMode, PermissionPreset, PermissionSyncPlan, PermissionSyncTask, Project, RuleSuggestion, TaskStatus } from '../types'
 import { tr } from '../lib/i18n'
 
 /** Project trống cho form "Thêm project" (dùng cả ở Bảng công việc) */
@@ -143,6 +144,15 @@ export function ProjectModal({ project, onClose, onSaved }: { project: Project |
   const [serverError, setServerError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [presetNote, setPresetNote] = useState<string | null>(null)
+  const [syncPlan, setSyncPlan] = useState<PermissionSyncPlan | null>(null)
+  const save = async (syncTasks?: number) => {
+    setSaving(true)
+    const err = await saveProject({ ...p, id: p.id || '' }, onSaved, syncTasks)
+    setSaving(false)
+    setServerError(err)
+    setSyncPlan(null)
+    if (!err) onClose()
+  }
   const systemModel = useStore().settings.defaultModel
   const systemAgent = useStore().settings.defaultAgent
   const systemFailover = useStore().settings.failover
@@ -166,8 +176,9 @@ export function ProjectModal({ project, onClose, onSaved }: { project: Project |
   const nameError = !p.name.trim() ? tr('Nhập tên project') : undefined
 
   return (
+    <>
     <Modal
-      open={!!project}
+      open={!!project && !syncPlan}
       onClose={onClose}
       title={project?.id ? tr('Sửa project {name}', { name: project.name }) : tr('Thêm project')}
       wide
@@ -182,11 +193,15 @@ export function ProjectModal({ project, onClose, onSaved }: { project: Project |
             onClick={async () => {
               setTouched(true)
               if ((pathError && pathError !== serverError) || nameError) return
-              setSaving(true)
-              const err = await saveProject({ ...p, id: p.id || '' }, onSaved)
-              setSaving(false)
-              setServerError(err)
-              if (!err) onClose()
+              // FR-48: đổi mức quyền của project đã có → hỏi có áp dụng cho task chưa chạy không.
+              if (project?.id && project.permissionMode !== p.permissionMode) {
+                setSaving(true)
+                const plan = await previewPermissionSync(p)
+                setSaving(false)
+                if (typeof plan === 'string') return setServerError(plan)
+                if (plan.apply.length || plan.skippedPlan.length || plan.skippedAgent.length) return setSyncPlan(plan)
+              }
+              await save()
             }}
           >
             {saving ? tr('Đang kiểm tra…') : tr('Lưu')}
@@ -282,7 +297,7 @@ export function ProjectModal({ project, onClose, onSaved }: { project: Project |
               )
             })}
           </div>
-          <span className="block text-xs text-slate-500 dark:text-slate-400">{tr('Task mới của project sẽ dùng mức quyền này (có thể đổi riêng từng task).')}</span>
+          <span className="block text-xs text-slate-500 dark:text-slate-400">{tr('Task mới của project sẽ dùng mức quyền này (có thể đổi riêng từng task). Khi đổi mức quyền, bạn sẽ được hỏi có áp dụng cho các task chưa chạy không.')}</span>
         </fieldset>
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label={tr('Số task song song tối đa')} hint={p.deliveryMode === 'direct' ? tr('Ghi thẳng vào thư mục: luôn chạy 1 task mỗi lúc') : undefined}>
@@ -427,6 +442,108 @@ export function ProjectModal({ project, onClose, onSaved }: { project: Project |
           </div>
           {presetNote && <p className="mt-1.5 text-xs text-emerald-600 dark:text-emerald-400">{presetNote}</p>}
         </div>
+      </div>
+    </Modal>
+    {syncPlan && project && (
+      <PermissionSyncDialog
+        plan={syncPlan}
+        from={project.permissionMode}
+        saving={saving}
+        onCancel={() => setSyncPlan(null)}
+        onSave={(withTasks) => save(withTasks ? syncPlan.apply.length : undefined)}
+      />
+    )}
+    </>
+  )
+}
+
+/** FR-48: đổi mức quyền project → hỏi có đổi theo cho các task chưa chạy (Backlog, Queued, Failed) không. */
+function PermissionSyncDialog({
+  plan,
+  from,
+  saving,
+  onCancel,
+  onSave,
+}: {
+  plan: PermissionSyncPlan
+  from: PermissionMode
+  saving: boolean
+  onCancel: () => void
+  onSave: (withTasks: boolean) => void
+}) {
+  const to = permissionModeOf(plan.mode).label
+  const n = plan.apply.length
+  const count = (s: TaskStatus) => plan.apply.filter((t) => t.status === s).length
+  const byStatus = (['backlog', 'queued', 'failed'] as const)
+    .filter((s) => count(s))
+    .map((s) => `${STATUS_META[s].label} ${count(s)}`)
+    .join(' · ')
+  const row = (t: PermissionSyncTask, note?: string) => (
+    <li key={t.id} className="flex gap-2 py-0.5">
+      <span className="shrink-0 font-mono text-xs text-slate-400">#{t.id}</span>
+      <span className="min-w-0 flex-1 truncate" title={t.title}>
+        {t.title}
+      </span>
+      <span className="shrink-0 text-xs text-slate-500">{note ?? permissionModeOf(t.permissionMode).label}</span>
+    </li>
+  )
+  return (
+    <Modal
+      open
+      onClose={onCancel}
+      wide
+      title={tr('Đổi mức quyền: {from} → {to}', { from: permissionModeOf(from).label, to })}
+      footer={
+        <>
+          <Button variant="ghost" disabled={saving} onClick={onCancel}>
+            {tr('Huỷ')}
+          </Button>
+          <Button variant={n ? 'secondary' : 'primary'} disabled={saving} onClick={() => onSave(false)}>
+            {tr('Chỉ đổi project')}
+          </Button>
+          {n > 0 && (
+            <Button variant="primary" disabled={saving} onClick={() => onSave(true)}>
+              {tr('Đổi project + {n} task', { n })}
+            </Button>
+          )}
+        </>
+      }
+    >
+      <div className="space-y-3 text-sm text-slate-600 dark:text-slate-300">
+        {n > 0 ? (
+          <>
+            <p>
+              {tr('Có {n} task chưa chạy ({detail}) đang dùng mức quyền khác. Đổi các task này sang {to}?', { n, detail: byStatus, to })}
+            </p>
+            <ul className="max-h-40 overflow-y-auto rounded-lg border border-slate-200 px-3 py-1.5 dark:border-slate-700">{plan.apply.map((t) => row(t))}</ul>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              {tr('Chọn "Chỉ đổi project" thì các task này giữ mức quyền cũ; task tạo sau sẽ dùng mức mới. Task đang chạy, chờ duyệt hoặc đã xong không bị đổi.')}
+            </p>
+          </>
+        ) : (
+          <p>{tr('Không có task chưa chạy nào đổi được sang {to}.', { to })}</p>
+        )}
+        {plan.mode === 'auto' && n > 0 && (
+          <p className="rounded-lg bg-amber-50 px-3 py-2 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
+            {tr('Auto: agent tự sửa file và chạy lệnh, không cần bạn duyệt (trừ lệnh rủi ro cao). Chỉ áp dụng nếu bạn tin nội dung các task này.')}
+          </p>
+        )}
+        {plan.skippedPlan.length > 0 && (
+          <div>
+            <p className="font-medium text-slate-700 dark:text-slate-200">
+              {tr('Giữ nguyên {n} task ở mode Plan (chỉ phân tích, không tự chuyển thành task được sửa code):', { n: plan.skippedPlan.length })}
+            </p>
+            <ul className="mt-1 max-h-28 overflow-y-auto">{plan.skippedPlan.map((t) => row(t))}</ul>
+          </div>
+        )}
+        {plan.skippedAgent.length > 0 && (
+          <div>
+            <p className="font-medium text-slate-700 dark:text-slate-200">
+              {tr('Giữ nguyên {n} task vì agent của task không chạy được ở mức quyền mới:', { n: plan.skippedAgent.length })}
+            </p>
+            <ul className="mt-1 max-h-28 overflow-y-auto">{plan.skippedAgent.map((t) => row(t, t.reason))}</ul>
+          </div>
+        )}
       </div>
     </Modal>
   )

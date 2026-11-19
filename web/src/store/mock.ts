@@ -17,6 +17,7 @@ import type {
   LogEventInput,
   PermissionMode,
   PermissionRequest,
+  PermissionSyncPlan,
   Priority,
   PermissionPreset,
   Project,
@@ -493,6 +494,7 @@ export interface NewTask {
   /** '' = kế thừa project → Settings (P5) */
   model?: string
   dependsOn?: number[]
+  writeScope?: string[]
   run: boolean
 }
 
@@ -508,6 +510,7 @@ export async function createTask(input: NewTask): Promise<number> {
     tags: input.tags,
     model: input.model || undefined,
     dependsOn: input.dependsOn?.length ? input.dependsOn : undefined,
+    writeScope: input.writeScope?.length ? input.writeScope : undefined,
     status: input.run ? 'queued' : 'backlog',
     createdAt: Date.now(),
     updatedAt: Date.now(),
@@ -593,8 +596,9 @@ export async function importTasks(req: ImportRequest): Promise<ImportResult & { 
   return { ...out, created: created.length, tasks: created }
 }
 
-export function updateTask(id: number, patch: Partial<Pick<Task, 'title' | 'prompt' | 'priority' | 'projectId' | 'tags' | 'permissionMode' | 'model' | 'dependsOn'>>) {
-  patchTask(id, patch.dependsOn ? { ...patch, dependsOn: patch.dependsOn.length ? patch.dependsOn : undefined } : patch)
+export function updateTask(id: number, patch: Partial<Pick<Task, 'title' | 'prompt' | 'priority' | 'projectId' | 'tags' | 'permissionMode' | 'model' | 'dependsOn' | 'writeScope'>>) {
+  const p = patch.writeScope ? { ...patch, writeScope: patch.writeScope.length ? patch.writeScope : undefined } : patch
+  patchTask(id, p.dependsOn ? { ...p, dependsOn: p.dependsOn.length ? p.dependsOn : undefined } : p)
   afterChange()
 }
 
@@ -874,13 +878,36 @@ export function answerQuestion(reqId: string, answers: Answers) {
 
 // ------------------------------------------------------------ project & settings
 
-export async function saveProject(p: Project): Promise<string | null> {
+/** FR-48 (giả lập): task chưa chạy sẽ đổi theo mức quyền mới; mock không kiểm tra agent. */
+function mockSyncPlan(p: Pick<Project, 'id' | 'permissionMode'>): PermissionSyncPlan {
+  const mine = state.tasks.filter(
+    (t) => t.projectId === p.id && ['backlog', 'queued', 'failed'].includes(t.status) && t.permissionMode !== p.permissionMode,
+  )
+  const ref = (t: Task) => ({ id: t.id, title: t.title, status: t.status, permissionMode: t.permissionMode })
+  return {
+    mode: p.permissionMode,
+    apply: mine.filter((t) => t.permissionMode !== 'plan').map(ref),
+    skippedPlan: p.permissionMode === 'plan' ? [] : mine.filter((t) => t.permissionMode === 'plan').map(ref),
+    skippedAgent: [],
+  }
+}
+
+export async function previewPermissionSync(p: Pick<Project, 'id' | 'permissionMode' | 'defaultAgent'>): Promise<PermissionSyncPlan | string> {
+  return mockSyncPlan(p)
+}
+
+export async function saveProject(p: Project, onSaved?: (saved: Project) => void, syncTasks?: number): Promise<string | null> {
   if (/tmp|temp|notgit/i.test(p.repoPath)) return "Thư mục này không phải git repo (không tìm thấy .git)"
+  const sync = syncTasks ? new Set(mockSyncPlan(p).apply.map((t) => t.id)) : new Set<number>()
   set((s) => {
     const exists = s.projects.some((x) => x.id === p.id)
-    return { projects: exists ? s.projects.map((x) => (x.id === p.id ? p : x)) : [...s.projects, p] }
+    return {
+      projects: exists ? s.projects.map((x) => (x.id === p.id ? p : x)) : [...s.projects, p],
+      tasks: sync.size ? s.tasks.map((t) => (sync.has(t.id) ? { ...t, permissionMode: p.permissionMode } : t)) : s.tasks,
+    }
   })
-  toast({ kind: 'success', title: `Đã lưu project ${p.name}` })
+  onSaved?.(p)
+  toast({ kind: 'success', title: `Đã lưu project ${p.name}`, body: sync.size ? `Đã đổi mức quyền cho ${sync.size} task chưa chạy.` : undefined })
   return null
 }
 

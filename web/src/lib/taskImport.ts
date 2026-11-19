@@ -25,6 +25,8 @@ export interface ImportRow {
   agent?: string
   permissionMode?: string
   maxCostUsd?: string
+  /** Phạm vi ghi (FR-49), mẫu cách nhau bởi dấu phẩy, vd `docs/**, *.md`. */
+  writeScope?: string
 }
 
 export interface ImportRequest {
@@ -90,6 +92,7 @@ const HEADER_ALIASES: Record<ImportField, string[]> = {
   agent: ['agent', 'ai agent', 'tác tử'],
   permissionMode: ['permission_mode', 'permission mode', 'mức quyền', 'quyền', 'mode'],
   maxCostUsd: ['max_cost_usd', 'max cost usd', 'max cost', 'giới hạn chi phí', 'chi phí tối đa'],
+  writeScope: ['write_scope', 'write scope', 'phạm vi ghi', 'phạm vi', 'scope'],
 }
 
 const HEADER_LOOKUP = new Map<string, ImportField>(
@@ -324,9 +327,9 @@ export const TEMPLATE_BASENAME = 'task-import-mau'
 
 /** Dữ liệu mẫu dùng chung cho file .xlsx và .csv: dòng tiêu đề cột + 2 task, task 2 chờ task 1. */
 export const TEMPLATE_ROWS: string[][] = [
-  ['key', 'title', 'prompt', 'depends_on', 'priority', 'tags', 'model', 'agent', 'permission_mode', 'max_cost_usd'],
-  ['A1', 'Thêm API xuất báo cáo', 'Thêm endpoint GET /api/report trả về tổng số task theo trạng thái.\nViết unit test cho endpoint.', '', 'high', 'backend, api', '', '', '', ''],
-  ['A2', 'Hiển thị báo cáo trên trang Thống kê', 'Gọi /api/report và hiển thị bảng tổng hợp trên trang Thống kê.', 'A1', 'normal', 'web', 'sonnet', '', '', ''],
+  ['key', 'title', 'prompt', 'depends_on', 'priority', 'tags', 'model', 'agent', 'permission_mode', 'max_cost_usd', 'write_scope'],
+  ['A1', 'Thêm API xuất báo cáo', 'Thêm endpoint GET /api/report trả về tổng số task theo trạng thái.\nViết unit test cho endpoint.', '', 'high', 'backend, api', '', '', '', '', ''],
+  ['A2', 'Hiển thị báo cáo trên trang Thống kê', 'Gọi /api/report và hiển thị bảng tổng hợp trên trang Thống kê.', 'A1', 'normal', 'web', 'sonnet', '', '', '', ''],
 ]
 
 /** Sheet "Hướng dẫn" của file mẫu .xlsx (import chỉ đọc sheet đầu nên sheet này không ảnh hưởng). */
@@ -343,6 +346,7 @@ export const TEMPLATE_GUIDE: string[][] = [
   ['agent', '', 'claude / codex / antigravity. Trống: agent mặc định của project. Agent phải hỗ trợ mức quyền của dòng'],
   ['permission_mode', '', 'manual / acceptEdits / plan / auto. Trống: mặc định của project. Auto phải xác nhận khi import'],
   ['max_cost_usd', '', 'Giới hạn chi phí mỗi lần chạy (USD), vd 1,5'],
+  ['write_scope', '', 'Phạm vi ghi: chỉ cho task sửa các file khớp mẫu, cách nhau bởi dấu phẩy (vd docs/**, *.md). Trống: không giới hạn'],
   ['', '', ''],
   ['Lưu ý', '', 'Chỉ đọc sheet đầu tiên. Tối đa 200 dòng mỗi lần. Dòng trùng tiêu đề với task đã có mặc định bị bỏ qua'],
 ]

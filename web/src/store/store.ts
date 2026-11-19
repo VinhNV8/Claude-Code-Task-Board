@@ -12,6 +12,7 @@ import type {
   PermissionMode,
   PermissionPreset,
   PermissionRequest,
+  PermissionSyncPlan,
   Priority,
   Project,
   ProjectBudget,
@@ -483,6 +484,8 @@ export interface NewTask {
   agent?: AgentId | ''
   /** Các task phải Done trước (FR-08) */
   dependsOn?: number[]
+  /** Phạm vi ghi (FR-49); [] = không giới hạn */
+  writeScope?: string[]
   run: boolean
 }
 
@@ -503,7 +506,7 @@ export async function importTasks(req: ImportRequest): Promise<ImportResult & { 
 
 export function updateTask(
   id: number,
-  patch: Partial<Pick<Task, 'title' | 'prompt' | 'priority' | 'projectId' | 'tags' | 'permissionMode' | 'model' | 'dependsOn'>> & { agent?: AgentId | '' },
+  patch: Partial<Pick<Task, 'title' | 'prompt' | 'priority' | 'projectId' | 'tags' | 'permissionMode' | 'model' | 'dependsOn' | 'writeScope'>> & { agent?: AgentId | '' },
 ) {
   return act(() => api('PATCH', `/tasks/${id}`, patch), tr('Không lưu được task'))
 }
@@ -670,13 +673,35 @@ export async function decidePermissionsBatch(ids: string[], decision: 'allow' | 
 
 /** Trả về thông báo lỗi (để hiện trong form) hoặc null nếu thành công. */
 /** Thêm/sửa project. Trả về thông báo lỗi để hiện trong form, hoặc null nếu thành công (`onSaved` nhận project đã lưu). */
-export async function saveProject(p: Project, onSaved?: (saved: Project) => void): Promise<string | null> {
+export async function saveProject(
+  p: Project,
+  onSaved?: (saved: Project) => void,
+  /** FR-48: số task sẽ đổi theo mức quyền mới (lấy từ previewPermissionSync); có thì server áp dụng cho các task đó. */
+  syncTasks?: number,
+): Promise<string | null> {
   try {
-    const saved = await api<Project>('POST', '/projects', p)
+    const saved = await api<Project>('POST', '/projects', syncTasks ? { ...p, syncTaskPermissions: true } : p)
     set((s) => ({ projects: upsert(s.projects, saved) }))
     onSaved?.(saved)
-    toast({ kind: 'success', title: tr('Đã lưu project {name}', { name: saved.name }) })
+    toast({
+      kind: 'success',
+      title: tr('Đã lưu project {name}', { name: saved.name }),
+      body: syncTasks ? tr('Đã đổi mức quyền cho {n} task chưa chạy.', { n: syncTasks }) : undefined,
+    })
     return null
+  } catch (e) {
+    return (e as Error).message
+  }
+}
+
+/** FR-48: các task chưa chạy sẽ đổi theo mức quyền mới của project. Lỗi trả về chuỗi để hiện trong form. */
+export async function previewPermissionSync(p: Pick<Project, 'id' | 'permissionMode' | 'defaultAgent'>): Promise<PermissionSyncPlan | string> {
+  try {
+    return await api<PermissionSyncPlan>('POST', '/projects/permission-sync', {
+      id: p.id,
+      permissionMode: p.permissionMode,
+      defaultAgent: p.defaultAgent ?? '',
+    })
   } catch (e) {
     return (e as Error).message
   }

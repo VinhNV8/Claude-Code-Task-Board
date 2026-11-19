@@ -29,6 +29,7 @@ import { agentProblem, chooseFallback, getAdapter, type AgentAdapter } from './a
 import { agentLimitedUntil } from './agents/limits.ts'
 import { AGENT_NAMES, agentForRun, resolveAgent } from '../../web/src/lib/agent.ts'
 import type { Project, Run, RunFailKind, RunKind, Task, TaskStatus } from './types.ts'
+import { withScope } from '../../web/src/lib/writeScope.ts'
 
 export { isMissingSession } from './agents/claude.ts'
 
@@ -264,7 +265,7 @@ export function startRun(task: Task, kind: RunKind, feedback?: string) {
   const { resume, sessionId } = plan.freshSession || switchedAgent ? sessionFor('retry', undefined) : sessionFor(kind, task.sessionId)
   const prompt = plan.freshSession
     ? escalationPrompt({
-        taskPrompt: task.prompt,
+        taskPrompt: withScope(task.prompt, task.writeScope),
         lastSummary: prevRun?.summary,
         prevModel: prevRun?.requestedModel ?? prevRun?.model,
         feedback,
@@ -363,7 +364,8 @@ function spawnAgent(
   const { task, kind, feedback, resume, cwd } = o
   const run = { id: o.runId }
 
-  const prompt = o.prompt ?? resumePrompt({ kind, resume, feedback, taskPrompt: task.prompt })
+  // FR-49: phạm vi ghi gắn vào prompt gốc; resume đúng phiên thì agent đã có ràng buộc trong ngữ cảnh.
+  const prompt = o.prompt ?? resumePrompt({ kind, resume, feedback, taskPrompt: withScope(task.prompt, task.writeScope) })
   // Adapter dựng tham số, môi trường, file cấu hình tạm (xác thực, budget, MCP xin quyền, hooks…).
   const prepared = adapter.prepare({ ...o, prompt, runLogDir: RUN_LOG_DIR })
   if (!prepared.ok) {

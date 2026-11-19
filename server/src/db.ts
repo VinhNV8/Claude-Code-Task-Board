@@ -193,6 +193,8 @@ if (!projectCols.some((c) => c.name === 'budget_action'))
   db.exec("ALTER TABLE projects ADD COLUMN budget_action TEXT NOT NULL DEFAULT 'warn'")
 // Giới hạn chi phí mỗi lần chạy (`--max-budget-usd`).
 if (!taskCols.some((c) => c.name === 'max_cost_usd')) db.exec('ALTER TABLE tasks ADD COLUMN max_cost_usd REAL')
+// FR-49: phạm vi ghi của task (JSON mảng mẫu đường dẫn), NULL = không giới hạn
+if (!taskCols.some((c) => c.name === 'write_scope')) db.exec('ALTER TABLE tasks ADD COLUMN write_scope TEXT')
 // P7-05 (FR-46): lý do người dùng nhập khi Từ chối, gửi kèm message deny cho Claude.
 const permCols = db.prepare('PRAGMA table_info(permission_requests)').all() as { name: string }[]
 if (!permCols.some((c) => c.name === 'deny_reason')) db.exec('ALTER TABLE permission_requests ADD COLUMN deny_reason TEXT')
@@ -296,10 +298,11 @@ const toTask = (r: Row): Task => ({
   agent: parseAgent(r.agent) || undefined,
   activeAgent: parseAgent(r.active_agent) || undefined,
   maxCostUsd: (r.max_cost_usd as number | null) ?? undefined,
+  writeScope: optList(r.write_scope ? (JSON.parse(r.write_scope as string) as string[]) : []),
   dependsOn: optList(depsOf(r.id as number)),
 })
 
-const optList = (l: number[]) => (l.length ? l : undefined)
+const optList = <T,>(l: T[]) => (l.length ? l : undefined)
 
 /** Danh sách task mà task này chờ (FR-08), tăng dần theo id. */
 function depsOf(taskId: number): number[] {
@@ -438,6 +441,7 @@ const TASK_COLS: Record<string, string> = {
   agent: 'agent',
   activeAgent: 'active_agent',
   maxCostUsd: 'max_cost_usd',
+  writeScope: 'write_scope',
 }
 
 /** Cột NOT NULL kiểu cờ: `null`/`false` lưu thành 0. */
@@ -453,13 +457,13 @@ export const tasks = {
     (db.prepare(`SELECT * FROM tasks WHERE status IN (${st.map(() => '?').join(',')})`).all(...st) as Row[]).map(toTask),
   create: (
     t: Pick<Task, 'projectId' | 'title' | 'prompt' | 'status' | 'priority' | 'permissionMode' | 'tags'> &
-      Pick<Partial<Task>, 'model' | 'maxCostUsd' | 'agent'>,
+      Pick<Partial<Task>, 'model' | 'maxCostUsd' | 'agent' | 'writeScope'>,
   ) => {
     const now = Date.now()
     const r = db
       .prepare(
-        `INSERT INTO tasks (project_id, title, prompt, status, priority, permission_mode, tags, model, max_cost_usd, agent, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO tasks (project_id, title, prompt, status, priority, permission_mode, tags, model, max_cost_usd, agent, write_scope, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         t.projectId,
@@ -472,6 +476,7 @@ export const tasks = {
         t.model || null,
         t.maxCostUsd ?? null,
         t.agent || null,
+        t.writeScope?.length ? JSON.stringify(t.writeScope) : null,
         now,
         now,
       )
@@ -486,6 +491,7 @@ export const tasks = {
       if (!col) continue
       sets.push(`${col} = ?`)
       if (FLAG_COLS.has(k)) vals.push(v ? 1 : 0)
+      else if (k === 'writeScope') vals.push(Array.isArray(v) && v.length ? JSON.stringify(v) : null)
       else vals.push(k === 'tags' ? JSON.stringify(v) : v === undefined ? null : (v as string | number | null))
     }
     sets.push('updated_at = ?')

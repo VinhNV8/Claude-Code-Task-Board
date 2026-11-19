@@ -5,6 +5,7 @@ import { TagError, validateTags } from './tags.ts'
 import { normalizeModel } from './model.ts'
 import { BudgetError, parseUsd } from './budget.ts'
 import { parseAgent } from '../../web/src/lib/agent.ts'
+import { normalizeScope, scopeProblem } from '../../web/src/lib/writeScope.ts'
 import type { AgentId, PermissionMode, Priority } from './types.ts'
 
 export const PRIORITIES: Priority[] = ['urgent', 'high', 'normal', 'low']
@@ -26,6 +27,8 @@ export interface TaskBody {
   maxCostUsd?: number | string | null
   /** Các task phải Done trước (FR-08). Không gửi: giữ nguyên; [] hoặc null: bỏ hết. */
   dependsOn?: number[] | null
+  /** Phạm vi ghi (FR-49): mảng mẫu hoặc chuỗi cách nhau bởi dấu phẩy. [] / '' / null: không giới hạn. */
+  writeScope?: string[] | string | null
   run?: boolean
 }
 
@@ -74,6 +77,12 @@ export function validateTask(b: TaskBody, partial = false) {
       if (e instanceof BudgetError) throw new HttpError(400, e.message)
       throw e
     }
+  }
+  if (b.writeScope !== undefined) {
+    const scope = normalizeScope(b.writeScope ?? [])
+    const problem = scopeProblem(scope)
+    if (problem) throw new HttpError(400, problem)
+    out.writeScope = scope
   }
   return out
 }

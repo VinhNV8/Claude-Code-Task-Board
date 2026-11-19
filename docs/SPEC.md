@@ -2,14 +2,15 @@
 
 | Mục | Giá trị |
 |---|---|
-| Phiên bản | 0.5 |
-| Ngày | 2026-11-18 |
+| Phiên bản | 0.5.1 |
+| Ngày | 2026-11-19 |
 | Trạng thái | ✅ Đã duyệt đến v0.5 (2026-11-18), gồm phần mới của v0.3/v0.3.1 (FR-08/09, FR-43..47, FR-70..76, FR-80..83) và v0.5 (FR-01a/01b) |
 | Thay đổi 0.2 | Cập nhật theo [P0-SPIKE.md](P0-SPIKE.md): dò file `claude.exe` của extension VSCode; mode `default` đổi thành `manual`; prompt truyền qua stdin; P3 dùng `--permission-prompt-tool` (đã kiểm chứng); SQLite dùng `node:sqlite` có sẵn trong Node 24 |
 | Thay đổi 0.3 | **FR-08/09 Phụ thuộc giữa task.** Bổ sung yêu cầu từ [Ideas Improvement.md](Ideas%20Improvement.md): **3.8 Chọn model** (tự chọn theo độ khó, hiển thị model đang dùng), **3.9 Chi phí và budget theo project**, cải tiến **3.5 Needs Input** (preset, gợi ý rule, Telegram, rủi ro, lý do từ chối). Cập nhật 5.2, 5.3, 7, 8, 9, 10. Thiết kế chi tiết ở PLAN mục P5–P7 |
 | Thay đổi 0.3.1 | **FR-47 Mức quyền Auto** (2026-11-13): thêm mode `auto` cho project/task, tự duyệt thao tác qua kiểm tra an toàn, chỉ dừng chờ người với lệnh rủi ro cao. Cập nhật FR-61, 5.2, 6, 8 (AC-12), 9 |
 | Thay đổi 0.4 | Chốt 2026-11-18: **FR-62 Cách giao output**, mặc định *Ghi thẳng vào thư mục project* (không cần git, mỗi lúc 1 task), tuỳ chọn *Nhánh git riêng* (worktree, chạy song song). **Review = chấp nhận output, merge là thao tác tuỳ chọn** (FR-31, FR-31a). **Reject không xoá output** (FR-33). **C1 làm rõ**: Task Board không tự gọi Anthropic API; chế độ API key tuỳ chọn chỉ truyền key cho CLI, đã bỏ nút gọi thử key. Cập nhật mục 2, 3.2, 3.4, 3.7, 4, 5, 8, 9. SQLite ghi đúng là `node:sqlite`. **FR-40/41 Claude hỏi lại giữa lúc chạy** qua tool `AskUserQuestion` (spike S9), AC-13. **FR-02** xoá được task Failed |
 | Thay đổi 0.5 | Chốt 2026-11-18: **FR-01a/01b Import task hàng loạt** từ CSV, `.xlsx` hoặc dữ liệu dán từ bảng tính, kèm file mẫu. Thiết kế chi tiết và quy tắc I1–I7 ở [SPEC-IMPORT.md](SPEC-IMPORT.md). Cập nhật 3.1, 5.3, 8 (AC-14..21) |
+| Thay đổi 0.5.1 | 2026-11-19: **FR-48 Đổi mức quyền project áp dụng cho task chưa chạy**: khi đổi mức quyền của project, hỏi người dùng có đổi theo cho các task Backlog, Queued, Failed hay không. **FR-49 Phạm vi ghi của task**: mẫu đường dẫn task được phép sửa, gắn vào prompt và cảnh báo ở Review khi sửa file ngoài phạm vi. Cập nhật FR-47, FR-61, 8 (AC-61..63), [SPEC-IMPORT.md](SPEC-IMPORT.md) |
 | Thư mục dự án | `d:\Projects\AI Project\AI-Interface` |
 
 ---
@@ -131,8 +132,10 @@ Backlog ─► Queued ─► Running ─┬─► Review ─┬─► Done (Appr
 | FR-43 | Bộ quy tắc mẫu (preset) cho allowlist: Node/npm, Python, git chỉ đọc, chỉ đọc file. Preset không chứa lệnh có tác dụng phụ (`npm install`, `git push`, `git commit`) | Should |
 | FR-44 | Gợi ý thêm rule vào allowlist từ lịch sử: rule được cho phép ≥ 3 lần trong 30 ngày, chưa bị từ chối lần nào, không phải lệnh rủi ro; người dùng có thể Thêm hoặc Bỏ qua | Should |
 | FR-45 | Phân loại rủi ro yêu cầu quyền (xoá đệ quy, `git push`, `reset --hard`, tải script về chạy, ghi file ngoài thư mục task…): hiển thị cảnh báo đỏ kèm lý do, **không** cho "Luôn cho phép", và allowlist không được tự duyệt các lệnh này | Should |
-| FR-47 | **Mức quyền Auto** (v0.3.1): ngoài `manual` / `acceptEdits` / `plan`, project và task có thêm mode `auto`. Ở mode Auto, mọi yêu cầu quyền (sửa file, chạy lệnh, kể cả lệnh ngoài allowlist) được **tự động cho phép, không cần người duyệt**: không tạo yêu cầu chờ, task không chuyển Needs Input, log ghi "Tự động cho phép … (mode Auto)". **Ngoại lệ:** lệnh rủi ro cao theo FR-45 vẫn dừng chờ duyệt tay. CLI chạy `--permission-mode acceptEdits`; các thao tác khác đi qua permission prompt tool và backend tự duyệt. Ở phương án dự phòng (tắt prompt tool), Auto hoạt động như `acceptEdits` + whitelist. Mode được chép từ project sang task **lúc tạo task**; đổi mode project không ảnh hưởng task đã có. Không dùng `bypassPermissions` (mục 9) | Should |
+| FR-47 | **Mức quyền Auto** (v0.3.1): ngoài `manual` / `acceptEdits` / `plan`, project và task có thêm mode `auto`. Ở mode Auto, mọi yêu cầu quyền (sửa file, chạy lệnh, kể cả lệnh ngoài allowlist) được **tự động cho phép, không cần người duyệt**: không tạo yêu cầu chờ, task không chuyển Needs Input, log ghi "Tự động cho phép … (mode Auto)". **Ngoại lệ:** lệnh rủi ro cao theo FR-45 vẫn dừng chờ duyệt tay. CLI chạy `--permission-mode acceptEdits`; các thao tác khác đi qua permission prompt tool và backend tự duyệt. Ở phương án dự phòng (tắt prompt tool), Auto hoạt động như `acceptEdits` + whitelist. Mode được chép từ project sang task **lúc tạo task**; đổi mode project chỉ ảnh hưởng task đã có khi người dùng chọn áp dụng (FR-48). Không dùng `bypassPermissions` (mục 9) | Should |
 | FR-46 | Từ chối kèm lý do (lý do được gửi cho Claude để đổi cách làm); duyệt hàng loạt các yêu cầu giống hệt nhau ở Inbox; duyệt bằng nút trên Telegram (chỉ nhận từ đúng chat đã cấu hình) | Could |
+| FR-48 | **Đổi mức quyền project áp dụng cho task chưa chạy** (v0.5.1). Khi lưu project đã có với mức quyền khác trước, hiện hộp xác nhận liệt kê các task của project ở **Backlog, Queued, Failed** đang có mức quyền khác mức mới, kèm số lượng theo trạng thái. Ba lựa chọn: **Huỷ** (quay lại form, chưa lưu gì), **Chỉ đổi project** (task giữ mức cũ, task tạo sau dùng mức mới), **Đổi project + N task**. Bỏ qua và ghi rõ trong hộp thoại: (a) task ở mode **Plan** khi mức mới không phải Plan, vì task chỉ phân tích không được tự nới thành task sửa code; (b) task chọn agent riêng mà agent đó không chạy được ở mức mới (FR-91). Mức mới là Auto thì hiện cảnh báo. Không có task nào liên quan thì lưu luôn, không hỏi. Server tính lại danh sách lúc lưu, trong cùng transaction với việc lưu project: task chuyển sang Running trong lúc hộp thoại mở thì giữ mức cũ. Task Running, Needs Input, Review, Done không bao giờ bị đổi. Task vẫn chọn được mức quyền riêng trong form task | Should |
+| FR-49 | **Phạm vi ghi của task** (v0.5.1, tuỳ chọn). Task khai báo danh sách mẫu đường dẫn tương đối với thư mục làm việc, ví dụ `docs/**`, `*.md` (mẫu không có `/` so với tên file ở mọi cấp, `*` một cấp, `**` nhiều cấp). Nhập ở form task hoặc cột `write_scope` khi import; tối đa 20 mẫu, không nhận đường dẫn tuyệt đối hay `..`. Khi chạy, hệ thống **gắn ràng buộc vào cuối prompt**: chỉ được ghi file trong phạm vi, được đọc mọi file, cần sửa chỗ khác thì ghi vào mục "Đề xuất ngoài phạm vi" thay vì tự sửa. Tab Review **cảnh báo** và liệt kê các file trong diff nằm ngoài phạm vi (file đổi tên xét cả tên cũ). Đây là lớp mềm: chưa chặn cứng việc ghi file (để backlog, cần permission prompt tool theo từng agent). Trống: không giới hạn | Should |
 
 ### 3.6 Thông báo
 | ID | Yêu cầu | Ưu tiên |
@@ -144,7 +147,7 @@ Backlog ─► Queued ─► Running ─┬─► Review ─┬─► Done (Appr
 | ID | Yêu cầu | Ưu tiên |
 |---|---|---|
 | FR-60 | Khai báo một hoặc nhiều project (thư mục project; nhánh chính khi dùng mode Nhánh git riêng). Git chỉ bắt buộc ở mode Nhánh git riêng | Must |
-| FR-61 | Cấu hình mặc định theo từng project: mức quyền (Manual / Edit automatically / Plan / Auto, xem FR-47), allowedTools, số task chạy song song | Should |
+| FR-61 | Cấu hình mặc định theo từng project: mức quyền (Manual / Edit automatically / Plan / Auto, xem FR-47; đổi mức quyền thì hỏi có áp dụng cho task chưa chạy, xem FR-48), allowedTools, số task chạy song song | Should |
 | FR-62 | **Cách giao output** theo project (v0.4): ① **Ghi thẳng vào thư mục project** (mặc định cho project mới): Claude làm trực tiếp trong thư mục, không cần git, **mỗi lúc chỉ chạy 1 task** của project để các task không ghi đè nhau; diff tính theo snapshot trước/sau lần chạy. ② **Nhánh git riêng cho từng task**: worktree + nhánh `claude/task-<id>`, chạy song song theo `max_parallel`. Project đã có trước v0.4 giữ mode cũ | Must |
 
 ### 3.8 Chọn model
@@ -307,6 +310,9 @@ Cấu hình trong `.claude/settings.json` của worktree hoặc project:
 - **AC-10** (v0.3): Lệnh rủi ro cao luôn phải duyệt tay (kể cả khi khớp allowlist) và không có nút "Luôn cho phép".
 - **AC-12** (v0.3.1): Task ở mode Auto chạy `npm install x` (ngoài allowlist) thì được cho phép ngay, không tạo yêu cầu quyền và task không vào Needs Input; cùng task chạy `git push` thì vẫn dừng ở Needs Input chờ duyệt tay. Task ở mode Manual với cùng lệnh `npm install x` thì phải chờ duyệt.
 - **AC-14..21** (v0.5): import task, xem [SPEC-IMPORT.md](SPEC-IMPORT.md) mục 4.
+- **AC-61** (v0.5.1): Project đang Edit automatically có task A (Backlog), B (Failed), C (Queued, mode Plan), D (Running). Đổi project sang Auto và chọn **Đổi project + 2 task**: A và B thành Auto, C giữ Plan, D giữ Edit automatically; hộp thoại ghi rõ C bị bỏ qua. Chọn **Chỉ đổi project** thì A, B giữ nguyên, task tạo sau là Auto.
+- **AC-62** (v0.5.1): Đổi mức quyền project khi không có task Backlog/Queued/Failed nào có mức khác thì lưu ngay, không hiện hộp xác nhận; lưu bị lỗi kiểm tra thì cả project lẫn task đều không đổi.
+- **AC-63** (v0.5.1): Task có phạm vi ghi `docs/**`: prompt gửi cho agent có đoạn ràng buộc phạm vi; nếu diff có `src/app.ts` thì tab Review hiện cảnh báo liệt kê `src/app.ts`; diff chỉ có file trong `docs/` thì không cảnh báo. Phạm vi `../x` hoặc `/etc` bị từ chối khi lưu task và báo lỗi ở dòng khi import.
 - **AC-13** (v0.4): Task (kể cả mode Auto) mà Claude gọi `AskUserQuestion` thì chuyển Needs Input, thẻ hiện câu hỏi và lựa chọn; trả lời trên web thì Claude dùng đúng đáp án và chạy tiếp **trong cùng lần chạy** (không có run resume). Bỏ qua hoặc hết thời gian thì Claude tự quyết và nêu giả định trong kết quả.
 
 ---

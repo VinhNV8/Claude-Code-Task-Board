@@ -56,6 +56,7 @@ import { commentLocation, sortComments } from '../lib/reviewComments'
 import { useReviewDraft } from '../lib/reviewDraft'
 import { STOP_REASON, canResume, isWaitingRateLimit } from '../lib/resume'
 import { permissionModeOf } from '../lib/permissionMode'
+import { outOfScope } from '../lib/writeScope'
 import { AgentBadge } from './AgentSelect'
 import { AGENT_NAMES, effectiveAgent, resolveAgent, runAgent } from '../lib/agent'
 import { canDeleteTask } from '../lib/taskDelete'
@@ -102,6 +103,8 @@ export function TaskView({
   const runs = useMemo(() => s.runs.filter((r) => r.taskId === task?.id), [s.runs, task?.id])
   const loadedDiff = task ? s.diffs[task.id] : undefined
   const diffs = loadedDiff ?? []
+  // FR-49: file trong diff nằm ngoài phạm vi ghi của task
+  const outside = task?.writeScope?.length ? outOfScope(diffs, task.writeScope) : []
   const pending = s.permissions.filter((p) => p.taskId === task?.id && p.status === 'pending')
   const reviews = useMemo(() => s.reviews.filter((r) => r.taskId === task?.id), [s.reviews, task?.id])
   const history = useMemo(() => buildHistory(runs, reviews), [runs, reviews])
@@ -449,7 +452,28 @@ export function TaskView({
 
       {tab === 'review' && (
         <div className="space-y-3">
-          {task.reviewWarning && (
+          {outside.length > 0 && (
+            <div className="flex gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+              <TriangleAlert size={18} className="shrink-0" />
+              <div className="min-w-0">
+                <p>
+                  {tr('Task chỉ được ghi trong {scope} nhưng đã sửa {n} file ngoài phạm vi:', {
+                    scope: task.writeScope!.join(', '),
+                    n: outside.length,
+                  })}
+                </p>
+                <ul className="mt-1 list-disc pl-5 font-mono text-xs">
+                  {outside.slice(0, 10).map((p) => (
+                    <li key={p} className="break-all">
+                      {p}
+                    </li>
+                  ))}
+                  {outside.length > 10 && <li>{tr('… và {n} file khác', { n: outside.length - 10 })}</li>}
+                </ul>
+              </div>
+            </div>
+          )}
+{task.reviewWarning && (
             <div className="flex gap-2 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-300">
               <TriangleAlert size={18} className="shrink-0" />
               <span>{task.reviewWarning}</span>
@@ -725,6 +749,10 @@ export function TaskView({
           <div className="grid gap-2 text-sm sm:grid-cols-2">
             <p>
               <span className="text-slate-500">{tr('Mức quyền:')}</span> <span>{permissionModeOf(task.permissionMode).label}</span>
+            </p>
+            <p>
+              <span className="text-slate-500">{tr('Phạm vi ghi:')}</span>{' '}
+              <span className={task.writeScope?.length ? 'font-mono text-xs' : ''}>{task.writeScope?.length ? task.writeScope.join(', ') : tr('Không giới hạn')}</span>
             </p>
             <p>
               <span className="text-slate-500">Agent:</span> <AgentBadge agent={effectiveAgent(task, project, s.settings)} switched={!!task.activeAgent} />

@@ -11,6 +11,7 @@ import { PERMISSION_MODES, permissionModeOf } from '../lib/permissionMode'
 import { TagInput } from './TagInput'
 import { Button, Field, Modal, inputCls } from './ui'
 import { tr } from '../lib/i18n'
+import { normalizeScope, scopeProblem } from '../lib/writeScope'
 
 
 export function TaskFormModal({
@@ -32,6 +33,8 @@ export function TaskFormModal({
   const [priority, setPriority] = useState<Priority>('normal')
   const [mode, setMode] = useState<PermissionMode>('acceptEdits')
   const [tags, setTags] = useState<string[]>([])
+  // FR-49: phạm vi ghi, nhập dạng chuỗi cách nhau bởi dấu phẩy
+  const [scope, setScope] = useState('')
   const [model, setModel] = useState('')
   /** '' = kế thừa project → Settings (SPEC-MULTI-AGENT FR-91) */
   const [agent, setAgent] = useState<AgentId | ''>('')
@@ -52,6 +55,7 @@ export function TaskFormModal({
       setPriority(editing.priority)
       setMode(editing.permissionMode)
       setTags(editing.tags)
+      setScope((editing.writeScope ?? []).join(', '))
       setModel(editing.model ?? '')
       setAgent(editing.agent ?? '')
       setDeps(editing.dependsOn ?? [])
@@ -63,6 +67,7 @@ export function TaskFormModal({
       setPriority('normal')
       setMode(projects.find((p) => p.id === pid)?.permissionMode ?? 'acceptEdits')
       setTags([])
+      setScope('')
       setModel('')
       setAgent('')
       setDeps([])
@@ -98,8 +103,9 @@ export function TaskFormModal({
     title: !title.trim() ? tr('Vui lòng nhập tiêu đề') : undefined,
     prompt: prompt.trim().length < 10 ? tr('Mô tả cần ít nhất 10 ký tự để Claude hiểu yêu cầu') : undefined,
     projectId: !projectId ? tr('Chọn project') : undefined,
+    scope: scopeProblem(normalizeScope(scope)),
   }
-  const valid = !errors.title && !errors.prompt && !errors.projectId
+  const valid = !errors.title && !errors.prompt && !errors.projectId && !errors.scope
 
   // Template chung + template riêng của project đang chọn
   const usableTemplates = templates.filter((t) => !t.projectId || t.projectId === projectId)
@@ -120,11 +126,11 @@ export function TaskFormModal({
     setSaving(true)
     try {
       if (editing) {
-        await updateTask(editing.id, { title, prompt, projectId, priority, permissionMode: mode, tags: tagList, model, agent, dependsOn: deps })
+        await updateTask(editing.id, { title, prompt, projectId, priority, permissionMode: mode, tags: tagList, model, agent, dependsOn: deps, writeScope: normalizeScope(scope) })
         onClose()
         return
       }
-      const id = await createTask({ title, prompt, projectId, priority, permissionMode: mode, tags: tagList, model, agent, dependsOn: deps, run })
+      const id = await createTask({ title, prompt, projectId, priority, permissionMode: mode, tags: tagList, model, agent, dependsOn: deps, writeScope: normalizeScope(scope), run })
       onClose()
       if (run) navigate(`/tasks/${id}`)
     } catch {
@@ -233,6 +239,13 @@ export function TaskFormModal({
                 </option>
               ))}
             </select>
+          </Field>
+          <Field
+            label={tr('Phạm vi ghi (tuỳ chọn)')}
+            error={touched ? errors.scope : undefined}
+            hint={tr('Chỉ cho task sửa file khớp mẫu, ví dụ docs/**, *.md. Để trống: không giới hạn. Sửa file ngoài phạm vi sẽ bị cảnh báo khi review.')}
+          >
+            <input className={`${inputCls} font-mono`} value={scope} onChange={(e) => setScope(e.target.value)} placeholder="docs/**, *.md" />
           </Field>
           <TagInput label="Tag" value={tags} onChange={setTags} suggestions={tagSuggestions} />
           <Field

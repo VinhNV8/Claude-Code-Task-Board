@@ -75,6 +75,7 @@ Thư viện Excel chỉ nạp khi người dùng chọn file `.xlsx` (dynamic `i
 | Model | `model` | | `auto/haiku/sonnet/opus` hoặc ID `claude-…`. Trống: kế thừa |
 | Mức quyền | `permission_mode`, `mức quyền` | | `manual/acceptEdits/plan/auto`. Trống: mặc định của project |
 | Giới hạn chi phí | `max_cost_usd` | | Số > 0. Nhận cả `1,5` và `1.5` |
+| Phạm vi ghi | `write_scope` | | Mẫu đường dẫn cách nhau bởi dấu phẩy, vd `docs/**, *.md` (FR-49). Tên cột cũng nhận "Phạm vi ghi", "Phạm vi", "Scope". Trống: không giới hạn |
 
 Cột không nhận ra thì bỏ qua và liệt kê ở màn xem trước. Thiếu cột bắt buộc thì báo lỗi ngay, không gửi lên server.
 

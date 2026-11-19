@@ -492,7 +492,8 @@ export const EN: Record<string, string> = {
   'Nơi lưu output': 'Where output goes',
   'Duyệt task chỉ là chấp nhận output; Task Board không tự merge. Đổi lựa chọn chỉ áp dụng cho task chưa chạy.': 'Reviewing a task only accepts its output; the Task Board never merges on its own. Changing this only affects tasks that haven\'t run yet.',
   'Mức quyền mặc định': 'Default permission level',
-  'Task mới của project sẽ dùng mức quyền này (có thể đổi riêng từng task).': 'New tasks in this project use this permission level (you can change it per task).',
+  'Task mới của project sẽ dùng mức quyền này (có thể đổi riêng từng task). Khi đổi mức quyền, bạn sẽ được hỏi có áp dụng cho các task chưa chạy không.':
+    'New tasks in this project use this permission level (you can change it per task). When you change it, you are asked whether to apply it to tasks that have not run yet.',
   'Số task song song tối đa': 'Maximum tasks in parallel',
   'Ghi thẳng vào thư mục: luôn chạy 1 task mỗi lúc': 'Writing into the folder: always one task at a time',
   'Áp dụng cho task của project không chọn model riêng.': 'Applies to this project\'s tasks that don\'t pick their own model.',
@@ -745,4 +746,30 @@ export const EN: Record<string, string> = {
   '(agent theo cấu hình: {agent})': '(configured agent: {agent})',
   '{n} token ngữ cảnh': '{n} context tokens',
   '{n} task đang chạy bằng {agent}': '{n} task(s) running on {agent}',
+
+  // Đổi mức quyền project, áp dụng cho task chưa chạy (FR-48)
+  'Đã đổi mức quyền cho {n} task chưa chạy.': 'Changed the permission level of {n} tasks that have not run yet.',
+  'Đổi mức quyền: {from} → {to}': 'Change permission level: {from} → {to}',
+  'Chỉ đổi project': 'Project only',
+  'Đổi project + {n} task': 'Project + {n} tasks',
+  'Có {n} task chưa chạy ({detail}) đang dùng mức quyền khác. Đổi các task này sang {to}?':
+    '{n} tasks that have not run yet ({detail}) use a different permission level. Change them to {to}?',
+  'Chọn "Chỉ đổi project" thì các task này giữ mức quyền cũ; task tạo sau sẽ dùng mức mới. Task đang chạy, chờ duyệt hoặc đã xong không bị đổi.':
+    'With "Project only" these tasks keep their current level; tasks created later use the new one. Tasks that are running, awaiting review or done are never changed.',
+  'Không có task chưa chạy nào đổi được sang {to}.': 'No task that has not run yet can be changed to {to}.',
+  'Auto: agent tự sửa file và chạy lệnh, không cần bạn duyệt (trừ lệnh rủi ro cao). Chỉ áp dụng nếu bạn tin nội dung các task này.':
+    'Auto: the agent edits files and runs commands without asking you (except high-risk commands). Only apply it if you trust what these tasks ask for.',
+  'Giữ nguyên {n} task ở mode Plan (chỉ phân tích, không tự chuyển thành task được sửa code):':
+    'Keeping {n} tasks in Plan mode (analysis only; they are not turned into tasks that may edit code):',
+  'Giữ nguyên {n} task vì agent của task không chạy được ở mức quyền mới:': "Keeping {n} tasks because their agent can't run at the new level:",
+
+  // Phạm vi ghi của task (FR-49)
+  'Phạm vi ghi': 'Write scope',
+  'Phạm vi ghi (tuỳ chọn)': 'Write scope (optional)',
+  'Chỉ cho task sửa file khớp mẫu, ví dụ docs/**, *.md. Để trống: không giới hạn. Sửa file ngoài phạm vi sẽ bị cảnh báo khi review.':
+    'Only let the task change files matching these patterns, e.g. docs/**, *.md. Leave empty for no limit. Changes outside the scope are flagged at review.',
+  'Task chỉ được ghi trong {scope} nhưng đã sửa {n} file ngoài phạm vi:': 'This task may only write to {scope} but changed {n} files outside that scope:',
+  '… và {n} file khác': '… and {n} more files',
+  'Phạm vi ghi:': 'Write scope:',
+  'Không giới hạn': 'No limit',
 }
