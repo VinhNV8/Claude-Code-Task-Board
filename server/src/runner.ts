@@ -1,4 +1,4 @@
-// Hàng đợi và thực thi task bằng Claude Code CLI (headless, không dùng API key).
+// Hàng đợi và thực thi task bằng agent CLI (headless). Phần riêng của từng agent nằm trong agents/ (SPEC-MULTI-AGENT).
 import { spawn, type ChildProcess } from 'node:child_process'
 import { killTree } from './proc.ts'
 import { shutdownTests, stopTests } from './testRunner.ts'
@@ -6,42 +6,36 @@ import { createWriteStream, mkdirSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import readline from 'node:readline'
-import { claudeEnv, findClaudeBin } from './claude.ts'
-import { nodeCommand } from './runtime.ts'
-import { issueKeyToken, revokeKeyToken } from './apiKeyBroker.ts'
-import { DATA_DIR, claudeApiKey, events, projects, runs, settings, taskDeps, tasks, testRuns } from './db.ts'
-import { authFailureHint, resolveCredentials } from './claudeAuth.ts'
+import { revokeKeyToken } from './apiKeyBroker.ts'
+import { DATA_DIR, events, projects, runs, settings, taskDeps, tasks, testRuns } from './db.ts'
 import { broadcast } from './bus.ts'
-import { StreamParser, type ResultInfo } from './stream.ts'
-import { INTERNAL_TOKEN, PORT } from './config.ts'
-import { buildClaudeArgs, cleanupMcpConfigs, permissionToolEnabled, removeMcpConfig, writeMcpConfig } from './permissionTool.ts'
-import { cleanupHookSettings, formatNotification, removeHookSettings, writeHookSettings } from './hookSettings.ts'
+import type { Parsed, ResultInfo } from './stream.ts'
+import { awaitPermission, awaitQuestion } from './permissionBroker.ts'
+import { cleanupMcpConfigs } from './permissionTool.ts'
+import { cleanupHookSettings, formatNotification } from './hookSettings.ts'
 import { captureChanges, ensureWorktree, runNumber } from './capture.ts'
 import { taskDiff } from './git.ts'
-import { MAX_RATE_LIMIT_RETRIES, decideRateLimit, detectRateLimit, orderQueue, type RateLimitEvent } from './rateLimit.ts'
-import { buildClaudeLimit, clearClaudeLimit, setClaudeLimit } from './claudeLimit.ts'
+import { MAX_RATE_LIMIT_RETRIES, decideRateLimit, orderQueue, type RateLimitEvent, type RateLimitHit } from './rateLimit.ts'
 import { CONTINUE_NOTE, CONTINUE_PROMPT, STOP_REASON } from '../../web/src/lib/resume.ts'
-import { autoModelNote, chooseRunModel, fallbackModelFor } from './model.ts'
+import { autoModelNote, chooseRunModel } from './model.ts'
 import { applyEscalation, escalationPrompt, maxTierForProject } from './escalation.ts'
 import { adjustByHistory } from './modelHistoryService.ts'
 // Nạp budgetService cũng đăng ký nguồn budget cho maxTierForProject (B4) và blockedReason cho task gửi ra web.
-import { budgetWakeAt, isProjectBlocked, refreshBudgets, runBudgetCap } from './budgetService.ts'
+import { budgetWakeAt, isProjectBlocked, refreshBudgets } from './budgetService.ts'
 import { decideBlocked, pendingDeps } from './taskDeps.ts'
 import { prepareRetry } from './retry.ts'
 import { withLock } from './review.ts'
-import { BLOCKED_BY_INSTRUCTION } from '../../web/src/lib/deps.ts'
+import { agentProblem, chooseFallback, getAdapter, type AgentAdapter } from './agents/index.ts'
+import { agentLimitedUntil } from './agents/limits.ts'
+import { AGENT_NAMES, agentForRun, resolveAgent } from '../../web/src/lib/agent.ts'
 import type { Project, Run, RunFailKind, RunKind, Task, TaskStatus } from './types.ts'
+
+export { isMissingSession } from './agents/claude.ts'
 
 interface Proc {
   child: ChildProcess
   runId: string
   stopping: boolean
-}
-
-/** Xoá các file cấu hình tạm của một run (MCP config, settings hooks). */
-function removeTempFiles(f: { mcpConfig?: string; hookSettings?: string }) {
-  removeMcpConfig(f.mcpConfig)
-  removeHookSettings(f.hookSettings)
 }
 
 const procs = new Map<number, Proc>()
@@ -207,9 +201,30 @@ export function runNow(taskId: number): boolean {
 
 export function startRun(task: Task, kind: RunKind, feedback?: string) {
   const project = projects.get(task.projectId)!
-  const bin = findClaudeBin()
+  // FR-91: agent theo 3 tầng Task → Project → Settings. Kiểm tra lại lúc chạy vì project/settings có thể đã đổi
+  // sau khi tạo task (ví dụ đổi agent mặc định sang agent không hỗ trợ mức quyền của task).
+  // FR-99 (QA7): Request changes / Tiếp tục giữ agent dự phòng đang dùng; lần chạy mới / Retry quay về agent gốc.
+  const configured = resolveAgent(task, project, settings.get())
+  let agentId = agentForRun(task, project, settings.get(), kind)
+  const failoverNotes: string[] = []
+  // Ngắt mạch: agent đang hết hạn mức → đi thẳng sang agent dự phòng (nếu project bật failover và có agent phù hợp).
+  const limitedUntil = agentLimitedUntil(agentId)
+  if (limitedUntil !== undefined) {
+    const fb = chooseFallback({ current: agentId, task, project })
+    if (fb) {
+      failoverNotes.push(`${AGENT_NAMES[agentId]} đang hết hạn mức đến ${hhmm(limitedUntil)}: chạy bằng ${AGENT_NAMES[fb]} (agent dự phòng).`)
+      agentId = fb
+    }
+  }
+  const problem = agentProblem(agentId, task.permissionMode)
+  const adapter = getAdapter(agentId)
+  if (problem || !adapter) {
+    updateTask(task.id, { status: 'failed', failReason: problem ?? `Task Board chưa hỗ trợ agent "${agentId}".` })
+    return
+  }
+  const bin = adapter.findBin()
   if (!bin) {
-    updateTask(task.id, { status: 'failed', failReason: 'Không tìm thấy Claude Code CLI. Cả chế độ đăng nhập lẫn API key đều chạy task bằng CLI: cài extension Claude Code (có sẵn CLI), hoặc chỉ định đường dẫn (cài đặt agentTaskBoard.claudePath của extension, hoặc biến môi trường CLAUDE_BIN).' })
+    updateTask(task.id, { status: 'failed', failReason: adapter.missingBinReason })
     return
   }
 
@@ -219,18 +234,33 @@ export function startRun(task: Task, kind: RunKind, feedback?: string) {
   const cfg = settings.get()
   // P5-03 (D2/D3): chọn model lúc run bắt đầu; resume/continue giữ model của run trước.
   // P5-07 (D5): khi 'auto', Lớp 2 hiệu chỉnh gợi ý theo lịch sử project (tối đa một bậc).
-  const base = chooseRunModel(kind, prevRun, task, project, cfg, (s) => adjustByHistory(s, task))
+  // Bộ chọn / nâng bậc model (Haiku → Sonnet → Opus) chỉ dành cho Claude. Agent khác: model mặc định của agent
+  // (adapter chọn từ danh sách model của tài khoản); resume/continue giữ model của run trước.
+  const isClaude = adapter.id === 'claude'
+  const base = isClaude
+    ? chooseRunModel(kind, prevRun, task, project, cfg, (s) => adjustByHistory(s, task))
+    : {
+        requestedModel: (kind === 'resume' || kind === 'continue') && prevRun?.agent === agentId ? prevRun.requestedModel || undefined : undefined,
+        modelSource: 'default' as const,
+        modelReason: `Model mặc định của ${adapter.name}`,
+        suggestion: undefined,
+      }
   // P5-06 (D6): Retry sau run lỗi / Request changes lần 2+ → lên một bậc.
-  const plan = applyEscalation(base, {
-    kind,
-    prevRun,
-    requestChangesCount: kind === 'resume' ? runs.requestChangesCount(task.id) : 0,
-    autoEscalate: cfg.autoEscalate,
-    maxTier: maxTierForProject(project.id),
-  })
+  const plan = isClaude
+    ? applyEscalation(base, {
+        kind,
+        prevRun,
+        requestChangesCount: kind === 'resume' ? runs.requestChangesCount(task.id) : 0,
+        autoEscalate: cfg.autoEscalate,
+        maxTier: maxTierForProject(project.id),
+      })
+    : { choice: base, escalated: false, freshSession: false, notes: [] as string[] }
   const choice = plan.choice
   // Ngữ cảnh lớn: phiên mới (không --resume) kèm tóm tắt, vì đổi model thì cache phiên cũ không dùng được.
-  const { resume, sessionId } = plan.freshSession ? sessionFor('retry', undefined) : sessionFor(kind, task.sessionId)
+  // FR-97: run trước chạy bằng agent khác → không resume chéo, mở phiên mới (prompt gốc + feedback / lời nhắc tiếp tục).
+  const switchedAgent = !!prevRun && (prevRun.agent ?? 'claude') !== agentId
+  if (switchedAgent) plan.notes.push(`Lần chạy trước dùng ${prevRun!.agent ?? 'claude'}, lần này dùng ${agentId}: mở phiên mới, không chạy tiếp phiên cũ.`)
+  const { resume, sessionId } = plan.freshSession || switchedAgent ? sessionFor('retry', undefined) : sessionFor(kind, task.sessionId)
   const prompt = plan.freshSession
     ? escalationPrompt({
         taskPrompt: task.prompt,
@@ -248,6 +278,7 @@ export function startRun(task: Task, kind: RunKind, feedback?: string) {
     feedback,
     sessionId,
     startedAt: Date.now(),
+    agent: agentId,
     requestedModel: choice.requestedModel,
     modelSource: choice.modelSource,
     modelReason: choice.modelReason,
@@ -255,12 +286,14 @@ export function startRun(task: Task, kind: RunKind, feedback?: string) {
   broadcast({ type: 'run', run })
   // P5-04: ghi lý do tự chọn model vào log của run.
   if (!plan.escalated && base.suggestion) addEvent(run.id, { type: 'system', text: autoModelNote(base.suggestion) })
-  for (const text of plan.notes) addEvent(run.id, { type: 'system', text })
+  for (const text of [...failoverNotes, ...plan.notes]) addEvent(run.id, { type: 'system', text })
   // Chuyển Running ngay (đồng bộ) để pump() tính đúng slot trong lúc đang tạo worktree.
   updateTask(task.id, {
     status: 'running',
     startedAt: run.startedAt,
     sessionId,
+    // FR-99: đang chạy bằng agent khác agent cấu hình = agent dự phòng; chạy đúng agent cấu hình thì bỏ.
+    activeAgent: agentId !== configured ? agentId : null,
     failReason: null,
     reviewWarning: null,
     pendingFeedback: null, // feedback (nếu có) đã nằm trên run vừa tạo
@@ -276,7 +309,7 @@ export function startRun(task: Task, kind: RunKind, feedback?: string) {
       if (preparing.get(task.id) !== run.id) return // đã bị dừng trong lúc tạo worktree
       preparing.delete(task.id)
       if (wt.created) updateTask(task.id, { branch: wt.branch, worktreePath: wt.path, baseRef: wt.baseRef ?? null })
-      spawnClaude({
+      spawnAgent(adapter, {
         task,
         project,
         bin: bin.path,
@@ -293,7 +326,7 @@ export function startRun(task: Task, kind: RunKind, feedback?: string) {
     (err) => {
       if (preparing.get(task.id) !== run.id) return
       preparing.delete(task.id)
-      finish(task.id, run.id, { exitCode: -1, error: `Không chuẩn bị được thư mục làm việc cho task: ${(err as Error).message}` })
+      finish(adapter, task.id, run.id, { exitCode: -1, error: `Không chuẩn bị được thư mục làm việc cho task: ${(err as Error).message}` })
     },
   )
 }
@@ -309,108 +342,52 @@ export function resumePrompt(o: { kind: RunKind; resume: boolean; feedback?: str
   return o.feedback ? `${o.taskPrompt}\n\nYêu cầu sửa sau khi review:\n${o.feedback}` : o.taskPrompt
 }
 
-function spawnClaude(o: {
-  task: Task
-  project: Project
-  bin: string
-  runId: string
-  kind: RunKind
-  feedback?: string
-  sessionId: string
-  resume: boolean
-  cwd: string
-  model?: string
-  /** P5-06: prompt dựng sẵn (phiên mới khi nâng model), thay cho resumePrompt. */
-  prompt?: string
-}) {
-  const { task, project, kind, feedback, sessionId, resume, cwd } = o
+function spawnAgent(
+  adapter: AgentAdapter,
+  o: {
+    task: Task
+    project: Project
+    bin: string
+    runId: string
+    kind: RunKind
+    feedback?: string
+    sessionId: string
+    resume: boolean
+    cwd: string
+    model?: string
+    /** P5-06: prompt dựng sẵn (phiên mới khi nâng model), thay cho resumePrompt. */
+    prompt?: string
+  },
+) {
+  const { task, kind, feedback, resume, cwd } = o
   const run = { id: o.runId }
 
-  // Xác thực: chế độ API key mà chưa có key thì dừng, không lặng lẽ chạy bằng gói đăng nhập.
-  const auth = settings.get().auth
-  const creds = resolveCredentials(auth.mode, auth.mode === 'apiKey' ? claudeApiKey.effective() : undefined)
-  if (!creds.ok) {
-    finish(task.id, run.id, { exitCode: -1, error: creds.reason })
-    return
-  }
-  // Chế độ API key: trần chi phí của run gồm cả phần budget tháng còn lại của project (giới hạn cứng).
-  const maxBudgetUsd = runBudgetCap(project.id, task.maxCostUsd)
-  if (maxBudgetUsd === 0) {
-    finish(task.id, run.id, { exitCode: -1, error: 'Project đã dùng hết budget tháng (chế độ API key: budget là giới hạn cứng).' })
-    return
-  }
-
-  // P3 (PLAN 3.2): file MCP config tạm cho permission prompt tool; tắt bằng TASKBOARD_PERMISSION_TOOL=off.
-  let mcpConfig: string | undefined
-  if (permissionToolEnabled()) {
-    try {
-      mcpConfig = writeMcpConfig(RUN_LOG_DIR, run.id, {
-        taskId: task.id,
-        port: PORT,
-        token: INTERNAL_TOKEN,
-        // Dài hơn hạn của backend (permissionTimeoutMin) để backend luôn là nơi quyết định timeout;
-        // tối thiểu 24 giờ để việc tăng permissionTimeoutMin giữa chừng không bị MCP cắt sớm.
-        timeoutMs: Math.max(settings.get().permissionTimeoutMin * 60_000 + 5 * 60_000, 24 * 60 * 60_000),
-      })
-    } catch (err) {
-      finish(task.id, run.id, { exitCode: -1, error: `Không ghi được cấu hình MCP xin quyền: ${(err as Error).message}` })
-      return
-    }
-  }
-  // P3 (PLAN 3.6): file settings tạm khai báo hook Notification gọi về /api/hooks/notification.
-  let hookSettings: string | undefined
-  try {
-    hookSettings = writeHookSettings(RUN_LOG_DIR, run.id, {
-      taskId: task.id,
-      port: PORT,
-      token: INTERNAL_TOKEN,
-      nodePath: nodeCommand(DATA_DIR),
-      // Chế độ API key: CLI lấy key qua apiKeyHelper, key không nằm trong môi trường mà lệnh Bash thừa hưởng
-      apiKeyToken: creds.apiKey ? issueKeyToken(task.id) : undefined,
-    })
-  } catch (err) {
-    removeTempFiles({ mcpConfig })
-    finish(task.id, run.id, { exitCode: -1, error: `Không ghi được cấu hình hook: ${(err as Error).message}` })
-    return
-  }
-  const tempFiles = { mcpConfig, hookSettings }
-  const args = buildClaudeArgs({
-    sessionId,
-    resume,
-    permissionMode: task.permissionMode,
-    allowedTools: project.allowedTools,
-    mcpConfigPath: mcpConfig,
-    settingsPath: hookSettings,
-    model: o.model,
-    fallbackModel: fallbackModelFor(o.model),
-    maxBudgetUsd,
-    appendSystemPrompt: BLOCKED_BY_INSTRUCTION,
-  })
-
   const prompt = o.prompt ?? resumePrompt({ kind, resume, feedback, taskPrompt: task.prompt })
+  // Adapter dựng tham số, môi trường, file cấu hình tạm (xác thực, budget, MCP xin quyền, hooks…).
+  const prepared = adapter.prepare({ ...o, prompt, runLogDir: RUN_LOG_DIR })
+  if (!prepared.ok) {
+    finish(adapter, task.id, run.id, { exitCode: -1, error: prepared.error })
+    return
+  }
   let child: ChildProcess
   try {
-    child = spawn(o.bin, args, { cwd, env: claudeEnv({ TASKBOARD_TASK_ID: String(task.id) }), windowsHide: true })
+    child = spawn(o.bin, prepared.args, { cwd, env: prepared.env, windowsHide: true })
   } catch (err) {
-    removeTempFiles(tempFiles)
-    finish(task.id, run.id, { exitCode: -1, error: `Không chạy được Claude CLI: ${(err as Error).message}` })
+    prepared.cleanup()
+    finish(adapter, task.id, run.id, { exitCode: -1, error: `Không chạy được ${agentName(adapter)} CLI: ${(err as Error).message}` })
     return
   }
   const proc: Proc = { child, runId: run.id, stopping: false }
   procs.set(task.id, proc)
 
-  // Prompt qua stdin để tránh lỗi quote trên Windows (P0-SPIKE S4)
-  child.stdin?.end(prompt)
-
   const raw = createWriteStream(join(RUN_LOG_DIR, `${run.id}.jsonl`))
-  const parser = new StreamParser(cwd)
   let result: ResultInfo | undefined
   let rateLimitEvent: RateLimitEvent | undefined
   let stderr = ''
+  /** Driver báo lượt chạy đã xong: mã thoát dùng thay mã thật (tiến trình bị dừng chủ động). */
+  let driverExit: number | undefined
 
-  readline.createInterface({ input: child.stdout! }).on('line', (line) => {
-    raw.write(line + '\n')
-    const parsed = parser.parseLine(line)
+  const handle = (parsed: Parsed) => {
     for (const e of parsed.events) addEvent(run.id, e)
     if (parsed.result) result = parsed.result
     if (parsed.rateLimit) rateLimitEvent = parsed.rateLimit
@@ -419,6 +396,50 @@ function spawnClaude(o: {
       const updated = runs.setModel(run.id, parsed.model)
       if (updated) broadcast({ type: 'run', run: updated })
     }
+    // Agent tự sinh id phiên (Codex thread id): lưu để lần sau resume đúng phiên.
+    if (adapter.createDriver && parsed.sessionId && parsed.sessionId !== o.sessionId) {
+      const updated = runs.setSessionId(run.id, parsed.sessionId)
+      if (updated) broadcast({ type: 'run', run: updated })
+      if (procs.get(task.id) === proc) updateTask(task.id, { sessionId: parsed.sessionId })
+    }
+  }
+
+  let onLine: (line: string) => void
+  if (adapter.createDriver) {
+    // Giao tiếp hai chiều: driver tự ghi stdin; xong lượt thì đóng stdin và dừng tiến trình.
+    const driver = adapter.createDriver({
+      input: { ...o, prompt, runLogDir: RUN_LOG_DIR },
+      send: (msg) => {
+        const line = JSON.stringify(msg)
+        raw.write(`${line}\n`)
+        if (child.stdin?.writable) child.stdin.write(`${line}\n`)
+      },
+      emit: handle,
+      requestPermission: (r) => awaitPermission({ ...r, taskId: task.id }, { mode: task.permissionMode, cwd }),
+      askUser: (questions) => awaitQuestion(task.id, questions),
+      done: ({ exitCode }) => {
+        if (driverExit !== undefined) return
+        driverExit = exitCode
+        child.stdin?.end()
+        // Cho tiến trình tự thoát sau khi đóng stdin; còn treo thì dừng hẳn.
+        const t = setTimeout(() => {
+          if (child.exitCode === null && child.pid) void killTree(child.pid)
+        }, 3000)
+        t.unref?.()
+      },
+    })
+    onLine = (line) => driver.onLine(line)
+    driver.start()
+  } else {
+    if (prepared.stdin !== undefined) child.stdin?.end(prepared.stdin)
+    else child.stdin?.end()
+    const parser = adapter.createParser(cwd)
+    onLine = (line) => handle(parser.parseLine(line))
+  }
+
+  readline.createInterface({ input: child.stdout! }).on('line', (line) => {
+    raw.write(line + '\n')
+    onLine(line)
   })
   child.stderr?.on('data', (d) => {
     stderr = (stderr + d).slice(-4000)
@@ -429,15 +450,16 @@ function spawnClaude(o: {
   child.on('close', (code) => {
     raw.end()
     // Dọn file tạm cả khi run bị dừng (close vẫn phát sau khi taskkill).
-    removeTempFiles(tempFiles)
+    prepared.cleanup()
     // stopTask có thể đã xoá entry, và task có thể đã sang run mới: chỉ xoá nếu vẫn là run này.
     if (procs.get(task.id) === proc) procs.delete(task.id)
     if (proc.stopping) return // stopTask đã xử lý
-    finish(task.id, run.id, { exitCode: code ?? -1, result, stderr, rateLimitEvent, resumed: resume })
+    finish(adapter, task.id, run.id, { exitCode: driverExit ?? code ?? -1, result, stderr, rateLimitEvent, resumed: resume })
   })
 }
 
 function finish(
+  adapter: AgentAdapter,
   taskId: number,
   runId: string,
   o: { exitCode: number; result?: ResultInfo; stderr?: string; error?: string; rateLimitEvent?: RateLimitEvent; resumed?: boolean },
@@ -459,8 +481,8 @@ function finish(
 
   const ok = exitCode === 0 && result && !result.isError
   if (ok) {
-    // Claude đã chạy được: gói có lượt lại, bỏ banner hết lượt.
-    clearClaudeLimit()
+    // Agent đã chạy được: gói có lượt lại, bỏ banner hết lượt.
+    adapter.onSuccess()
     // Chạy được trọn vẹn: bộ đếm tự thử lại do giới hạn sử dụng về 0 (broadcast cùng lần đổi trạng thái sau).
     if (tasks.get(taskId)?.rateLimitRetries) tasks.patch(taskId, { rateLimitRetries: 0 })
     // FR-08 nguồn ④ (R6): Claude báo bị chặn bởi task khác → thêm phụ thuộc, đưa về hàng đợi thay vì Review.
@@ -476,38 +498,43 @@ function finish(
   }
   // Resume/Tiếp tục nhưng CLI không còn phiên cũ (ví dụ run trước gặp giới hạn sử dụng trước khi phiên kịp lưu):
   // chạy lại cùng loại run trên phiên mới kèm prompt gốc. Run mới không resume nên không lặp vô hạn.
-  if (!error && resumed && isMissingSession({ result, stderr })) {
+  const outcome = { result, stderr, rateLimitEvent }
+  const name = agentName(adapter)
+  if (!error && resumed && adapter.isMissingSession(outcome)) {
     const task = tasks.get(taskId)
     const prev = runs.get(runId)
     if (task?.status === 'running' && prev) {
       setFailKind(runId, 'infra') // không phải lỗi của model: run kế tiếp không tự nâng (D6)
-      addEvent(runId, { type: 'system', text: 'Không tìm thấy phiên Claude cũ để chạy tiếp. Chạy tiếp trên phiên mới kèm yêu cầu gốc.' })
+      addEvent(runId, { type: 'system', text: `Không tìm thấy phiên ${name} cũ để chạy tiếp. Chạy tiếp trên phiên mới kèm yêu cầu gốc.` })
       startRun({ ...task, sessionId: undefined }, prev.kind, prev.feedback)
       return
     }
   }
   // Rủi ro chung (PLAN): lỗi giới hạn sử dụng → tự đưa lại hàng đợi, chạy tiếp sau giờ reset (tối đa N lần).
-  const limitHit = error ? undefined : detectRateLimit({ result, stderr, rateLimitEvent })
-  if (limitHit) {
-    // Banner "gói Claude hết lượt" trên mọi trang của web
-    const text = (result?.isError ? result.text : undefined) ?? stderr
-    setClaudeLimit(buildClaudeLimit({ hit: limitHit, event: rateLimitEvent, text }))
-  }
-  if (limitHit && handleRateLimit(taskId, runId, limitHit, !result)) {
+  const limitHit = error ? undefined : adapter.detectRateLimit(outcome)
+  // Banner "gói hết lượt" trên mọi trang của web
+  if (limitHit) adapter.onRateLimit(limitHit, outcome)
+  // FR-99: project bật failover và có agent dự phòng phù hợp → chuyển agent, chạy tiếp ngay thay vì chờ giờ reset.
+  if (limitHit && failover(adapter, taskId, runId, limitHit, !result)) {
     setFailKind(runId, 'rate_limit')
     pump()
     return
   }
-  // P5-06: lỗi trước khi Claude chạy (worktree, MCP config, hook, spawn) là lỗi hạ tầng; còn lại là Claude làm hỏng.
+  if (limitHit && handleRateLimit(taskId, runId, limitHit, !result, name)) {
+    setFailKind(runId, 'rate_limit')
+    pump()
+    return
+  }
+  // P5-06: lỗi trước khi agent chạy (worktree, MCP config, hook, spawn) là lỗi hạ tầng; còn lại là agent làm hỏng.
   setFailKind(runId, failKindOf({ error }))
   let reason = error ?? ''
-  if (!reason && result?.isError) reason = `Claude kết thúc với lỗi: ${result.text}`
+  if (!reason && result?.isError) reason = `${name} kết thúc với lỗi: ${result.text}`
   if (!reason) {
     const tail = (stderr ?? '').trim().split('\n').slice(-3).join(' ').trim()
-    reason = `Claude CLI thoát với mã ${exitCode}${tail ? `: ${tail}` : ''}`
+    reason = `${name} CLI thoát với mã ${exitCode}${tail ? `: ${tail}` : ''}`
   }
-  // Chế độ API key: thêm gợi ý cho lỗi key sai / hết credit.
-  const hint = !error && settings.get().auth.mode === 'apiKey' ? authFailureHint(`${result?.text ?? ''} ${stderr ?? ''}`) : undefined
+  // Ví dụ chế độ API key: thêm gợi ý cho lỗi key sai / hết credit.
+  const hint = error ? undefined : adapter.failureHint(outcome)
   if (hint) reason = `${hint} (${reason})`
   if (!result) addEvent(runId, { type: 'result', isError: true, text: reason })
   updateTask(taskId, { status: 'failed', failReason: reason.slice(0, 1000) })
@@ -522,11 +549,8 @@ function setFailKind(runId: string, kind: RunFailKind) {
   if (r) broadcast({ type: 'run', run: r })
 }
 
-/** CLI báo không tìm thấy phiên khi chạy `--resume <sessionId>` (file phiên đã mất hoặc chưa từng được lưu). */
-export function isMissingSession(o: { result?: Pick<ResultInfo, 'text' | 'isError'>; stderr?: string }) {
-  const re = /no conversation found/i
-  return re.test(o.stderr ?? '') || (!!o.result?.isError && re.test(o.result.text ?? ''))
-}
+/** Tên agent trong thông báo cho người dùng ("Claude", "Codex"...). */
+const agentName = (a: Pick<AgentAdapter, 'name'>) => a.name
 
 /**
  * Trạng thái task khi tự đưa lại hàng đợi do giới hạn sử dụng: run 'resume' (Yêu cầu sửa) giữ feedback để resume
@@ -543,7 +567,7 @@ const hhmm = (ts: number) => new Date(ts).toLocaleTimeString('vi-VN', { hour: '2
  * Xử lý run thất bại do giới hạn sử dụng. Trả về true nếu đã xử lý (task về Queued hoặc Failed).
  * Run 'resume' (Yêu cầu sửa) được giữ nguyên ý định: feedback quay lại pendingFeedback để lần sau resume tiếp phiên.
  */
-function handleRateLimit(taskId: number, runId: string, hit: ReturnType<typeof detectRateLimit>, noResult: boolean) {
+function handleRateLimit(taskId: number, runId: string, hit: RateLimitHit | undefined, noResult: boolean, name: string) {
   const task = tasks.get(taskId)
   if (!hit || !task) return false
   const decision = decideRateLimit(hit, task.rateLimitRetries ?? 0)
@@ -554,7 +578,7 @@ function handleRateLimit(taskId: number, runId: string, hit: ReturnType<typeof d
   }
   const run = runs.get(runId)
   const text =
-    `Gặp giới hạn sử dụng của gói Claude. Task tự quay lại hàng đợi, chạy tiếp lúc ${hhmm(decision.notBefore)}` +
+    `Gặp giới hạn sử dụng của gói ${name}. Task tự quay lại hàng đợi, chạy tiếp lúc ${hhmm(decision.notBefore)}` +
     ` (lần ${decision.attempt}/${MAX_RATE_LIMIT_RETRIES}). Bấm "Tiếp tục ngay" để không chờ.`
   if (noResult) addEvent(runId, { type: 'result', isError: true, text })
   else addEvent(runId, { type: 'system', text })
@@ -564,6 +588,30 @@ function handleRateLimit(taskId: number, runId: string, hit: ReturnType<typeof d
     rateLimitRetries: decision.attempt,
     failReason: null,
     ...requeueIntent(run),
+  })
+  return true
+}
+
+/**
+ * FR-99 (SPEC-MULTI-AGENT 3.6a): agent hết hạn mức → chuyển sang agent dự phòng. Trả về true nếu đã chuyển
+ * (task về Queued, chạy ngay khi có slot). Lần sau là phiên mới của agent dự phòng (không resume chéo), chạy tiếp trên
+ * thay đổi dở trong cùng thư mục; Request changes giữ feedback. Không có agent phù hợp → false (chờ giờ reset như cũ).
+ */
+function failover(adapter: AgentAdapter, taskId: number, runId: string, hit: RateLimitHit, noResult: boolean): boolean {
+  const task = tasks.get(taskId)
+  const project = task && projects.get(task.projectId)
+  if (!task || !project || task.status !== 'running') return false
+  const fb = chooseFallback({ current: adapter.id, task, project })
+  if (!fb) return false
+  const when = hit.resetAt ? ` đến ${hhmm(hit.resetAt)}` : ''
+  const text = `Chuyển từ ${adapter.name} sang ${AGENT_NAMES[fb]}: ${adapter.name} hết hạn mức${when}. Task chạy tiếp bằng ${AGENT_NAMES[fb]} trên thay đổi đang dở.`
+  addEvent(runId, noResult ? { type: 'result', isError: true, text } : { type: 'system', text })
+  updateTask(taskId, {
+    status: 'queued',
+    activeAgent: fb,
+    notBefore: null,
+    failReason: null,
+    ...requeueIntent(runs.get(runId)),
   })
   return true
 }

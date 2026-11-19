@@ -56,6 +56,8 @@ import { commentLocation, sortComments } from '../lib/reviewComments'
 import { useReviewDraft } from '../lib/reviewDraft'
 import { STOP_REASON, canResume, isWaitingRateLimit } from '../lib/resume'
 import { permissionModeOf } from '../lib/permissionMode'
+import { AgentBadge } from './AgentSelect'
+import { AGENT_NAMES, effectiveAgent, resolveAgent, runAgent } from '../lib/agent'
 import { canDeleteTask } from '../lib/taskDelete'
 import type { ReviewComment, Run, Task } from '../types'
 import { LOCALE, tr } from '../lib/i18n'
@@ -295,6 +297,12 @@ export function TaskView({
           <div className="mb-1 flex flex-wrap items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
             <span className="font-mono">#{task.id}</span>
             <StatusBadge status={task.status} />
+            {/* FR-95: agent của lần chạy gần nhất; chưa chạy thì agent sẽ dùng (Claude mặc định thì ẩn cho gọn) */}
+            <AgentBadge
+              agent={task.activeAgent ?? (latestRun ? runAgent(latestRun) : resolveAgent(task, project, s.settings))}
+              quiet
+              switched={!!task.activeAgent}
+            />
             <span>{project?.name}</span>
             <span className={PRIORITY_META[task.priority].cls}>· {PRIORITY_META[task.priority].label}</span>
             {task.branch && (
@@ -655,9 +663,14 @@ export function TaskView({
                     <span className="font-medium">
                       {tr('Lần {n}: {kind}', { n: i + 1, kind: RUN_KIND[r.kind] })}
                     </span>
+                    <AgentBadge agent={runAgent(r)} />
                     <span className="text-xs text-slate-500">{new Date(r.startedAt).toLocaleString(LOCALE)}</span>
                     <span className="ml-auto text-xs text-slate-500">
                       {r.endedAt ? duration(r.endedAt - r.startedAt) : tr('đang chạy')} · {usd(r.costUsd)}
+                      {/* FR-95: agent không báo chi phí USD (Codex, Antigravity) → hiện token ngữ cảnh */}
+                      {r.costUsd === undefined && r.contextTokens
+                        ? ` · ${tr('{n} token ngữ cảnh', { n: r.contextTokens.toLocaleString(LOCALE) })}`
+                        : ''}
                     </span>
                   </div>
                   {r.feedback && (
@@ -712,6 +725,14 @@ export function TaskView({
           <div className="grid gap-2 text-sm sm:grid-cols-2">
             <p>
               <span className="text-slate-500">{tr('Mức quyền:')}</span> <span>{permissionModeOf(task.permissionMode).label}</span>
+            </p>
+            <p>
+              <span className="text-slate-500">Agent:</span> <AgentBadge agent={effectiveAgent(task, project, s.settings)} switched={!!task.activeAgent} />
+              {task.activeAgent && (
+                <span className="ml-1 text-xs text-slate-500">
+                  {tr('(agent theo cấu hình: {agent})', { agent: AGENT_NAMES[resolveAgent(task, project, s.settings)] })}
+                </span>
+              )}
             </p>
             <p>
               <span className="text-slate-500">Repo:</span> <span className="font-mono text-xs">{project?.repoPath}</span>

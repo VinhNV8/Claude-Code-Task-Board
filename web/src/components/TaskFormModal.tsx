@@ -4,7 +4,9 @@ import { Link2, Play, Plus, Save, X } from 'lucide-react'
 import { createTask, fetchDepSuggestions, updateTask, useStore, type DepSuggestion } from '../store/store'
 import { collectTags, normalizeTags } from '../lib/taskFilter'
 import { MODEL_OPTIONS, inheritedModelHint, modelLabel } from '../lib/model'
-import type { PermissionMode, Priority, PromptTemplate, Task } from '../types'
+import type { AgentId, PermissionMode, Priority, PromptTemplate, Task } from '../types'
+import { AgentSelect, agentHint, useAgents } from './AgentSelect'
+import { resolveAgent } from '../lib/agent'
 import { PERMISSION_MODES, permissionModeOf } from '../lib/permissionMode'
 import { TagInput } from './TagInput'
 import { Button, Field, Modal, inputCls } from './ui'
@@ -31,6 +33,9 @@ export function TaskFormModal({
   const [mode, setMode] = useState<PermissionMode>('acceptEdits')
   const [tags, setTags] = useState<string[]>([])
   const [model, setModel] = useState('')
+  /** '' = kế thừa project → Settings (SPEC-MULTI-AGENT FR-91) */
+  const [agent, setAgent] = useState<AgentId | ''>('')
+  const agents = useAgents()
   /** FR-08: các task phải Done trước task này */
   const [deps, setDeps] = useState<number[]>([])
   const [depHints, setDepHints] = useState<DepSuggestion[]>([])
@@ -48,6 +53,7 @@ export function TaskFormModal({
       setMode(editing.permissionMode)
       setTags(editing.tags)
       setModel(editing.model ?? '')
+      setAgent(editing.agent ?? '')
       setDeps(editing.dependsOn ?? [])
     } else {
       setTitle('')
@@ -58,6 +64,7 @@ export function TaskFormModal({
       setMode(projects.find((p) => p.id === pid)?.permissionMode ?? 'acceptEdits')
       setTags([])
       setModel('')
+      setAgent('')
       setDeps([])
     }
   }, [open, editing, defaultProjectId, projects])
@@ -84,6 +91,7 @@ export function TaskFormModal({
   const taskById = (id: number) => tasks.find((t) => t.id === id)
 
   // Gợi ý: tag của task đã có + tag trong template, dùng nhiều lên trước
+  const inheritedAgent = resolveAgent(undefined, projects.find((p) => p.id === projectId), settings)
   const tagSuggestions = useMemo(() => collectTags([...tasks.map((t) => t.tags), ...templates.map((t) => t.tags)]), [tasks, templates])
 
   const errors = {
@@ -110,11 +118,11 @@ export function TaskFormModal({
     setSaving(true)
     try {
       if (editing) {
-        await updateTask(editing.id, { title, prompt, projectId, priority, permissionMode: mode, tags: tagList, model, dependsOn: deps })
+        await updateTask(editing.id, { title, prompt, projectId, priority, permissionMode: mode, tags: tagList, model, agent, dependsOn: deps })
         onClose()
         return
       }
-      const id = await createTask({ title, prompt, projectId, priority, permissionMode: mode, tags: tagList, model, dependsOn: deps, run })
+      const id = await createTask({ title, prompt, projectId, priority, permissionMode: mode, tags: tagList, model, agent, dependsOn: deps, run })
       onClose()
       if (run) navigate(`/tasks/${id}`)
     } catch {
@@ -239,6 +247,9 @@ export function TaskFormModal({
               {/* ID đầy đủ đặt qua API: vẫn hiện để không mất khi sửa task */}
               {model && !MODEL_OPTIONS.some((o) => o.value === model) && <option value={model}>{model}</option>}
             </select>
+          </Field>
+          <Field label="Agent" hint={agentHint(agents, agent || inheritedAgent, mode)}>
+            <AgentSelect value={agent} onChange={setAgent} inherit={inheritedAgent} mode={mode} />
           </Field>
           <div className="sm:col-span-2 lg:col-span-3">
             <Field label={tr('Chờ task')} hint={tr('Task chỉ chạy khi các task này Done (đã chấp nhận output). Để trống nếu task chạy độc lập.')}>

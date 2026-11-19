@@ -109,6 +109,8 @@ function setup(over: Partial<Settings['telegram']> = {}, tokenArg: string | null
     notifyOn: { ...ALL_ON },
     permissionTimeoutMin: 30,
     defaultModel: '',
+    defaultAgent: 'claude',
+    failover: { enabled: false, chain: ['claude', 'codex'] },
     autoEscalate: true,
     telegram: { enabled: true, chatId: '42', appUrl: 'http://h', hasToken: !!token, ...over },
     auth: { mode: 'subscription', hasApiKey: false, envApiKey: false },

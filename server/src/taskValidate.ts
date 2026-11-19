@@ -4,7 +4,8 @@ import { HttpError } from './httpError.ts'
 import { TagError, validateTags } from './tags.ts'
 import { normalizeModel } from './model.ts'
 import { BudgetError, parseUsd } from './budget.ts'
-import type { PermissionMode, Priority } from './types.ts'
+import { parseAgent } from '../../web/src/lib/agent.ts'
+import type { AgentId, PermissionMode, Priority } from './types.ts'
 
 export const PRIORITIES: Priority[] = ['urgent', 'high', 'normal', 'low']
 // Không cho phép bypassPermissions (SPEC Mục 9)
@@ -19,6 +20,8 @@ export interface TaskBody {
   tags?: string[]
   /** '' hoặc null: kế thừa project → Settings (P5, D2). */
   model?: string | null
+  /** '' hoặc null: kế thừa project → Settings (SPEC-MULTI-AGENT FR-91). */
+  agent?: AgentId | '' | null
   /** Giới hạn chi phí mỗi lần chạy (USD, `--max-budget-usd`). null/'': không giới hạn. */
   maxCostUsd?: number | string | null
   /** Các task phải Done trước (FR-08). Không gửi: giữ nguyên; [] hoặc null: bỏ hết. */
@@ -57,6 +60,11 @@ export function validateTask(b: TaskBody, partial = false) {
     }
   }
   if (b.model !== undefined) out.model = normalizeModel(b.model)
+  if (b.agent !== undefined) {
+    const a = parseAgent(b.agent)
+    if (a === null) throw new HttpError(400, 'Agent không hợp lệ')
+    out.agent = a ?? null // null = kế thừa
+  }
   if (b.maxCostUsd !== undefined) {
     try {
       const n = parseUsd(b.maxCostUsd, 'Giới hạn chi phí mỗi lần chạy')

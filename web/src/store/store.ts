@@ -2,6 +2,8 @@
 // Giữ nguyên API với store giả lập (mock.ts) để giao diện không phải thay đổi.
 import { useSyncExternalStore } from 'react'
 import type {
+  AgentId,
+  AgentInfo,
   Answers,
   DemoFlags,
   FileDiff,
@@ -57,6 +59,8 @@ export interface State {
   budgets: Record<string, ProjectBudget>
   /** Gói Claude hết lượt (5 giờ / tuần): banner trên mọi trang. null = còn lượt */
   claudeLimit: ClaudeLimit | null
+  /** Trạng thái các agent chạy task (SPEC-MULTI-AGENT FR-92) */
+  agents: AgentInfo[]
   toasts: Toast[]
   settings: Settings
   demo: DemoFlags
@@ -84,6 +88,7 @@ let state: State = {
   testOutputs: {},
   budgets: {},
   claudeLimit: null,
+  agents: [],
   toasts: [],
   settings: {
     maxParallel: 2,
@@ -91,6 +96,8 @@ let state: State = {
     notifyOn: { review: true, needsInput: true, failed: true },
     permissionTimeoutMin: 30,
     defaultModel: 'auto',
+    defaultAgent: 'claude',
+    failover: { enabled: false, chain: ['claude', 'codex'] },
     autoEscalate: true,
     telegram: { enabled: false, chatId: '', appUrl: '', hasToken: false },
     auth: { mode: 'subscription', hasApiKey: false, envApiKey: false },
@@ -201,11 +208,11 @@ async function act<T>(fn: () => Promise<T>, errorTitle = tr('Thao tác thất b�
 
 async function loadState() {
   const s = await api<
-    Pick<State, 'projects' | 'templates' | 'schedules' | 'tasks' | 'runs' | 'settings' | 'permissions' | 'reviews' | 'diffs' | 'testRuns' | 'budgets' | 'claudeLimit'>
+    Pick<State, 'projects' | 'templates' | 'schedules' | 'tasks' | 'runs' | 'settings' | 'permissions' | 'reviews' | 'diffs' | 'testRuns' | 'budgets' | 'claudeLimit' | 'agents'>
   >('GET', '/state')
   loadedRuns.clear()
   loadedTests.clear()
-  set(() => ({ ...s, schedules: s.schedules ?? [], testRuns: s.testRuns ?? [], budgets: s.budgets ?? {}, claudeLimit: s.claudeLimit ?? null, testOutputs: {}, events: [], loaded: true }))
+  set(() => ({ ...s, schedules: s.schedules ?? [], testRuns: s.testRuns ?? [], budgets: s.budgets ?? {}, claudeLimit: s.claudeLimit ?? null, agents: s.agents ?? [], testOutputs: {}, events: [], loaded: true }))
 }
 
 // ------------------------------------------------------------ output chạy test (FR-34, tải khi mở panel)
@@ -472,6 +479,8 @@ export interface NewTask {
   tags: string[]
   /** '' = kế thừa project → Settings (P5) */
   model?: string
+  /** '' = kế thừa project → Settings (SPEC-MULTI-AGENT FR-91) */
+  agent?: AgentId | ''
   /** Các task phải Done trước (FR-08) */
   dependsOn?: number[]
   run: boolean
@@ -492,7 +501,10 @@ export async function importTasks(req: ImportRequest): Promise<ImportResult & { 
   return r
 }
 
-export function updateTask(id: number, patch: Partial<Pick<Task, 'title' | 'prompt' | 'priority' | 'projectId' | 'tags' | 'permissionMode' | 'model' | 'dependsOn'>>) {
+export function updateTask(
+  id: number,
+  patch: Partial<Pick<Task, 'title' | 'prompt' | 'priority' | 'projectId' | 'tags' | 'permissionMode' | 'model' | 'dependsOn'>> & { agent?: AgentId | '' },
+) {
   return act(() => api('PATCH', `/tasks/${id}`, patch), tr('Không lưu được task'))
 }
 
@@ -762,6 +774,12 @@ export function fetchStats(days: StatsRange, projectId?: string): Promise<Stats>
   const q = new URLSearchParams({ days: String(days), tz: String(new Date().getTimezoneOffset()) })
   if (projectId) q.set('projectId', projectId)
   return api<Stats>('GET', `/stats?${q}`)
+}
+
+/** SPEC-MULTI-AGENT FR-92: dò lại CLI của các agent (người dùng vừa cài / đăng nhập). */
+export async function refreshAgents() {
+  const agents = await act(() => api<AgentInfo[]>('GET', '/agents?refresh=1'), tr('Không kiểm tra được các agent'))
+  if (agents) set(() => ({ agents }))
 }
 
 export function updateSettings(patch: Partial<Omit<Settings, 'telegram'>>) {

@@ -60,6 +60,8 @@ export const defaultSettings: Settings = {
   notifyOn: { review: true, needsInput: true, failed: true },
   permissionTimeoutMin: 30,
   defaultModel: 'auto',
+  defaultAgent: 'claude',
+  failover: { enabled: false, chain: ['claude', 'codex'] },
   autoEscalate: true,
   telegram: { enabled: false, chatId: '', appUrl: '', hasToken: false },
   auth: { mode: 'subscription', hasApiKey: false, envApiKey: false },

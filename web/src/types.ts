@@ -16,6 +16,43 @@ export type Priority = 'low' | 'normal' | 'high' | 'urgent'
 
 export type PermissionMode = 'manual' | 'acceptEdits' | 'auto' | 'plan'
 
+/** Agent chạy task (SPEC-MULTI-AGENT). Chọn theo 3 tầng Task → Project → Settings; mặc định `claude`. */
+export type AgentId = 'claude' | 'codex' | 'antigravity' | 'cursor'
+
+/** Failover của project: theo hệ thống, chuỗi riêng, hoặc tắt (SPEC-MULTI-AGENT QA6). */
+export type FailoverMode = 'inherit' | 'custom' | 'off'
+
+/** Tự chuyển agent khi agent đang dùng hết hạn mức (FR-99). */
+export interface FailoverSettings {
+  enabled: boolean
+  /** Thứ tự agent: agent đầu tiên còn dùng được (khác agent hiện tại) được chọn. */
+  chain: AgentId[]
+}
+
+/** Trạng thái một agent trên máy chạy server (GET /api/agents). */
+export interface AgentInfo {
+  id: AgentId
+  /** Tên ngắn: "Claude", "Codex"… */
+  name: string
+  /** Tên đầy đủ: "Claude Code", "OpenAI Codex"… */
+  label: string
+  /** Task Board đã có adapter cho agent này (chạy được task). */
+  supported: boolean
+  /** Tìm thấy CLI trên máy. */
+  installed: boolean
+  version?: string
+  /** Nơi tìm thấy CLI: biến môi trường, extension VS Code, PATH… */
+  source?: string
+  /** Mức quyền agent hỗ trợ (rỗng nếu chưa có adapter). */
+  permissionModes: PermissionMode[]
+  /** Agent báo chi phí USD (không có: chỉ có token). */
+  costUsd: boolean
+  /** CLI tự dừng khi vượt budget (chế độ API key): chỉ agent này chạy được ở project có budget cứng. */
+  hardBudget: boolean
+  /** Đang hết hạn mức gói đến mốc này (epoch ms); không có = còn lượt (FR-99 ngắt mạch). */
+  limitedUntil?: number
+}
+
 export interface Project {
   id: string
   name: string
@@ -28,6 +65,12 @@ export interface Project {
   testCommand?: string
   /** Model mặc định cho task của project (alias hoặc ID `claude-…`). Rỗng: kế thừa Settings (PLAN P5, D2). */
   defaultModel?: string
+  /** Agent mặc định cho task của project. Rỗng: kế thừa Settings (SPEC-MULTI-AGENT FR-91). */
+  defaultAgent?: AgentId
+  /** Tự chuyển agent khi gặp sự cố (FR-99): theo hệ thống (mặc định), chuỗi riêng, hoặc tắt. */
+  failoverMode?: FailoverMode
+  /** Chuỗi dự phòng riêng của project, dùng khi failoverMode = 'custom'. */
+  failoverChain?: AgentId[]
   /** Budget tháng (USD, giá niêm yết, ước tính). Không có: không giới hạn (PLAN P6, B1). */
   monthlyBudgetUsd?: number
   /** Khi vượt budget: chỉ cảnh báo, hoặc tạm dừng chạy task mới (B3). */
@@ -109,6 +152,13 @@ export interface Task {
   resumeNext?: boolean
   /** Model chọn riêng cho task (alias hoặc ID `claude-…`). Rỗng: kế thừa project → Settings (PLAN P5, D2). */
   model?: string
+  /** Agent chọn riêng cho task. Rỗng: kế thừa project → Settings (SPEC-MULTI-AGENT FR-91). */
+  agent?: AgentId
+  /**
+   * Agent dự phòng đang dùng sau khi tự chuyển (FR-99). Request changes / Tiếp tục giữ agent này;
+   * Retry và đổi agent bằng tay thì bỏ.
+   */
+  activeAgent?: AgentId
   /** Giới hạn chi phí mỗi lần chạy (USD, truyền `--max-budget-usd`). Không có: không giới hạn. */
   maxCostUsd?: number
   /** Lý do task Queued đang bị giữ lại (ví dụ project vượt budget, P6 B3). Chỉ tính lúc chạy, không lưu DB. */
@@ -132,6 +182,8 @@ export interface Run {
   numTurns?: number
   costUsd?: number
   summary?: string
+  /** Agent đã chạy lần này (SPEC-MULTI-AGENT FR-95). Run cũ trước khi có nhiều agent: không có = Claude. */
+  agent?: AgentId
   /** ID model thực tế lấy từ event `init` (P5, D1/D8). */
   model?: string
   /** Token và chi phí theo từng model, từ `modelUsage` của event `result`. */
@@ -391,6 +443,10 @@ export interface Settings {
   permissionTimeoutMin: number
   /** Model mặc định hệ thống (tầng cuối, D2). '' = không truyền `--model`, dùng mặc định của Claude CLI. */
   defaultModel: string
+  /** Agent mặc định hệ thống (tầng cuối, SPEC-MULTI-AGENT FR-91). Mặc định `claude`. */
+  defaultAgent: AgentId
+  /** Tự chuyển agent khi gặp sự cố (FR-99). Mặc định tắt. */
+  failover: FailoverSettings
   /** P5-06 (D6): tự nâng model một bậc khi task thất bại / bị yêu cầu sửa nhiều lần. Mặc định bật. */
   autoEscalate: boolean
   /** Thông báo Telegram (FR-51). Bot token không bao giờ trả ra API, chỉ có cờ hasToken. */

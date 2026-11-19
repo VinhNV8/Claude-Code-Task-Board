@@ -666,7 +666,8 @@ export const EN: Record<string, string> = {
   'Copy cả vùng ô (gồm dòng tiêu đề cột) rồi dán vào đây': 'Copy the cell range (including the header row) and paste it here',
   'Đọc dữ liệu đã dán': 'Read pasted data',
   'Các cột nhận được (dòng đầu là tên cột)': 'Recognized columns (first row is the header)',
-  'Tải file mẫu': 'Download template',
+  'Tải file mẫu (Excel)': 'Download template (Excel)',
+  'hoặc CSV': 'or CSV',
   'bắt buộc': 'required',
   'Chờ task: mã của dòng khác trong file hoặc #id task đã có, cách nhau bởi dấu phẩy.':
     'Waits for: the key of another row in the file or #id of an existing task, separated by commas.',
@@ -702,4 +703,45 @@ export const EN: Record<string, string> = {
   '{n} task sẽ tự chạy theo thứ tự dòng, tối đa số task song song của project. Mỗi lần chạy dùng hạn mức gói Claude của bạn.':
     '{n} tasks will run in row order, up to the project parallel limit. Each run uses your Claude plan quota.',
   'Tạo và đưa vào hàng đợi': 'Create and queue',
+
+  // Chọn agent (SPEC-MULTI-AGENT)
+  'Kế thừa: {agent}': 'Inherit: {agent}',
+  '{agent} (sắp có)': '{agent} (coming soon)',
+  '{agent} (không hỗ trợ mức quyền này)': '{agent} (does not support this permission level)',
+  '{agent} (chưa cài)': '{agent} (not installed)',
+  'Task Board chưa hỗ trợ chạy task bằng {agent}.': 'Task Board cannot run tasks with {agent} yet.',
+  '{agent} không hỗ trợ mức quyền đang chọn.': '{agent} does not support the selected permission level.',
+  'Chưa tìm thấy CLI của {agent} trên máy. Task chạy bằng agent này sẽ báo lỗi cho tới khi cài.':
+    'The {agent} CLI was not found on this machine. Tasks using this agent will fail until it is installed.',
+  'Agent mặc định': 'Default agent',
+  'Dùng khi task và project đều không chọn agent. Mỗi agent dùng phiên đăng nhập CLI riêng trên máy.':
+    'Used when neither the task nor the project picks an agent. Each agent uses its own CLI sign-in on this machine.',
+  'Áp dụng cho task của project không chọn agent riêng.': 'Applies to tasks in this project that do not pick their own agent.',
+  'Kế thừa hệ thống: {agent}': 'Inherited from system: {agent}',
+  'Các agent trên máy': 'Agents on this machine',
+  'Kiểm tra lại': 'Check again',
+  'Đã cài': 'Installed',
+  'Chưa cài': 'Not installed',
+  'Sắp có': 'Coming soon',
+  'Không kiểm tra được các agent': 'Could not check the agents',
+  // Failover (SPEC-MULTI-AGENT FR-99)
+  'Đã tự chuyển sang agent dự phòng': 'Switched to a fallback agent automatically',
+  'Lên': 'Up',
+  'Xuống': 'Down',
+  '+ Thêm agent': '+ Add agent',
+  'Tự chuyển agent khi agent đang dùng hết hạn mức': 'Switch agents automatically when the current one hits its usage limit',
+  'Task chạy tiếp bằng agent kế tiếp trong chuỗi (đã cài, còn lượt, hỗ trợ mức quyền của task) thay vì chờ giờ reset. Yêu cầu sửa giữ agent dự phòng; Chạy lại quay về agent gốc. Project có thể dùng chuỗi riêng hoặc tắt.':
+    'The task continues with the next agent in the chain (installed, has quota, supports the task permission level) instead of waiting for the reset. Request changes keeps the fallback agent; Run again goes back to the original agent. Projects can use their own chain or turn this off.',
+  'Hết hạn mức đến {time}': 'Usage limit until {time}',
+  'Khi agent hết hạn mức': 'When the agent hits its usage limit',
+  'Theo hệ thống: chuyển theo chuỗi {chain}': 'System setting: switch along {chain}',
+  'Theo hệ thống: đang tắt, task chờ giờ reset': 'System setting: off, tasks wait for the reset',
+  'Task chờ giờ reset, không chuyển agent (ví dụ project có dữ liệu không được gửi cho nhà cung cấp khác).':
+    'Tasks wait for the reset and never switch agents (for example, when project data must not go to another provider).',
+  'Chuyển theo chuỗi riêng của project.': 'Switch along this project’s own chain.',
+  'Dùng chuỗi của hệ thống': 'Use the system chain',
+  'Tuỳ chỉnh': 'Custom',
+  'Tắt tự chuyển agent': 'Do not switch agents',
+  '(agent theo cấu hình: {agent})': '(configured agent: {agent})',
+  '{n} token ngữ cảnh': '{n} context tokens',
 }

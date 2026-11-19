@@ -8,6 +8,7 @@ import { resumeBlocker } from '../lib/resume'
 import { parseRefs, resolveRefs, unmetDeps } from '../lib/deps'
 import { formatReviewFeedback } from '../lib/reviewComments'
 import type {
+  AgentInfo,
   Answers,
   DemoFlags,
   FileDiff,
@@ -42,6 +43,14 @@ import { showBrowserNotification, transitionNotice, type Notice } from '../lib/n
 import type { ClaudeLimit } from '../lib/claudeLimit'
 import { normalizePermissionMode, normalizePriority, titleKey, type ImportRequest, type ImportResult, type ImportRowResult } from '../lib/taskImport'
 
+/** Giả lập: Claude đã cài; các agent khác chưa có adapter (SPEC-MULTI-AGENT M2). */
+const MOCK_AGENTS: AgentInfo[] = [
+  { id: 'claude', name: 'Claude', label: 'Claude Code', supported: true, installed: true, version: '2.1.322 (Claude Code)', source: 'vscode-extension', permissionModes: ['manual', 'acceptEdits', 'auto', 'plan'], costUsd: true, hardBudget: true },
+  { id: 'codex', name: 'Codex', label: 'OpenAI Codex', supported: true, installed: true, version: 'codex-cli 0.169.0-alpha.11.1', source: 'vscode-extension', permissionModes: ['manual', 'acceptEdits', 'auto', 'plan'], costUsd: false, hardBudget: false },
+  { id: 'antigravity', name: 'Antigravity', label: 'Google Antigravity', supported: true, installed: true, version: '1.5.11', source: 'gemini-bin', permissionModes: ['manual', 'acceptEdits', 'auto', 'plan'], costUsd: false, hardBudget: false },
+  { id: 'cursor', name: 'Cursor', label: 'Cursor', supported: false, installed: false, permissionModes: [], costUsd: false, hardBudget: false },
+]
+
 export interface State {
   projects: Project[]
   templates: PromptTemplate[]
@@ -55,6 +64,7 @@ export interface State {
   testRuns: TestRun[]
   testOutputs: Record<number, TestOutput>
   claudeLimit: ClaudeLimit | null
+  agents: AgentInfo[]
   toasts: Toast[]
   settings: Settings
   demo: DemoFlags
@@ -85,6 +95,7 @@ function initialState(empty = false): State {
     testRuns: [],
     testOutputs: {},
     claudeLimit: null,
+    agents: MOCK_AGENTS,
     toasts: [],
     settings: defaultSettings,
     demo: defaultDemo,
@@ -892,6 +903,10 @@ export async function saveTemplate(t: TemplateInput): Promise<string | null> {
 
 export function deleteTemplate(id: string) {
   set((s) => ({ templates: s.templates.filter((t) => t.id !== id) }))
+}
+
+export async function refreshAgents() {
+  set(() => ({ agents: MOCK_AGENTS }))
 }
 
 export function updateSettings(patch: Partial<Omit<Settings, 'telegram'>>) {

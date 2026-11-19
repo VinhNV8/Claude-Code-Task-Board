@@ -75,7 +75,7 @@ Claude Code có **chế độ headless**: `claude -p "<prompt>"`. Lệnh này d�
 |---|---|---|
 | FR-01 | Tạo task: tiêu đề, mô tả (prompt), project/repo, độ ưu tiên, mức quyền | Must |
 | FR-01a | **Import task hàng loạt** (v0.5) từ CSV, `.xlsx` hoặc dữ liệu dán từ bảng tính. Xem trước từng dòng kèm lỗi, chống trùng tiêu đề, phụ thuộc giữa các dòng qua cột Mã. Mặc định tạo ở Backlog; tạo tất cả hoặc không. Quy tắc I1–I7 ở [SPEC-IMPORT.md](SPEC-IMPORT.md) | Should |
-| FR-01b | Tải file mẫu CSV (UTF-8 BOM) cho import | Should |
+| FR-01b | Tải file mẫu cho import: mặc định **Excel `.xlsx`** (sheet Tasks + sheet Hướng dẫn), tuỳ chọn CSV (UTF-8 BOM) | Should |
 | FR-02 | **Sửa** task khi còn ở Backlog hay Queued. **Xoá** task ở Backlog, Queued hoặc **Failed** (gồm task bị dừng/Reject, dọn kèm worktree nếu có). Không xoá task đang chạy, Needs Input, Review hay Done để không mất output và lịch sử (chốt 2026-11-18) | Must |
 | FR-03 | Đưa task vào hàng đợi (Queue) để tự động chạy | Must |
 | FR-04 | Hủy (Stop) task đang chạy | Must |

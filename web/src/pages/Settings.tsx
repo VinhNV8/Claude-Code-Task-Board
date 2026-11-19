@@ -1,12 +1,53 @@
 import { useEffect, useState } from 'react'
 import { Bell, CalendarClock, Cpu, FileText, Info, KeyRound, Languages, Timer } from 'lucide-react'
-import { IS_MOCK, notify, saveClaudeAuth, saveTelegram, testTelegram, toast, updateSettings, useStore } from '../store/store'
+import { IS_MOCK, notify, refreshAgents, saveClaudeAuth, saveTelegram, testTelegram, toast, updateSettings, useStore } from '../store/store'
+import { AgentSelect, ChainEditor, useAgents } from '../components/AgentSelect'
 import type { ClaudeAuthMode } from '../types'
 import { MODEL_OPTIONS } from '../lib/model'
 import { Button, Field, inputCls } from '../components/ui'
 import { TemplateManager } from '../components/TemplateManager'
 import { ScheduleManager } from '../components/ScheduleManager'
 import { LANG, LANGS, setLang, tr, type Lang } from '../lib/i18n'
+
+/** SPEC-MULTI-AGENT FR-92: agent nào đã được hỗ trợ / đã cài trên máy, phiên bản, nút dò lại. */
+function AgentStatusList() {
+  const agents = useAgents()
+  const [checking, setChecking] = useState(false)
+  return (
+    <div className="rounded-lg border border-slate-200 p-3 text-sm dark:border-slate-700">
+      <div className="mb-2 flex items-center justify-between">
+        <span className="font-medium">{tr('Các agent trên máy')}</span>
+        <Button
+          variant="ghost"
+          disabled={checking}
+          onClick={async () => {
+            setChecking(true)
+            await refreshAgents()
+            setChecking(false)
+          }}
+        >
+          {tr('Kiểm tra lại')}
+        </Button>
+      </div>
+      <ul className="space-y-1">
+        {agents.map((a) => (
+          <li key={a.id} className="flex flex-wrap items-center gap-x-2 text-xs">
+            <span className="w-36 font-medium">{a.label}</span>
+            <span className={a.supported && a.installed ? 'text-emerald-600' : 'text-slate-500'}>
+              {!a.supported ? tr('Sắp có') : a.installed ? tr('Đã cài') : tr('Chưa cài')}
+            </span>
+            {a.version && <span className="text-slate-500">{a.version}</span>}
+            {a.limitedUntil && (
+              <span className="text-amber-600">
+                {tr('Hết hạn mức đến {time}', { time: new Date(a.limitedUntil).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) })}
+              </span>
+            )}
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
 
 function Section({ icon, title, children }: { icon: JSX.Element; title: string; children: React.ReactNode }) {
   return (
@@ -241,6 +282,33 @@ export function Settings() {
             onChange={(e) => updateSettings({ maxParallel: Math.max(1, Number(e.target.value) || 1) })}
           />
         </Field>
+        <Field label={tr('Agent mặc định')} hint={tr('Dùng khi task và project đều không chọn agent. Mỗi agent dùng phiên đăng nhập CLI riêng trên máy.')}>
+          <AgentSelect className={`${inputCls} w-64`} value={settings.defaultAgent} onChange={(v) => v && updateSettings({ defaultAgent: v })} />
+        </Field>
+        <AgentStatusList />
+        <div className="space-y-2">
+          <label className="flex items-center gap-3">
+            <input
+              type="checkbox"
+              checked={settings.failover.enabled}
+              onChange={(e) => updateSettings({ failover: { ...settings.failover, enabled: e.target.checked } })}
+            />
+            <span className="text-sm">
+              {tr('Tự chuyển agent khi agent đang dùng hết hạn mức')}
+              <span className="block text-xs text-slate-500">
+                {tr('Task chạy tiếp bằng agent kế tiếp trong chuỗi (đã cài, còn lượt, hỗ trợ mức quyền của task) thay vì chờ giờ reset. Yêu cầu sửa giữ agent dự phòng; Chạy lại quay về agent gốc. Project có thể dùng chuỗi riêng hoặc tắt.')}
+              </span>
+            </span>
+          </label>
+          {settings.failover.enabled && (
+            <div className="pl-7">
+              <ChainEditor
+                value={settings.failover.chain}
+                onChange={(chain) => chain.length >= 2 && updateSettings({ failover: { ...settings.failover, chain } })}
+              />
+            </div>
+          )}
+        </div>
         <Field label={tr('Model mặc định')} hint={tr('Dùng khi task và project đều không chọn model. Run sửa theo review / tiếp tục giữ model của lần chạy trước.')}>
           <select className={`${inputCls} w-64`} value={settings.defaultModel} onChange={(e) => updateSettings({ defaultModel: e.target.value })}>
             <option value="">{tr('Mặc định của Claude CLI')}</option>

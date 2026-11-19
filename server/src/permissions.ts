@@ -5,7 +5,8 @@
 // Task dừng/kết thúc trong lúc chờ → các yêu cầu còn treo bị huỷ.
 import { randomUUID } from 'node:crypto'
 import { bus, broadcast, type ServerMessage } from './bus.ts'
-import { db, events, projects, settings, tasks } from './db.ts'
+import { db, events, projects, runs, settings, tasks } from './db.ts'
+import { AGENT_NAMES } from '../../web/src/lib/agent.ts'
 import { currentRunId, updateTask } from './runner.ts'
 import { describeInput, matchesAllowed, riskOf, rulesFor } from './permissionRules.ts'
 import { describeQuestions, isQuestionTool, noAnswerMessage, parseQuestions, validateAnswers, type Answers } from '../../web/src/lib/question.ts'
@@ -340,9 +341,12 @@ export async function requestPermission(a: PermissionAsk, waitMs = POLL_WAIT_MS)
 
   const req = toRequest(row)
   broadcast({ type: 'permission', permission: req })
+  // Tên agent của run đang chạy (run cũ / Claude: "Claude")
+  const runId = currentRunId(task.id)
+  const who = AGENT_NAMES[(runId && runs.get(runId)?.agent) || 'claude']
   logToRun(
     task.id,
-    question ? `Claude hỏi: ${req.input.replaceAll('\n', ' • ')}, đang chờ bạn trả lời` : `Claude xin quyền ${req.tool}(${req.input}), đang chờ bạn duyệt`,
+    question ? `${who} hỏi: ${req.input.replaceAll('\n', ' • ')}, đang chờ bạn trả lời` : `${who} xin quyền ${req.tool}(${req.input}), đang chờ bạn duyệt`,
   )
   if (task.status === 'running') updateTask(task.id, { status: 'needs_input' })
   return wait(row.id, waitMs)

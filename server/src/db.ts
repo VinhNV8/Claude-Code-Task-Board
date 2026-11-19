@@ -4,6 +4,7 @@ import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import type {
+  AgentId,
   LogEvent,
   LogEventInput,
   Project,
@@ -24,6 +25,7 @@ import { DEFAULT_TEMPLATES } from './templates.ts'
 import { DEFAULT_TELEGRAM } from './telegram.ts'
 import { decryptSecret, encryptSecret, loadOrCreateKey } from './secretBox.ts'
 import { defaultAuthMode, effectiveApiKey, publicAuth } from './claudeAuth.ts'
+import { DEFAULT_AGENT, DEFAULT_FAILOVER, parseAgent, parseChain } from '../../web/src/lib/agent.ts'
 
 export const DATA_DIR = process.env.TASKBOARD_DATA ?? join(import.meta.dirname, '..', '..', 'data')
 mkdirSync(DATA_DIR, { recursive: true })
@@ -168,11 +170,20 @@ for (const [col, type] of [
   ['requested_model', 'TEXT'],
   // P5-06: 'claude' | 'stopped' | 'rate_limit' | 'infra' — Retry chỉ tự nâng model khi run trước lỗi do Claude (D6).
   ['fail_kind', 'TEXT'],
+  // SPEC-MULTI-AGENT FR-95: agent đã chạy run này. NULL = run cũ (Claude).
+  ['agent', 'TEXT'],
 ] as const)
   if (!runCols.some((c) => c.name === col)) db.exec(`ALTER TABLE runs ADD COLUMN ${col} ${type}`)
 // P5-03: cấu hình model 3 tầng (D2). NULL/'' = kế thừa tầng dưới.
 if (!taskCols.some((c) => c.name === 'model')) db.exec('ALTER TABLE tasks ADD COLUMN model TEXT')
 if (!projectCols.some((c) => c.name === 'default_model')) db.exec('ALTER TABLE projects ADD COLUMN default_model TEXT')
+// SPEC-MULTI-AGENT FR-91: agent 3 tầng. NULL = kế thừa tầng dưới.
+if (!taskCols.some((c) => c.name === 'agent')) db.exec('ALTER TABLE tasks ADD COLUMN agent TEXT')
+if (!projectCols.some((c) => c.name === 'default_agent')) db.exec('ALTER TABLE projects ADD COLUMN default_agent TEXT')
+// FR-99: failover theo project ('inherit' | 'custom' | 'off', NULL = inherit) + chuỗi riêng (JSON), và agent dự phòng đang dùng của task.
+if (!projectCols.some((c) => c.name === 'failover_mode')) db.exec('ALTER TABLE projects ADD COLUMN failover_mode TEXT')
+if (!projectCols.some((c) => c.name === 'failover_chain')) db.exec('ALTER TABLE projects ADD COLUMN failover_chain TEXT')
+if (!taskCols.some((c) => c.name === 'active_agent')) db.exec('ALTER TABLE tasks ADD COLUMN active_agent TEXT')
 // P6 (B1): budget tháng theo project (NULL = không giới hạn) và hành động khi vượt.
 if (!projectCols.some((c) => c.name === 'monthly_budget_usd')) db.exec('ALTER TABLE projects ADD COLUMN monthly_budget_usd REAL')
 if (!projectCols.some((c) => c.name === 'budget_action'))
@@ -234,12 +245,26 @@ const toProject = (r: Row): Project => ({
   maxParallel: r.max_parallel as number,
   testCommand: (r.test_command as string | null) || undefined,
   defaultModel: (r.default_model as string | null) || undefined,
+  defaultAgent: parseAgent(r.default_agent) || undefined,
+  failoverMode: r.failover_mode === 'custom' || r.failover_mode === 'off' ? r.failover_mode : undefined,
+  failoverChain: optChain(r.failover_chain),
   monthlyBudgetUsd: (r.monthly_budget_usd as number | null) ?? undefined,
   budgetAction: r.budget_action === 'pause' ? 'pause' : 'warn',
   deliveryMode: r.delivery_mode === 'direct' ? 'direct' : 'worktree',
 })
 
 const opt = <T>(v: unknown) => (v === null ? undefined : (v as T))
+
+/** Chuỗi dự phòng lưu dạng JSON; hỏng / rỗng → undefined. */
+function optChain(v: unknown): AgentId[] | undefined {
+  if (typeof v !== 'string' || !v) return undefined
+  try {
+    const chain = parseChain(JSON.parse(v))
+    return chain?.length ? chain : undefined
+  } catch {
+    return undefined
+  }
+}
 
 const toTask = (r: Row): Task => ({
   id: r.id as number,
@@ -265,6 +290,8 @@ const toTask = (r: Row): Task => ({
   rateLimitRetries: (r.rate_limit_retries as number | null) || undefined,
   resumeNext: r.resume_next ? true : undefined,
   model: (r.model as string | null) || undefined,
+  agent: parseAgent(r.agent) || undefined,
+  activeAgent: parseAgent(r.active_agent) || undefined,
   maxCostUsd: (r.max_cost_usd as number | null) ?? undefined,
   dependsOn: optList(depsOf(r.id as number)),
 })
@@ -320,6 +347,7 @@ const toRun = (r: Row): Run => ({
   numTurns: opt(r.num_turns),
   costUsd: opt(r.cost_usd),
   summary: opt(r.summary),
+  agent: parseAgent(r.agent) || undefined,
   model: opt(r.model),
   modelUsage: parseModelUsage(r.model_usage),
   modelSource: opt(r.model_source),
@@ -351,13 +379,14 @@ export const projects = {
   upsert: (p: Project) => {
     db.prepare(
       `INSERT INTO projects (id, name, repo_path, main_branch, permission_mode, allowed_tools, max_parallel, test_command, default_model,
-         monthly_budget_usd, budget_action, delivery_mode)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         monthly_budget_usd, budget_action, delivery_mode, default_agent, failover_mode, failover_chain)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET name=excluded.name, repo_path=excluded.repo_path, main_branch=excluded.main_branch,
          permission_mode=excluded.permission_mode, allowed_tools=excluded.allowed_tools, max_parallel=excluded.max_parallel,
          test_command=excluded.test_command, default_model=excluded.default_model,
          monthly_budget_usd=excluded.monthly_budget_usd, budget_action=excluded.budget_action,
-         delivery_mode=excluded.delivery_mode`,
+         delivery_mode=excluded.delivery_mode, default_agent=excluded.default_agent,
+         failover_mode=excluded.failover_mode, failover_chain=excluded.failover_chain`,
     ).run(
       p.id,
       p.name,
@@ -371,6 +400,9 @@ export const projects = {
       p.monthlyBudgetUsd ?? null,
       p.budgetAction === 'pause' ? 'pause' : 'warn',
       p.deliveryMode === 'direct' ? 'direct' : 'worktree',
+      p.defaultAgent || null,
+      p.failoverMode && p.failoverMode !== 'inherit' ? p.failoverMode : null,
+      p.failoverChain?.length ? JSON.stringify(p.failoverChain) : null,
     )
     return projects.get(p.id)!
   },
@@ -400,6 +432,8 @@ const TASK_COLS: Record<string, string> = {
   rateLimitRetries: 'rate_limit_retries',
   resumeNext: 'resume_next',
   model: 'model',
+  agent: 'agent',
+  activeAgent: 'active_agent',
   maxCostUsd: 'max_cost_usd',
 }
 
@@ -415,13 +449,14 @@ export const tasks = {
   byStatus: (...st: TaskStatus[]) =>
     (db.prepare(`SELECT * FROM tasks WHERE status IN (${st.map(() => '?').join(',')})`).all(...st) as Row[]).map(toTask),
   create: (
-    t: Pick<Task, 'projectId' | 'title' | 'prompt' | 'status' | 'priority' | 'permissionMode' | 'tags'> & Pick<Partial<Task>, 'model' | 'maxCostUsd'>,
+    t: Pick<Task, 'projectId' | 'title' | 'prompt' | 'status' | 'priority' | 'permissionMode' | 'tags'> &
+      Pick<Partial<Task>, 'model' | 'maxCostUsd' | 'agent'>,
   ) => {
     const now = Date.now()
     const r = db
       .prepare(
-        `INSERT INTO tasks (project_id, title, prompt, status, priority, permission_mode, tags, model, max_cost_usd, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO tasks (project_id, title, prompt, status, priority, permission_mode, tags, model, max_cost_usd, agent, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         t.projectId,
@@ -433,6 +468,7 @@ export const tasks = {
         JSON.stringify(t.tags),
         t.model || null,
         t.maxCostUsd ?? null,
+        t.agent || null,
         now,
         now,
       )
@@ -471,11 +507,11 @@ export const runs = {
   since: (from: number) => (db.prepare('SELECT * FROM runs WHERE started_at >= ? ORDER BY started_at').all(from) as Row[]).map(toRun),
   create: (
     r: Pick<Run, 'id' | 'taskId' | 'kind' | 'feedback' | 'sessionId' | 'startedAt'> &
-      Partial<Pick<Run, 'requestedModel' | 'modelSource' | 'modelReason'>>,
+      Partial<Pick<Run, 'requestedModel' | 'modelSource' | 'modelReason' | 'agent'>>,
   ) => {
     db.prepare(
-      `INSERT INTO runs (id, task_id, kind, feedback, session_id, started_at, requested_model, model_source, model_reason)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO runs (id, task_id, kind, feedback, session_id, started_at, requested_model, model_source, model_reason, agent)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       r.id,
       r.taskId,
@@ -486,6 +522,7 @@ export const runs = {
       r.requestedModel ?? null,
       r.modelSource ?? null,
       r.modelReason ?? null,
+      r.agent ?? null,
     )
     return runs.get(r.id)!
   },
@@ -518,6 +555,11 @@ export const runs = {
   /** Ghi model thực tế ngay khi nhận event `init` để UI thấy trong lúc task đang chạy. */
   setModel: (id: string, model: string) => {
     db.prepare('UPDATE runs SET model = ? WHERE id = ?').run(model, id)
+    return runs.get(id)
+  },
+  /** Agent tự sinh id phiên (Codex thread id): ghi lại khi agent báo, để Request changes / Tiếp tục resume đúng phiên. */
+  setSessionId: (id: string, sessionId: string) => {
+    db.prepare('UPDATE runs SET session_id = ? WHERE id = ?').run(sessionId, id)
     return runs.get(id)
   },
   /** P5-06: loại thất bại của run (Stop, giới hạn sử dụng, hạ tầng hay lỗi do Claude). */
@@ -762,6 +804,8 @@ export const DEFAULT_SETTINGS: Settings = {
   permissionTimeoutMin: 30,
   // D2: 'auto' = bộ chọn model (P5-04); '' = không truyền --model. DB cũ chưa lưu key này cũng nhận 'auto'.
   defaultModel: 'auto',
+  defaultAgent: 'claude',
+  failover: DEFAULT_FAILOVER,
   autoEscalate: true,
   telegram: DEFAULT_TELEGRAM,
   auth: { mode: defaultAuthMode(), hasApiKey: false, envApiKey: false },
@@ -816,6 +860,8 @@ export const settings = {
     return {
       ...DEFAULT_SETTINGS,
       ...s,
+      defaultAgent: parseAgent(s.defaultAgent) || DEFAULT_AGENT,
+      failover: { enabled: !!s.failover?.enabled, chain: parseChain(s.failover?.chain) ?? DEFAULT_FAILOVER.chain },
       telegram: { ...DEFAULT_TELEGRAM, ...s.telegram, hasToken: !!telegramToken.get() },
       auth: publicAuth(s.auth?.mode ?? DEFAULT_SETTINGS.auth.mode, claudeApiKey.get()),
     }

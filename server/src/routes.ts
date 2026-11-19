@@ -35,9 +35,11 @@ import { getBudgets, isProjectBlocked, refreshBudgets, withBlockedReason } from 
 import { getClaudeLimit } from './claudeLimit.ts'
 import { DepsError, pendingDeps, suggestDeps, validateDeps } from './taskDeps.ts'
 import { MODES, validateTask, type TaskBody } from './taskValidate.ts'
+import { agentProblem, listAgents } from './agents/index.ts'
+import { parseAgent, parseChain, resolveAgent } from '../../web/src/lib/agent.ts'
 import { importTasks } from './taskImport.ts'
 import type { ImportRequest } from '../../web/src/lib/taskImport.ts'
-import type { FileDiff, PermissionMode, Project, PromptTemplate, Schedule, Settings, TelegramSettingsInput, ClaudeAuthInput } from './types.ts'
+import type { AgentId, FailoverMode, FailoverSettings, FileDiff, PermissionMode, Project, PromptTemplate, Schedule, Settings, TelegramSettingsInput, ClaudeAuthInput } from './types.ts'
 
 
 
@@ -108,8 +110,12 @@ export async function routes(app: FastifyInstance) {
       reviews: reviews.all(),
       diffs,
       claudeLimit: getClaudeLimit(),
+      agents: listAgents(),
     }
   })
+
+  // SPEC-MULTI-AGENT FR-92: trạng thái từng agent (đã hỗ trợ, đã cài, phiên bản). ?refresh=1: dò lại CLI.
+  app.get<{ Querystring: { refresh?: string } }>('/api/agents', async (req) => listAgents(req.query.refresh === '1'))
 
   // Gói Claude hết lượt: endpoint nhẹ cho extension VS Code hỏi định kỳ (thanh trạng thái, thông báo)
   app.get('/api/claude-limit', async () => ({ limit: getClaudeLimit() }))
@@ -202,6 +208,21 @@ export async function routes(app: FastifyInstance) {
       throw new HttpError(400, 'Thư mục này không phải git repo (không tìm thấy .git). Chọn "Ghi thẳng vào thư mục project" hoặc khởi tạo git.')
     const mode = (body.permissionMode ?? 'acceptEdits') as PermissionMode
     if (!MODES.includes(mode)) throw new HttpError(400, `Mức quyền không hợp lệ: ${mode}`)
+    // FR-91: agent mặc định của project (rỗng = kế thừa hệ thống) phải chạy được với mức quyền mặc định của project.
+    const defaultAgent = parseAgent(body.defaultAgent)
+    if (defaultAgent === null) throw new HttpError(400, 'Agent không hợp lệ')
+    const agentErr = agentProblem(resolveAgent(undefined, { defaultAgent }, settings.get()), mode)
+    if (agentErr) throw new HttpError(400, agentErr)
+    // FR-99 (QA6): failover theo hệ thống / chuỗi riêng / tắt. Form cũ không gửi thì giữ giá trị đang có.
+    const failoverMode: FailoverMode =
+      body.failoverMode === 'custom' || body.failoverMode === 'off' || body.failoverMode === 'inherit' ? body.failoverMode : (cur?.failoverMode ?? 'inherit')
+    let failoverChain = cur?.failoverChain
+    if (body.failoverChain !== undefined) {
+      const c = body.failoverChain === null ? [] : parseChain(body.failoverChain)
+      if (!c) throw new HttpError(400, 'Chuỗi dự phòng không hợp lệ')
+      failoverChain = c.length ? c : undefined
+    }
+    if (failoverMode === 'custom' && (failoverChain?.length ?? 0) < 2) throw new HttpError(400, 'Chuỗi dự phòng của project cần ít nhất 2 agent')
     return {
       id: body.id || `p-${randomUUID().slice(0, 8)}`,
       name,
@@ -212,6 +233,9 @@ export async function routes(app: FastifyInstance) {
       maxParallel: Math.min(5, Math.max(1, Number(body.maxParallel) || 1)),
       testCommand: validateTestCommand(body.testCommand),
       defaultModel: normalizeModel(body.defaultModel) || undefined,
+      defaultAgent,
+      failoverMode: failoverMode === 'inherit' ? undefined : failoverMode,
+      failoverChain,
       ...validateBudget(body),
       deliveryMode,
     }
@@ -295,6 +319,12 @@ export async function routes(app: FastifyInstance) {
 
   // ------------------------------------------------------------ tasks
 
+  /** FR-91/FR-93: agent của task (sau khi kế thừa) phải chạy được với mức quyền của task (lỗi 400). */
+  function checkTaskAgent(agent: AgentId | undefined, project: Project | undefined, mode: PermissionMode) {
+    const err = agentProblem(resolveAgent({ agent }, project, settings.get()), mode)
+    if (err) throw new HttpError(400, err)
+  }
+
   /** Kiểm tra danh sách chờ (lỗi tiếng Việt 400). */
   function checkDeps(raw: unknown, o: { taskId?: number; projectId: string }) {
     try {
@@ -310,14 +340,17 @@ export async function routes(app: FastifyInstance) {
     const v = validateTask(req.body)
     const project = projects.get(v.projectId!)!
     const deps = checkDeps(req.body.dependsOn, { projectId: project.id })
+    const permissionMode = v.permissionMode ?? project.permissionMode
+    checkTaskAgent(v.agent || undefined, project, permissionMode)
     const created = tasks.create({
       projectId: v.projectId!,
       title: v.title!,
       prompt: v.prompt!,
       priority: v.priority ?? 'normal',
-      permissionMode: v.permissionMode ?? project.permissionMode,
+      permissionMode,
       tags: v.tags ?? [],
       model: v.model || undefined,
+      agent: v.agent || undefined,
       maxCostUsd: (v.maxCostUsd as number | null | undefined) ?? undefined,
       status: req.body.run ? 'queued' : 'backlog',
     })
@@ -339,9 +372,16 @@ export async function routes(app: FastifyInstance) {
       if ((deps ?? t.dependsOn ?? []).length) throw new HttpError(400, 'Gỡ các task đang chờ trước khi chuyển task sang project khác')
       if (taskDeps.dependents(t.id).length) throw new HttpError(400, 'Có task khác đang chờ task này, không chuyển sang project khác được')
     }
+    // FR-91: agent sau khi sửa (của task, hoặc kế thừa project mới) phải hỗ trợ mức quyền sau khi sửa.
+    checkTaskAgent(v.agent !== undefined ? v.agent || undefined : t.agent, projects.get(projectId), v.permissionMode ?? t.permissionMode)
     if (deps) taskDeps.set(t.id, deps)
-    // Model rỗng lưu NULL (kế thừa)
-    const updated = updateTask(t.id, { ...v, ...(v.model !== undefined ? { model: v.model || null } : {}) })
+    // Model / agent rỗng lưu NULL (kế thừa)
+    const updated = updateTask(t.id, {
+      ...v,
+      ...(v.model !== undefined ? { model: v.model || null } : {}),
+      // Đổi agent bằng tay: bỏ agent dự phòng đang dùng (FR-97, QA7), lần sau chạy đúng agent vừa chọn.
+      ...(v.agent !== undefined ? { agent: v.agent || null, activeAgent: null } : {}),
+    })
     // Bớt phụ thuộc có thể làm task Queued chạy được ngay.
     if (deps) pump()
     return updated
@@ -641,6 +681,31 @@ export async function routes(app: FastifyInstance) {
 
   type SettingsBody = Partial<Omit<Settings, 'telegram' | 'auth'>> & { telegram?: TelegramSettingsInput; auth?: ClaudeAuthInput }
 
+  /** FR-99: failover hệ thống. Không gửi trường nào: giữ nguyên. Chuỗi: agent hợp lệ, không trùng, ít nhất 2 khi bật. */
+  function settingsFailover(raw: Partial<FailoverSettings> | undefined, cur: FailoverSettings): FailoverSettings {
+    if (raw === undefined) return cur
+    const enabled = raw.enabled !== undefined ? !!raw.enabled : cur.enabled
+    let chain = cur.chain
+    if (raw.chain !== undefined) {
+      const c = parseChain(raw.chain)
+      if (!c) throw new HttpError(400, 'Chuỗi dự phòng không hợp lệ')
+      chain = c
+    }
+    if (enabled && chain.length < 2) throw new HttpError(400, 'Chuỗi dự phòng cần ít nhất 2 agent')
+    return { enabled, chain }
+  }
+
+  /** FR-91: agent mặc định hệ thống. Không gửi: giữ nguyên; phải là agent Task Board đã hỗ trợ. */
+  function settingsAgent(raw: unknown, cur: AgentId): AgentId {
+    if (raw === undefined) return cur
+    const a = parseAgent(raw)
+    if (!a) throw new HttpError(400, 'Agent không hợp lệ')
+    // Mức quyền chỉ để kiểm tra adapter có tồn tại: mọi agent được hỗ trợ đều chạy được acceptEdits.
+    const err = agentProblem(a, 'acceptEdits')
+    if (err) throw new HttpError(400, err)
+    return a
+  }
+
   app.put<{ Body: SettingsBody }>('/api/settings', async (req) => {
     const cur = settings.get()
     const b = req.body ?? {}
@@ -664,6 +729,8 @@ export async function routes(app: FastifyInstance) {
       notifyOn: { ...cur.notifyOn, ...b.notifyOn },
       permissionTimeoutMin: b.permissionTimeoutMin !== undefined ? Math.max(1, Number(b.permissionTimeoutMin) || 1) : cur.permissionTimeoutMin,
       defaultModel: b.defaultModel !== undefined ? normalizeModel(b.defaultModel) : cur.defaultModel,
+      defaultAgent: settingsAgent(b.defaultAgent, cur.defaultAgent),
+      failover: settingsFailover(b.failover, cur.failover),
       autoEscalate: b.autoEscalate !== undefined ? !!b.autoEscalate : cur.autoEscalate,
       telegram: { ...tg.telegram, hasToken: cur.telegram.hasToken },
       auth: { ...cur.auth, mode: auth.mode },

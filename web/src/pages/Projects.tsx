@@ -13,9 +13,11 @@ import {
 import { Button, ConfirmDialog, EmptyState, Field, Modal, inputCls } from '../components/ui'
 import { STATUS_META } from '../lib/format'
 import { MODEL_OPTIONS, modelLabel } from '../lib/model'
+import { AgentSelect, ChainEditor, agentHint, useAgents } from '../components/AgentSelect'
+import { AGENT_NAMES } from '../lib/agent'
 import { mergeRules } from '../lib/rules'
 import { PERMISSION_MODES } from '../lib/permissionMode'
-import type { PermissionMode, PermissionPreset, Project, RuleSuggestion } from '../types'
+import type { FailoverMode, PermissionMode, PermissionPreset, Project, RuleSuggestion } from '../types'
 import { tr } from '../lib/i18n'
 
 /** Project trống cho form "Thêm project" (dùng cả ở Bảng công việc) */
@@ -142,6 +144,9 @@ export function ProjectModal({ project, onClose, onSaved }: { project: Project |
   const [saving, setSaving] = useState(false)
   const [presetNote, setPresetNote] = useState<string | null>(null)
   const systemModel = useStore().settings.defaultModel
+  const systemAgent = useStore().settings.defaultAgent
+  const systemFailover = useStore().settings.failover
+  const agents = useAgents()
 
   // nạp lại form khi mở project khác
   const key = project ? project.id || 'new' : null
@@ -308,6 +313,51 @@ export function ProjectModal({ project, onClose, onSaved }: { project: Project |
               ))}
               {p.defaultModel && !MODEL_OPTIONS.some((o) => o.value === p.defaultModel) && <option value={p.defaultModel}>{p.defaultModel}</option>}
             </select>
+          </Field>
+          <Field
+            label={tr('Agent mặc định')}
+            hint={
+              p.defaultAgent
+                ? `${tr('Áp dụng cho task của project không chọn agent riêng.')} ${agentHint(agents, p.defaultAgent, p.permissionMode)}`
+                : tr('Kế thừa hệ thống: {agent}', { agent: agentHint(agents, systemAgent, p.permissionMode) })
+            }
+          >
+            <AgentSelect
+              value={p.defaultAgent ?? ''}
+              onChange={(v) => setP({ ...p, defaultAgent: v || undefined })}
+              inherit={systemAgent}
+              mode={p.permissionMode}
+            />
+          </Field>
+          <Field
+            label={tr('Khi agent hết hạn mức')}
+            hint={
+              (p.failoverMode ?? 'inherit') === 'inherit'
+                ? systemFailover.enabled
+                  ? tr('Theo hệ thống: chuyển theo chuỗi {chain}', { chain: systemFailover.chain.map((id) => AGENT_NAMES[id]).join(' → ') })
+                  : tr('Theo hệ thống: đang tắt, task chờ giờ reset')
+                : p.failoverMode === 'off'
+                  ? tr('Task chờ giờ reset, không chuyển agent (ví dụ project có dữ liệu không được gửi cho nhà cung cấp khác).')
+                  : tr('Chuyển theo chuỗi riêng của project.')
+            }
+          >
+            <select
+              className={inputCls}
+              value={p.failoverMode ?? 'inherit'}
+              onChange={(e) => {
+                const mode = e.target.value as FailoverMode
+                setP({ ...p, failoverMode: mode, failoverChain: mode === 'custom' && !p.failoverChain?.length ? [...systemFailover.chain] : p.failoverChain })
+              }}
+            >
+              <option value="inherit">{tr('Dùng chuỗi của hệ thống')}</option>
+              <option value="custom">{tr('Tuỳ chỉnh')}</option>
+              <option value="off">{tr('Tắt tự chuyển agent')}</option>
+            </select>
+            {p.failoverMode === 'custom' && (
+              <div className="mt-2">
+                <ChainEditor value={p.failoverChain ?? []} onChange={(chain) => setP({ ...p, failoverChain: chain })} />
+              </div>
+            )}
           </Field>
         </div>
         <Field
