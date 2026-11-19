@@ -1,6 +1,7 @@
 // Thông báo qua Telegram (PLAN 4.5, FR-51).
 // Phần logic thuần (kiểm tra cấu hình, soạn tin, gửi qua Bot API, phát hiện chuyển trạng thái) không phụ thuộc DB để dễ test.
-import type { Settings, Task, TaskStatus, TelegramSettings, TelegramSettingsInput } from './types.ts'
+import type { AgentId, Settings, Task, TaskStatus, TelegramSettings, TelegramSettingsInput } from './types.ts'
+import { AGENT_NAMES } from '../../web/src/lib/agent.ts'
 
 export class TelegramError extends Error {}
 
@@ -84,17 +85,43 @@ export function taskLink(appUrl: string, taskId: number) {
   return appUrl ? `${appUrl.replace(/\/+$/, '')}/tasks/${taskId}` : ''
 }
 
-export function formatTaskMessage(task: Pick<Task, 'id' | 'title' | 'status' | 'failReason'>, opts: { projectName?: string; appUrl: string }) {
+export function formatTaskMessage(
+  task: Pick<Task, 'id' | 'title' | 'status' | 'failReason'>,
+  opts: { projectName?: string; appUrl: string; agentName?: string },
+) {
   const head =
     task.status === 'review'
       ? `✅ Cần review: #${task.id}`
       : task.status === 'needs_input'
-        ? `✋ Claude cần bạn: #${task.id}`
+        ? `✋ ${opts.agentName ?? 'Claude'} cần bạn: #${task.id}`
         : `❌ Task lỗi: #${task.id}`
   const lines = [head, task.title]
   if (opts.projectName) lines.push(`Project: ${opts.projectName}`)
   if (task.status === 'failed' && task.failReason) lines.push(`Lý do: ${task.failReason.slice(0, 500)}`)
   const link = taskLink(opts.appUrl, task.id)
+  if (link) lines.push('', `Mở task: ${link}`)
+  return lines.join('\n')
+}
+
+/** Mặc định gom các lần chuyển agent trong 1 giờ thành một đợt khi không biết giờ agent cũ có lượt lại. */
+export const FAILOVER_WAVE_MS = 60 * 60 * 1000
+
+/** FR-99 / QA4: tin báo một đợt chuyển agent (gửi một lần cho cả đợt, không theo từng task). */
+export function formatFailoverMessage(
+  m: { from: AgentId; to: AgentId; until?: number },
+  task: Pick<Task, 'id' | 'title'> | undefined,
+  opts: { projectName?: string; appUrl: string; timeZone?: string },
+) {
+  const from = AGENT_NAMES[m.from] ?? m.from
+  const to = AGENT_NAMES[m.to] ?? m.to
+  const when = m.until
+    ? ` đến ${new Date(m.until).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', timeZone: opts.timeZone })}`
+    : ''
+  const lines = [`↪ ${from} hết hạn mức${when}, task chuyển sang ${to}`]
+  if (task) lines.push(`Task đầu tiên: #${task.id} ${task.title}`)
+  if (opts.projectName) lines.push(`Project: ${opts.projectName}`)
+  lines.push(`Các task khác gặp hạn mức của ${from} trong đợt này cũng chạy bằng ${to}, không báo lại từng task.`)
+  const link = task ? taskLink(opts.appUrl, task.id) : ''
   if (link) lines.push('', `Mở task: ${link}`)
   return lines.join('\n')
 }
@@ -143,6 +170,11 @@ export interface NotifierDeps {
   projectName: (projectId: string) => string | undefined
   send: (cfg: TelegramConfig, text: string) => Promise<void>
   log: (msg: string) => void
+  /** Tên agent đang chạy task (tin "cần bạn" ghi đúng agent). Không có: "Claude". */
+  agentName?: (task: Task) => string | undefined
+  /** Task theo id (tin failover). */
+  getTask?: (id: number) => Task | undefined
+  now?: () => number
   /** Bỏ qua tin chung cho task này (vd. Needs Input do xin quyền: đã có tin kèm nút duyệt, P7-03). */
   skip?: (task: Task) => boolean
 }
@@ -153,11 +185,41 @@ export interface NotifierDeps {
  */
 export function createTelegramNotifier(deps: NotifierDeps) {
   const last = new Map<number, TaskStatus>(deps.initial.map((t) => [t.id, t.status]))
-  return (m: { type: string; task?: Task; id?: unknown }): Promise<void> | undefined => {
+  // Đợt failover đang mở: "from>to" → hết đợt lúc nào. Trong đợt không báo lại.
+  const waves = new Map<string, number>()
+  const now = deps.now ?? Date.now
+  return (m: {
+    type: string
+    task?: Task
+    id?: unknown
+    taskId?: number
+    from?: AgentId
+    to?: AgentId
+    until?: number
+  }): Promise<void> | undefined => {
     try {
       if (m.type === 'task_deleted' && typeof m.id === 'number') {
         last.delete(m.id)
         return
+      }
+      if (m.type === 'agent_failover' && m.from && m.to) {
+        const t = now()
+        const key = `${m.from}>${m.to}`
+        if ((waves.get(key) ?? 0) > t) return
+        waves.set(key, m.until && m.until > t ? m.until : t + FAILOVER_WAVE_MS)
+        const s = deps.getSettings()
+        const tg = s.telegram
+        if (!tg?.enabled || !tg.chatId) return
+        const token = deps.getToken()
+        if (!token) return
+        const task = m.taskId !== undefined ? deps.getTask?.(m.taskId) : undefined
+        const text = formatFailoverMessage({ from: m.from, to: m.to, until: m.until }, task, {
+          projectName: task && deps.projectName(task.projectId),
+          appUrl: tg.appUrl,
+        })
+        return deps.send({ token, chatId: tg.chatId }, text).catch((e) => {
+          deps.log(`Gửi Telegram báo chuyển agent thất bại: ${e instanceof TelegramError ? e.message : 'lỗi không xác định'}`)
+        })
       }
       if (m.type !== 'task' || !m.task) return
       const task = m.task
@@ -170,7 +232,11 @@ export function createTelegramNotifier(deps: NotifierDeps) {
       if (deps.skip?.(task)) return
       const token = deps.getToken()
       if (!token) return
-      const text = formatTaskMessage(task, { projectName: deps.projectName(task.projectId), appUrl: tg.appUrl })
+      const text = formatTaskMessage(task, {
+        projectName: deps.projectName(task.projectId),
+        appUrl: tg.appUrl,
+        agentName: deps.agentName?.(task),
+      })
       return deps.send({ token, chatId: tg.chatId }, text).catch((e) => {
         deps.log(`Gửi Telegram cho task #${task.id} thất bại: ${e instanceof TelegramError ? e.message : 'lỗi không xác định'}`)
       })

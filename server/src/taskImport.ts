@@ -2,7 +2,7 @@
 // Web đã đọc file và map tên cột (web/src/lib/taskImport.ts); ở đây kiểm tra giá trị từng dòng bằng đúng quy tắc
 // của form tạo task (validateTask), giải mã phụ thuộc giữa các dòng, chống trùng tiêu đề, rồi tạo tất cả trong
 // một transaction (I2). `dryRun` chỉ trả kết quả kiểm tra, không ghi gì.
-import { inTransaction, projects, taskDeps, tasks } from './db.ts'
+import { inTransaction, projects, settings, taskDeps, tasks } from './db.ts'
 import { HttpError } from './httpError.ts'
 import { validateTask } from './taskValidate.ts'
 import { MAX_DEPS } from './taskDeps.ts'
@@ -10,6 +10,7 @@ import { taskCode } from '../../web/src/lib/deps.ts'
 import {
   IMPORT_MAX_CELL,
   IMPORT_MAX_ROWS,
+  normalizeAgent,
   normalizePermissionMode,
   normalizePriority,
   splitList,
@@ -19,7 +20,9 @@ import {
   type ImportRow,
   type ImportRowResult,
 } from '../../web/src/lib/taskImport.ts'
-import type { PermissionMode, Priority, Project, Task } from './types.ts'
+import type { AgentId, PermissionMode, Priority, Project, Task } from './types.ts'
+import { parseAgent, resolveAgent } from '../../web/src/lib/agent.ts'
+import { agentProblem } from './agents/index.ts'
 
 interface Planned {
   row: ImportRow
@@ -33,6 +36,7 @@ interface Planned {
     permissionMode: PermissionMode
     tags: string[]
     model?: string
+    agent?: AgentId
     maxCostUsd?: number
   }
   /** Phụ thuộc đã giải mã: task đã có và dòng khác trong file. */
@@ -58,6 +62,7 @@ function cleanRow(raw: unknown, index: number): ImportRow {
     priority: str(r.priority).trim() || undefined,
     tags: list(r.tags),
     model: str(r.model).trim() || undefined,
+    agent: str(r.agent).trim() || undefined,
     permissionMode: str(r.permissionMode).trim() || undefined,
     maxCostUsd: str(r.maxCostUsd).trim() || undefined,
   }
@@ -125,7 +130,7 @@ function plan(req: ReturnType<typeof validateRequest>): Planned[] {
   for (const p of planned) {
     const { row, result } = p
     const errors: string[] = []
-    const long = (['title', 'prompt', 'key', 'project', 'model', 'priority', 'permissionMode', 'maxCostUsd'] as const).filter(
+    const long = (['title', 'prompt', 'key', 'project', 'model', 'agent', 'priority', 'permissionMode', 'maxCostUsd'] as const).filter(
       (f) => str(row[f]).length > IMPORT_MAX_CELL,
     )
     if (long.length) errors.push(`Ô quá dài (tối đa ${IMPORT_MAX_CELL.toLocaleString('vi-VN')} ký tự): ${long.join(', ')}`)
@@ -141,8 +146,16 @@ function plan(req: ReturnType<typeof validateRequest>): Planned[] {
       model: check(errors, () => validateTask({ model: row.model ?? '' }, true).model),
       maxCost: check(errors, () => validateTask({ maxCostUsd: row.maxCostUsd ?? '' }, true).maxCostUsd),
     }
+    const agentRaw = normalizeAgent(row.agent)
+    const agent = parseAgent(agentRaw)
+    if (agent === null) errors.push(`Agent "${agentRaw}" không hợp lệ (claude / codex / antigravity / cursor)`)
     if (typeof proj !== 'string') {
       result.permissionMode = v.mode ?? proj.permissionMode
+      // AC-33: agent không chạy được ở mức quyền này thì báo lỗi ngay ở bước xem trước, không để task Failed lúc chạy
+      if (agent !== null) {
+        const problem = agentProblem(resolveAgent({ agent }, proj, settings.get()), result.permissionMode)
+        if (problem) errors.push(problem)
+      }
       if (!errors.length)
         p.data = {
           projectId: proj.id,
@@ -152,6 +165,7 @@ function plan(req: ReturnType<typeof validateRequest>): Planned[] {
           permissionMode: result.permissionMode,
           tags: v.tags ?? [],
           model: v.model || undefined,
+          agent: agent ?? undefined,
           maxCostUsd: (v.maxCost as number | null | undefined) ?? undefined,
         }
     }

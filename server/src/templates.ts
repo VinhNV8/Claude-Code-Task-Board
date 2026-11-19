@@ -1,5 +1,6 @@
 // Template prompt (FR-06, PLAN 4.1): dữ liệu mặc định và kiểm tra dữ liệu đầu vào.
 import type { PromptTemplate } from './types.ts'
+import { parseAgent } from '../../web/src/lib/agent.ts'
 
 export const DEFAULT_TEMPLATES: PromptTemplate[] = [
   {
@@ -105,6 +106,7 @@ export interface TemplateInput {
   prompt?: unknown
   tags?: unknown
   projectId?: unknown
+  agent?: unknown
 }
 
 const str = (v: unknown) => (typeof v === 'string' ? v : '')
@@ -123,5 +125,7 @@ export function validateTemplate(b: TemplateInput, projectExists: (id: string) =
   const tags = [...new Set(((b.tags as unknown[]) ?? []).map((t) => str(t).trim()).filter(Boolean))]
   const projectId = str(b.projectId).trim() || undefined
   if (projectId && !projectExists(projectId)) throw new TemplateError('Project không hợp lệ')
-  return { id: str(b.id).trim() || newId(), name, title: str(b.title).trim(), prompt, tags, projectId }
+  const agent = parseAgent(b.agent)
+  if (agent === null) throw new TemplateError('Agent không hợp lệ')
+  return { id: str(b.id).trim() || newId(), name, title: str(b.title).trim(), prompt, tags, projectId, ...(agent ? { agent } : {}) }
 }

@@ -70,3 +70,14 @@ test('db: thêm, sửa, xoá template; xoá project thì xoá template riêng', 
   templates.remove('tpl-a')
   assert.equal(templates.get('tpl-a'), undefined)
 })
+
+test('template: agent gợi ý (SPEC-MULTI-AGENT FR-91) — kiểm tra, lưu, xoá', () => {
+  const t = validateTemplate({ name: 'Codex', prompt: 'làm bằng Codex nhé', agent: 'codex' }, has(), newId)
+  assert.equal(t.agent, 'codex')
+  assert.equal('agent' in validateTemplate({ name: 'X', prompt: '0123456789', agent: '' }, has(), newId), false, 'rỗng = theo project')
+  assert.throws(() => validateTemplate({ name: 'X', prompt: '0123456789', agent: 'gpt' }, has(), newId), /Agent không hợp lệ/)
+  const saved = templates.upsert({ ...t, id: 'tpl-agent' })
+  assert.equal(saved.agent, 'codex')
+  assert.equal('agent' in templates.upsert({ ...saved, agent: undefined }), false)
+  templates.remove('tpl-agent')
+})

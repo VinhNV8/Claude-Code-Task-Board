@@ -117,7 +117,7 @@ export function buildXlsx(sheets: XlsxSheet[]): Uint8Array {
 /** File mẫu import (FR-01b): sheet "Tasks" (được import) + sheet "Hướng dẫn". */
 export function templateXlsx(): Uint8Array {
   return buildXlsx([
-    { name: 'Tasks', rows: TEMPLATE_ROWS, widths: [8, 36, 60, 12, 10, 16, 10, 16, 13] },
+    { name: 'Tasks', rows: TEMPLATE_ROWS, widths: [8, 36, 60, 12, 10, 16, 10, 12, 16, 13] },
     { name: 'Hướng dẫn', rows: TEMPLATE_GUIDE, widths: [18, 10, 90] },
   ])
 }

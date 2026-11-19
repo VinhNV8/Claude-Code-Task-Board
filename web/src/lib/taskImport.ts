@@ -2,7 +2,7 @@
 // Hàm thuần, dùng chung web và server (server/src/taskImport.ts):
 // - web: đọc file → bảng chuỗi → ImportRow[] (nhận tên cột), không kiểm tra giá trị;
 // - server: chuẩn hoá giá trị (ưu tiên, mức quyền tiếng Việt) và kiểm tra.
-import type { PermissionMode, Priority } from '../types.ts'
+import type { AgentId, PermissionMode, Priority } from '../types.ts'
 
 /** I6: giới hạn mỗi lần import. */
 export const IMPORT_MAX_ROWS = 200
@@ -22,6 +22,7 @@ export interface ImportRow {
   priority?: string
   tags?: string[]
   model?: string
+  agent?: string
   permissionMode?: string
   maxCostUsd?: string
 }
@@ -86,6 +87,7 @@ const HEADER_ALIASES: Record<ImportField, string[]> = {
   priority: ['priority', 'ưu tiên', 'độ ưu tiên'],
   tags: ['tags', 'tag', 'nhãn', 'labels'],
   model: ['model'],
+  agent: ['agent', 'ai agent', 'tác tử'],
   permissionMode: ['permission_mode', 'permission mode', 'mức quyền', 'quyền', 'mode'],
   maxCostUsd: ['max_cost_usd', 'max cost usd', 'max cost', 'giới hạn chi phí', 'chi phí tối đa'],
 }
@@ -294,6 +296,24 @@ export function normalizePermissionMode(v: string | undefined): string | undefin
   return MODE_ALIASES[foldKey(v)] ?? v.trim()
 }
 
+const AGENT_ALIASES: Record<string, AgentId> = {
+  claude: 'claude',
+  claudecode: 'claude',
+  codex: 'codex',
+  openaicodex: 'codex',
+  antigravity: 'antigravity',
+  googleantigravity: 'antigravity',
+  agy: 'antigravity',
+  cursor: 'cursor',
+  cursoragent: 'cursor',
+}
+
+/** Agent (id hoặc tên hiển thị, VD "Claude Code") → AgentId. Không nhận ra: trả nguyên chuỗi để báo lỗi. */
+export function normalizeAgent(v: string | undefined): string | undefined {
+  if (!v?.trim()) return undefined
+  return AGENT_ALIASES[foldKey(v)] ?? v.trim()
+}
+
 /** So khớp tiêu đề để chống trùng (I3): bỏ khoảng trắng thừa, không phân biệt hoa thường. */
 export const titleKey = (s: string) => s.replace(/\s+/g, ' ').trim().toLowerCase()
 
@@ -304,9 +324,9 @@ export const TEMPLATE_BASENAME = 'task-import-mau'
 
 /** Dữ liệu mẫu dùng chung cho file .xlsx và .csv: dòng tiêu đề cột + 2 task, task 2 chờ task 1. */
 export const TEMPLATE_ROWS: string[][] = [
-  ['key', 'title', 'prompt', 'depends_on', 'priority', 'tags', 'model', 'permission_mode', 'max_cost_usd'],
-  ['A1', 'Thêm API xuất báo cáo', 'Thêm endpoint GET /api/report trả về tổng số task theo trạng thái.\nViết unit test cho endpoint.', '', 'high', 'backend, api', '', '', ''],
-  ['A2', 'Hiển thị báo cáo trên trang Thống kê', 'Gọi /api/report và hiển thị bảng tổng hợp trên trang Thống kê.', 'A1', 'normal', 'web', 'sonnet', '', ''],
+  ['key', 'title', 'prompt', 'depends_on', 'priority', 'tags', 'model', 'agent', 'permission_mode', 'max_cost_usd'],
+  ['A1', 'Thêm API xuất báo cáo', 'Thêm endpoint GET /api/report trả về tổng số task theo trạng thái.\nViết unit test cho endpoint.', '', 'high', 'backend, api', '', '', '', ''],
+  ['A2', 'Hiển thị báo cáo trên trang Thống kê', 'Gọi /api/report và hiển thị bảng tổng hợp trên trang Thống kê.', 'A1', 'normal', 'web', 'sonnet', '', '', ''],
 ]
 
 /** Sheet "Hướng dẫn" của file mẫu .xlsx (import chỉ đọc sheet đầu nên sheet này không ảnh hưởng). */
@@ -319,7 +339,8 @@ export const TEMPLATE_GUIDE: string[][] = [
   ['project', '', 'Tên hoặc id project. Trống: dùng project chọn trên hộp thoại import'],
   ['priority', '', 'urgent / high / normal / low (hoặc khẩn / cao / thường / thấp). Trống: normal'],
   ['tags', '', 'Cách nhau bởi dấu phẩy hoặc ;'],
-  ['model', '', 'auto / haiku / sonnet / opus hoặc ID claude-…. Trống: kế thừa project'],
+  ['model', '', 'auto / haiku / sonnet / opus hoặc ID claude-…. Chỉ dùng cho Claude. Trống: kế thừa project'],
+  ['agent', '', 'claude / codex / antigravity. Trống: agent mặc định của project. Agent phải hỗ trợ mức quyền của dòng'],
   ['permission_mode', '', 'manual / acceptEdits / plan / auto. Trống: mặc định của project. Auto phải xác nhận khi import'],
   ['max_cost_usd', '', 'Giới hạn chi phí mỗi lần chạy (USD), vd 1,5'],
   ['', '', ''],

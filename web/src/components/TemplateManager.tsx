@@ -2,7 +2,8 @@
 import { useEffect, useState } from 'react'
 import { Pencil, Plus, Trash2 } from 'lucide-react'
 import { deleteTemplate, saveTemplate, useStore } from '../store/store'
-import type { PromptTemplate } from '../types'
+import type { AgentId, PromptTemplate } from '../types'
+import { AgentBadge, AgentSelect } from './AgentSelect'
 import { Button, ConfirmDialog, Field, Modal, inputCls } from './ui'
 
 function TemplateFormModal({ open, onClose, editing }: { open: boolean; onClose: () => void; editing?: PromptTemplate }) {
@@ -12,6 +13,7 @@ function TemplateFormModal({ open, onClose, editing }: { open: boolean; onClose:
   const [prompt, setPrompt] = useState('')
   const [tags, setTags] = useState('')
   const [projectId, setProjectId] = useState('')
+  const [agent, setAgent] = useState<AgentId | ''>('')
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
 
@@ -23,6 +25,7 @@ function TemplateFormModal({ open, onClose, editing }: { open: boolean; onClose:
     setPrompt(editing?.prompt ?? '')
     setTags(editing?.tags.join(', ') ?? '')
     setProjectId(editing?.projectId ?? '')
+    setAgent(editing?.agent ?? '')
   }, [open, editing])
 
   async function submit() {
@@ -34,6 +37,7 @@ function TemplateFormModal({ open, onClose, editing }: { open: boolean; onClose:
       prompt,
       tags: tags.split(',').map((t) => t.trim()).filter(Boolean),
       projectId: projectId || undefined,
+      agent: agent || undefined,
     })
     setSaving(false)
     if (err) setError(err)
@@ -79,6 +83,9 @@ function TemplateFormModal({ open, onClose, editing }: { open: boolean; onClose:
           <Field label="Tag" hint="Phân cách bằng dấu phẩy">
             <input className={inputCls} value={tags} onChange={(e) => setTags(e.target.value)} placeholder="bug, ui" />
           </Field>
+          <Field label="Agent" hint="Điền sẵn agent cho task khi dùng template">
+            <AgentSelect value={agent} onChange={setAgent} emptyLabel="Theo project / hệ thống" />
+          </Field>
         </div>
         <Field label="Nội dung prompt">
           <textarea
@@ -113,6 +120,7 @@ export function TemplateManager() {
                 <div className="flex flex-wrap items-center gap-2 text-sm">
                   <span className="font-medium">{t.name}</span>
                   <span className="text-xs text-slate-500">· {projectName(t.projectId)}</span>
+                  {t.agent && <AgentBadge agent={t.agent} />}
                   {t.tags.map((tag) => (
                     <span key={tag} className="rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-600 dark:bg-slate-800 dark:text-slate-300">
                       {tag}

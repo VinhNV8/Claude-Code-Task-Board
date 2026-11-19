@@ -169,3 +169,39 @@ test('notifier: lỗi gửi chỉ ghi log, không ném ra luồng chính', async
   assert.doesNotThrow(() => h2({ type: 'task', task: task(2, 'failed') }))
   assert.equal(l2.length, 1)
 })
+
+test('notifier: failover báo một lần mỗi đợt, đợt mới sau giờ reset (FR-99, QA4)', async () => {
+  let now = 1_000_000
+  const sent: string[] = []
+  const s = { telegram: { enabled: true, chatId: '42', appUrl: 'http://h', hasToken: true }, notifyOn: {} } as unknown as Settings
+  const handle = createTelegramNotifier({
+    initial: [],
+    getSettings: () => s,
+    getToken: () => TOKEN,
+    projectName: () => 'Proj',
+    getTask: (id) => ({ ...task(id, 'queued'), title: `Task ${id}` }) as Task,
+    now: () => now,
+    send: async (_cfg, text) => {
+      sent.push(text)
+    },
+    log: () => {},
+  })
+  const until = now + 2 * 3600_000
+  await handle({ type: 'agent_failover', taskId: 7, from: 'claude', to: 'codex', until })
+  await handle({ type: 'agent_failover', taskId: 8, from: 'claude', to: 'codex', until })
+  assert.equal(sent.length, 1)
+  assert.match(sent[0], /Claude hết hạn mức đến \d\d:\d\d, task chuyển sang Codex[\s\S]*#7 Task 7[\s\S]*Project: Proj[\s\S]*http:\/\/h\/tasks\/7/)
+  // cặp agent khác là đợt khác
+  await handle({ type: 'agent_failover', taskId: 9, from: 'codex', to: 'antigravity' })
+  assert.equal(sent.length, 2)
+  assert.doesNotMatch(sent[1], /đến \d/, 'không biết giờ reset thì không ghi giờ')
+  // sau giờ reset: đợt mới
+  now = until + 1
+  await handle({ type: 'agent_failover', taskId: 10, from: 'claude', to: 'codex', until: now + 3600_000 })
+  assert.equal(sent.length, 3)
+})
+
+test('formatTaskMessage: tin "cần bạn" ghi tên agent', () => {
+  const text = formatTaskMessage({ id: 3, title: 'T', status: 'needs_input' }, { appUrl: '', agentName: 'Codex' })
+  assert.match(text, /^✋ Codex cần bạn: #3/)
+})

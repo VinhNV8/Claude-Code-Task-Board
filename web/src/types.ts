@@ -327,6 +327,8 @@ export interface PromptTemplate {
   tags: string[]
   /** Không có: dùng cho mọi project */
   projectId?: string
+  /** Agent gợi ý khi dùng template. Không có: theo project/hệ thống */
+  agent?: AgentId
 }
 
 /** Lịch tạo task tự động theo cron (PLAN 4.6). Đến giờ, backend tạo task mới ở Queued từ mẫu này. */

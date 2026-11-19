@@ -744,4 +744,5 @@ export const EN: Record<string, string> = {
   'Tắt tự chuyển agent': 'Do not switch agents',
   '(agent theo cấu hình: {agent})': '(configured agent: {agent})',
   '{n} token ngữ cảnh': '{n} context tokens',
+  '{n} task đang chạy bằng {agent}': '{n} task(s) running on {agent}',
 }

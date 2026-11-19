@@ -1,7 +1,7 @@
 // Kênh sự kiện nội bộ: mọi thay đổi trạng thái đều phát ra đây, WebSocket đẩy xuống giao diện.
 import { EventEmitter } from 'node:events'
 import type { ClaudeLimit } from '../../web/src/lib/claudeLimit.ts'
-import type { FileDiff, LogEvent, PermissionRequest, Project, ProjectBudget, PromptTemplate, ReviewAction, RuleSuggestion, Run, Schedule, ScheduleRun, Settings, Task, TestRun } from './types.ts'
+import type { AgentId, FileDiff, LogEvent, PermissionRequest, Project, ProjectBudget, PromptTemplate, ReviewAction, RuleSuggestion, Run, Schedule, ScheduleRun, Settings, Task, TestRun } from './types.ts'
 
 export type ServerMessage =
   | { type: 'task'; task: Task }
@@ -34,6 +34,8 @@ export type ServerMessage =
   | { type: 'rule_suggestions'; projectId: string; suggestions: RuleSuggestion[] }
   // Gói Claude hết lượt (5 giờ / tuần): web hiện banner trên mọi trang; null = đã có lượt lại
   | { type: 'claude_limit'; limit: ClaudeLimit | null }
+  // FR-99: task chuyển sang agent dự phòng vì agent đang dùng hết hạn mức (Telegram gom theo đợt). until = giờ agent cũ có lượt lại
+  | { type: 'agent_failover'; taskId: number; from: AgentId; to: AgentId; until?: number }
 
 export const bus = new EventEmitter()
 bus.setMaxListeners(100)

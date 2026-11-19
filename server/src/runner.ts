@@ -213,6 +213,7 @@ export function startRun(task: Task, kind: RunKind, feedback?: string) {
     const fb = chooseFallback({ current: agentId, task, project })
     if (fb) {
       failoverNotes.push(`${AGENT_NAMES[agentId]} đang hết hạn mức đến ${hhmm(limitedUntil)}: chạy bằng ${AGENT_NAMES[fb]} (agent dự phòng).`)
+      broadcast({ type: 'agent_failover', taskId: task.id, from: agentId, to: fb, until: limitedUntil })
       agentId = fb
     }
   }
@@ -613,6 +614,7 @@ function failover(adapter: AgentAdapter, taskId: number, runId: string, hit: Rat
     failReason: null,
     ...requeueIntent(runs.get(runId)),
   })
+  broadcast({ type: 'agent_failover', taskId, from: adapter.id, to: fb, until: hit.resetAt })
   return true
 }
 

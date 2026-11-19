@@ -37,6 +37,7 @@ export function AgentSelect({
   value,
   onChange,
   inherit,
+  emptyLabel,
   mode,
   className = inputCls,
 }: {
@@ -44,6 +45,8 @@ export function AgentSelect({
   onChange: (v: AgentId | '') => void
   /** Có: thêm lựa chọn "Kế thừa" (giá trị '') với agent kế thừa này. */
   inherit?: AgentId
+  /** Không có `inherit`: nhãn cho lựa chọn trống (giá trị ''), VD "Theo project". */
+  emptyLabel?: string
   /** Mức quyền đang chọn: khoá agent không hỗ trợ. */
   mode?: PermissionMode
   className?: string
@@ -52,6 +55,7 @@ export function AgentSelect({
   return (
     <select className={className} value={value} onChange={(e) => onChange(e.target.value as AgentId | '')}>
       {inherit && <option value="">{tr('Kế thừa: {agent}', { agent: nameOf(agents, inherit) })}</option>}
+      {!inherit && emptyLabel !== undefined && <option value="">{emptyLabel}</option>}
       {agents.map((a) => {
         const note = optionNote(a, mode)
         // Đang chọn sẵn (dữ liệu cũ) thì vẫn hiện được, không khoá để không mất giá trị khi sửa

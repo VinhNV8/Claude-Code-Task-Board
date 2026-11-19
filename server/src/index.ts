@@ -14,6 +14,7 @@ import { bus, type ServerMessage } from './bus.ts'
 import { startScheduler, stopScheduler } from './scheduler.ts'
 import { kv, projects, schedules, settings, tasks, telegramToken } from './db.ts'
 import { createTelegramNotifier, sendTelegram, type FetchLike } from './telegram.ts'
+import { AGENT_NAMES, effectiveAgent } from '../../web/src/lib/agent.ts'
 import { activeConfig, createTelegramApprover, createTelegramPoller } from './telegramApprove.ts'
 import { answerQuestion, decidePermission, listPermissions } from './permissions.ts'
 import { PORT, PROD } from './config.ts'
@@ -76,6 +77,8 @@ bus.on(
     getSettings: settings.get,
     getToken: telegramToken.get,
     projectName: (id) => projects.get(id)?.name,
+    agentName: (t) => AGENT_NAMES[effectiveAgent(t, projects.get(t.projectId), settings.get())],
+    getTask: (id) => tasks.get(id),
     send: (cfg, text) => sendTelegram(cfg, text),
     log: (msg) => app.log.warn(msg),
     // Needs Input do xin quyền: tin kèm nút duyệt (P7-03) đã thay cho tin chung

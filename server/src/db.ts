@@ -184,6 +184,9 @@ if (!projectCols.some((c) => c.name === 'default_agent')) db.exec('ALTER TABLE p
 if (!projectCols.some((c) => c.name === 'failover_mode')) db.exec('ALTER TABLE projects ADD COLUMN failover_mode TEXT')
 if (!projectCols.some((c) => c.name === 'failover_chain')) db.exec('ALTER TABLE projects ADD COLUMN failover_chain TEXT')
 if (!taskCols.some((c) => c.name === 'active_agent')) db.exec('ALTER TABLE tasks ADD COLUMN active_agent TEXT')
+// Template gợi ý agent (NULL = theo project/hệ thống).
+const templateCols = db.prepare('PRAGMA table_info(templates)').all() as { name: string }[]
+if (!templateCols.some((c) => c.name === 'agent')) db.exec('ALTER TABLE templates ADD COLUMN agent TEXT')
 // P6 (B1): budget tháng theo project (NULL = không giới hạn) và hành động khi vượt.
 if (!projectCols.some((c) => c.name === 'monthly_budget_usd')) db.exec('ALTER TABLE projects ADD COLUMN monthly_budget_usd REAL')
 if (!projectCols.some((c) => c.name === 'budget_action'))
@@ -633,6 +636,7 @@ const toTemplate = (r: Row): PromptTemplate => ({
   prompt: r.prompt as string,
   tags: JSON.parse(r.tags as string),
   projectId: opt(r.project_id),
+  ...(parseAgent(r.agent) ? { agent: parseAgent(r.agent)! } : {}),
 })
 
 export const templates = {
@@ -646,10 +650,10 @@ export const templates = {
   /** Thêm mới hoặc cập nhật (giữ nguyên thứ tự created_at khi cập nhật). */
   upsert: (t: PromptTemplate, createdAt = Date.now()) => {
     db.prepare(
-      `INSERT INTO templates (id, name, title, prompt, tags, project_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO templates (id, name, title, prompt, tags, project_id, agent, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET name=excluded.name, title=excluded.title, prompt=excluded.prompt,
-         tags=excluded.tags, project_id=excluded.project_id`,
-    ).run(t.id, t.name, t.title, t.prompt, JSON.stringify(t.tags), t.projectId ?? null, createdAt)
+         tags=excluded.tags, project_id=excluded.project_id, agent=excluded.agent`,
+    ).run(t.id, t.name, t.title, t.prompt, JSON.stringify(t.tags), t.projectId ?? null, t.agent ?? null, createdAt)
     return templates.get(t.id)!
   },
   remove: (id: string) => db.prepare('DELETE FROM templates WHERE id = ?').run(id),

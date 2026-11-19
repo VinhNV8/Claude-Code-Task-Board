@@ -353,3 +353,34 @@ test('Body lớn (200 dòng, prompt dài) vượt 1 MB vẫn nhận', async () =
   assert.equal(r.status, 200)
   assert.equal(r.body.rows.length, 200)
 })
+
+test('Cột agent: nhận id / tên hiển thị, lưu vào task; agent lạ hoặc chưa hỗ trợ báo lỗi ở bước xem trước (FR-91, AC-33)', async () => {
+  assert.equal(lib.headerField('Agent'), 'agent')
+  assert.equal(lib.normalizeAgent('Claude Code'), 'claude')
+  assert.equal(lib.normalizeAgent(' agy '), 'antigravity')
+  assert.equal(lib.normalizeAgent('gpt'), 'gpt')
+  const dry = await post({
+    dryRun: true,
+    rows: [row(2, { agent: 'Codex' }), row(3, { agent: 'gpt' }), row(4, { agent: 'cursor' }), row(5)],
+  })
+  assert.deepEqual(
+    dry.body.rows.map((x) => [x.line, x.status]),
+    [
+      [2, 'ok'],
+      [3, 'error'],
+      [4, 'error'],
+      [5, 'ok'],
+    ],
+  )
+  assert.match(dry.body.rows[1].errors![0], /Agent "gpt" không hợp lệ/)
+  assert.match(dry.body.rows[2].errors![0], /chưa hỗ trợ chạy task bằng Cursor/)
+  const r = await post({ dryRun: false, rows: [row(2, { agent: 'Codex' }), row(5)] })
+  assert.equal(r.status, 200)
+  assert.deepEqual(
+    tasks.all().map((t) => [t.title, t.agent]).sort(),
+    [
+      ['Task 2', 'codex'],
+      ['Task 5', undefined],
+    ],
+  )
+})

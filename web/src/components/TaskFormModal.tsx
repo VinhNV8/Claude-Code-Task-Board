@@ -109,6 +109,8 @@ export function TaskFormModal({
     // Chỉ điền tiêu đề/tag khi người dùng chưa nhập, tránh ghi đè
     if (!title.trim() && t.title) setTitle(t.title)
     if (!tags.length && t.tags.length) setTags(normalizeTags(t.tags))
+    // Template gợi ý agent: điền khi task chưa chọn agent riêng
+    if (t.agent && !agent) setAgent(t.agent)
   }
 
   async function submit(run: boolean) {

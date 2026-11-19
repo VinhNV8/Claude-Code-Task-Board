@@ -42,6 +42,7 @@ const fieldLabel = (f: ImportField) =>
     priority: tr('Độ ưu tiên'),
     tags: 'Tag',
     model: 'Model',
+    agent: 'Agent',
     permissionMode: tr('Mức quyền'),
     maxCostUsd: tr('Giới hạn chi phí'),
   })[f]
@@ -361,7 +362,7 @@ export function ImportModal({ open, onClose, defaultProjectId }: { open: boolean
         </div>
         <p>
           <b>title</b> / {tr('Tiêu đề')} ({tr('bắt buộc')}), <b>prompt</b> / {tr('Mô tả')} ({tr('bắt buộc')}), <b>key</b> / {tr('Mã')}, <b>depends_on</b> /{' '}
-          {tr('Chờ task')}, <b>project</b>, <b>priority</b> / {tr('Độ ưu tiên')}, <b>tags</b>, <b>model</b>, <b>permission_mode</b> / {tr('Mức quyền')},{' '}
+          {tr('Chờ task')}, <b>project</b>, <b>priority</b> / {tr('Độ ưu tiên')}, <b>tags</b>, <b>model</b>, <b>agent</b>, <b>permission_mode</b> / {tr('Mức quyền')},{' '}
           <b>max_cost_usd</b>.
         </p>
         <p className="mt-1">{tr('Chờ task: mã của dòng khác trong file hoặc #id task đã có, cách nhau bởi dấu phẩy.')}</p>
