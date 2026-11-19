@@ -176,7 +176,7 @@ Bấm **Import** trên thanh đầu trang (hoặc `Ctrl K` → *Import task từ
 2. Xem trước: mỗi dòng hiện **Hợp lệ**, **Trùng** (đã có task cùng tiêu đề trong project, mặc định bỏ qua) hoặc **lỗi** kèm lý do. Bỏ tick dòng nào thì dòng đó không được import.
 3. Chọn **Tạo ở** *Backlog* (mặc định, chưa chạy) hoặc *Hàng đợi* (tự chạy, phải xác nhận), rồi bấm **Tạo N task**. Còn dòng lỗi thì không tạo được; bấm **Bỏ chọn các dòng lỗi** để import phần còn lại.
 
-Dòng đầu tiên là tên cột, không phân biệt hoa thường hay dấu. Bấm **Tải file mẫu** để có file CSV mẫu.
+Dòng đầu tiên là tên cột, không phân biệt hoa thường hay dấu. Bấm **Tải file mẫu (Excel)** để có file `.xlsx` mẫu: sheet *Tasks* để điền task, sheet *Hướng dẫn* giải thích từng cột. Cần CSV thì bấm **hoặc CSV**.
 
 | Cột | Tên nhận được | Ghi chú |
 |---|---|---|

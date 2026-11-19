@@ -7,7 +7,7 @@ import {
   CSV_ENCODINGS,
   IMPORT_MAX_BYTES,
   IMPORT_MAX_ROWS,
-  TEMPLATE_FILENAME,
+  TEMPLATE_BASENAME,
   cellToString,
   decodeText,
   mapTable,
@@ -53,13 +53,20 @@ const encodingLabel = (e: CsvEncoding) =>
     'windows-1252': tr('Windows-1252 (Tây Âu)'),
   })[e]
 
-function downloadTemplate() {
-  const url = URL.createObjectURL(new Blob([templateCsv()], { type: 'text/csv;charset=utf-8' }))
+function saveBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
-  a.download = TEMPLATE_FILENAME
+  a.download = filename
   a.click()
   setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
+
+/** FR-01b: mặc định file .xlsx (phần tạo file chỉ nạp khi bấm), CSV là tuỳ chọn. */
+async function downloadTemplate(kind: 'xlsx' | 'csv') {
+  if (kind === 'csv') return saveBlob(new Blob([templateCsv()], { type: 'text/csv;charset=utf-8' }), `${TEMPLATE_BASENAME}.csv`)
+  const { XLSX_MIME, templateXlsx } = await import('../lib/xlsxTemplate')
+  saveBlob(new Blob([templateXlsx()], { type: XLSX_MIME }), `${TEMPLATE_BASENAME}.xlsx`)
 }
 
 export function ImportModal({ open, onClose, defaultProjectId }: { open: boolean; onClose: () => void; defaultProjectId?: string }) {
@@ -339,9 +346,18 @@ export function ImportModal({ open, onClose, defaultProjectId }: { open: boolean
       <div className="rounded-lg bg-slate-50 p-3 text-xs text-slate-600 dark:bg-slate-800/50 dark:text-slate-300">
         <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
           <span className="font-medium">{tr('Các cột nhận được (dòng đầu là tên cột)')}</span>
-          <button type="button" onClick={downloadTemplate} className="inline-flex items-center gap-1 font-medium text-indigo-600 hover:underline dark:text-indigo-400">
-            <Download size={13} /> {tr('Tải file mẫu')}
-          </button>
+          <span className="inline-flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => void downloadTemplate('xlsx')}
+              className="inline-flex items-center gap-1 font-medium text-indigo-600 hover:underline dark:text-indigo-400"
+            >
+              <Download size={13} /> {tr('Tải file mẫu (Excel)')}
+            </button>
+            <button type="button" onClick={() => void downloadTemplate('csv')} className="text-slate-500 hover:underline dark:text-slate-400">
+              {tr('hoặc CSV')}
+            </button>
+          </span>
         </div>
         <p>
           <b>title</b> / {tr('Tiêu đề')} ({tr('bắt buộc')}), <b>prompt</b> / {tr('Mô tả')} ({tr('bắt buộc')}), <b>key</b> / {tr('Mã')}, <b>depends_on</b> /{' '}

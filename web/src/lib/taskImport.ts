@@ -299,16 +299,36 @@ export const titleKey = (s: string) => s.replace(/\s+/g, ' ').trim().toLowerCase
 
 // ---------------------------------------------------------------- file mẫu (FR-01b)
 
-export const TEMPLATE_FILENAME = 'task-import-mau.csv'
+/** Tên file mẫu (không có đuôi). Mặc định tải bản .xlsx (web/src/lib/xlsxTemplate.ts), CSV là tuỳ chọn. */
+export const TEMPLATE_BASENAME = 'task-import-mau'
+
+/** Dữ liệu mẫu dùng chung cho file .xlsx và .csv: dòng tiêu đề cột + 2 task, task 2 chờ task 1. */
+export const TEMPLATE_ROWS: string[][] = [
+  ['key', 'title', 'prompt', 'depends_on', 'priority', 'tags', 'model', 'permission_mode', 'max_cost_usd'],
+  ['A1', 'Thêm API xuất báo cáo', 'Thêm endpoint GET /api/report trả về tổng số task theo trạng thái.\nViết unit test cho endpoint.', '', 'high', 'backend, api', '', '', ''],
+  ['A2', 'Hiển thị báo cáo trên trang Thống kê', 'Gọi /api/report và hiển thị bảng tổng hợp trên trang Thống kê.', 'A1', 'normal', 'web', 'sonnet', '', ''],
+]
+
+/** Sheet "Hướng dẫn" của file mẫu .xlsx (import chỉ đọc sheet đầu nên sheet này không ảnh hưởng). */
+export const TEMPLATE_GUIDE: string[][] = [
+  ['Cột', 'Bắt buộc', 'Giá trị'],
+  ['title', 'Có', 'Tiêu đề task. Tên cột cũng nhận "Tiêu đề"'],
+  ['prompt', 'Có', 'Yêu cầu gửi cho Claude, ít nhất 10 ký tự, được nhiều dòng (Alt+Enter). Tên cột cũng nhận "Mô tả"'],
+  ['key', '', 'Mã riêng trong file (vd A1) để dòng khác chờ. Không lưu vào task'],
+  ['depends_on', '', 'Mã của dòng khác, #id hoặc mã task đã có (vd P2-01), cách nhau bởi dấu phẩy'],
+  ['project', '', 'Tên hoặc id project. Trống: dùng project chọn trên hộp thoại import'],
+  ['priority', '', 'urgent / high / normal / low (hoặc khẩn / cao / thường / thấp). Trống: normal'],
+  ['tags', '', 'Cách nhau bởi dấu phẩy hoặc ;'],
+  ['model', '', 'auto / haiku / sonnet / opus hoặc ID claude-…. Trống: kế thừa project'],
+  ['permission_mode', '', 'manual / acceptEdits / plan / auto. Trống: mặc định của project. Auto phải xác nhận khi import'],
+  ['max_cost_usd', '', 'Giới hạn chi phí mỗi lần chạy (USD), vd 1,5'],
+  ['', '', ''],
+  ['Lưu ý', '', 'Chỉ đọc sheet đầu tiên. Tối đa 200 dòng mỗi lần. Dòng trùng tiêu đề với task đã có mặc định bị bỏ qua'],
+]
 
 const csvCell = (s: string) => (/[",;\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s)
 
 /** File mẫu CSV, có BOM để Excel mở đúng tiếng Việt. */
 export function templateCsv(): string {
-  const rows = [
-    ['key', 'title', 'prompt', 'depends_on', 'priority', 'tags', 'model', 'permission_mode'],
-    ['A1', 'Thêm API xuất báo cáo', 'Thêm endpoint GET /api/report trả về tổng số task theo trạng thái.\nViết unit test cho endpoint.', '', 'high', 'backend, api', '', ''],
-    ['A2', 'Hiển thị báo cáo trên trang Thống kê', 'Gọi /api/report và hiển thị bảng tổng hợp trên trang Thống kê.', 'A1', 'normal', 'web', 'sonnet', ''],
-  ]
-  return '﻿' + rows.map((r) => r.map(csvCell).join(',')).join('\r\n') + '\r\n'
+  return '﻿' + TEMPLATE_ROWS.map((r) => r.map(csvCell).join(',')).join('\r\n') + '\r\n'
 }

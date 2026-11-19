@@ -123,6 +123,37 @@ test('templateCsv: có BOM, đọc lại được và hợp lệ', async () => {
   )
 })
 
+test('templateXlsx: đọc lại bằng read-excel-file ra đúng 2 task hợp lệ, sheet Hướng dẫn riêng (FR-01b)', async () => {
+  const { templateXlsx, columnName } = await import('../../web/src/lib/xlsxTemplate.ts')
+  const { readSheet } = await import('read-excel-file/universal')
+  assert.deepEqual([0, 25, 26, 51, 701, 702].map(columnName), ['A', 'Z', 'AA', 'AZ', 'ZZ', 'AAA'])
+  const bytes = templateXlsx()
+  assert.deepEqual([...bytes.slice(0, 2)], [0x50, 0x4b]) // file zip ("PK")
+  const blob = new Blob([bytes])
+  const data = await readSheet(blob)
+  const table = data.map((r) => r.map(lib.cellToString))
+  assert.deepEqual(table[0], lib.TEMPLATE_ROWS[0])
+  const m = lib.mapTable(table)
+  assert.deepEqual(m.missing, [])
+  assert.deepEqual(m.unknown, [])
+  assert.equal(m.rows[0].prompt, lib.TEMPLATE_ROWS[1][2]) // giữ xuống dòng trong ô
+  assert.deepEqual(m.rows[1].dependsOn, ['A1'])
+  const guide = await readSheet(blob, 'Hướng dẫn')
+  assert.equal(guide[0][0], 'Cột')
+  const r = await post({ rows: m.rows, dryRun: true })
+  assert.deepEqual(
+    r.body.rows.map((x) => x.status),
+    ['ok', 'ok'],
+  )
+})
+
+test('buildXlsx: escape ký tự XML và bỏ ký tự điều khiển', async () => {
+  const { buildXlsx } = await import('../../web/src/lib/xlsxTemplate.ts')
+  const { readSheet } = await import('read-excel-file/universal')
+  const data = await readSheet(new Blob([buildXlsx([{ name: 'S', rows: [['a<b>&"c"', 'x\u0001y']] }])]))
+  assert.deepEqual(data[0], ['a<b>&"c"', 'xy'])
+})
+
 // ---------------------------------------------------------------- API
 
 test('dryRun: báo lỗi theo dòng, không tạo gì (AC-16)', async () => {

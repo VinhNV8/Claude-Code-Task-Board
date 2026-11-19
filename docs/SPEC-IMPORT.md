@@ -88,7 +88,7 @@ Cột không nhận ra thì bỏ qua và liệt kê ở màn xem trước. Thi�
 
 **Dán từ Excel/Google Sheets:** ô dán nhận dữ liệu dạng Tab (khi copy vùng ô), xử lý như CSV có dấu Tab. Cách này không cần chọn file và không gặp R1.
 
-**Tải file mẫu:** nút "Tải file mẫu" tạo `task-import-mau.csv` (UTF-8 có BOM để Excel mở đúng tiếng Việt), gồm dòng tiêu đề và 2 dòng ví dụ, trong đó dòng 2 chờ dòng 1.
+**Tải file mẫu:** mặc định tạo `task-import-mau.xlsx`: sheet *Tasks* (dòng tiêu đề in đậm, cố định khi cuộn, ô tự xuống dòng, 2 dòng ví dụ trong đó dòng 2 chờ dòng 1) và sheet *Hướng dẫn* (giải thích từng cột; import chỉ đọc sheet đầu nên không ảnh hưởng). Link phụ "hoặc CSV" tạo `task-import-mau.csv` (UTF-8 có BOM). File `.xlsx` ghi trực tiếp Office Open XML rồi nén bằng `fflate` (đã có sẵn qua `read-excel-file`, ghim 0.8.3), không thêm thư viện ghi Excel (cập nhật 2026-11-18).
 
 ### 2.4 Quy tắc import
 | # | Quy tắc |
@@ -117,8 +117,9 @@ Cột không nhận ra thì bỏ qua và liệt kê ở màn xem trước. Thi�
 | `server/src/taskImport.ts` (mới) | Map giá trị (ưu tiên tiếng Việt, số kiểu `1,5`), giải mã tham chiếu, kiểm tra vòng tròn nhóm, chống trùng |
 | `server/src/db.ts` | Tách phần ghi của `taskDeps.set` khỏi `BEGIN/COMMIT` (hoặc dùng `SAVEPOINT`) để gọi được trong transaction import (R6) |
 | `server/src/routes.ts` | Route `/api/tasks/import`; tách lõi của `validateTask` để trả lỗi theo dòng thay vì ném ngay |
-| `web/src/lib/csv.ts` (mới) | Parser CSV/TSV, nhận dấu phân cách, giải mã |
-| `web/src/lib/importMap.ts` (mới) | Nhận diện tên cột (bỏ dấu), tạo file mẫu |
+| `web/src/lib/taskImport.ts` (mới, dùng chung web + server) | Parser CSV/TSV, nhận dấu phân cách, giải mã; nhận diện tên cột (bỏ dấu); chuẩn hoá giá trị; dữ liệu mẫu, file mẫu CSV |
+| `server/src/taskValidate.ts` (mới) | `validateTask` tách khỏi `routes.ts`, dùng chung cho form và import |
+| `web/src/lib/xlsxTemplate.ts` (mới) | Tạo file mẫu `.xlsx` |
 | `web/src/components/ImportModal.tsx` (mới) | Chọn file / dán, xem trước, tuỳ chọn, kết quả |
 | `web/src/pages/Board.tsx` | Nút "Import" cạnh nút tạo task; kéo-thả file vào board (Could) |
 | `web/src/store/store.ts`, `mock.ts` | Hàm `importTasks`, bản giả cho `dev:mock` |
@@ -132,7 +133,7 @@ Cột không nhận ra thì bỏ qua và liệt kê ở màn xem trước. Thi�
 | ID | Yêu cầu | Ưu tiên |
 |---|---|---|
 | FR-01a | **Import task hàng loạt** từ CSV, `.xlsx` hoặc dữ liệu dán từ bảng tính. Có xem trước từng dòng kèm lỗi, chống trùng tiêu đề, phụ thuộc giữa các dòng qua cột Mã. Mặc định tạo ở Backlog; tạo tất cả hoặc không. Theo quy tắc I1–I7 | Should |
-| FR-01b | Tải file mẫu CSV (UTF-8 BOM) | Should |
+| FR-01b | Tải file mẫu: mặc định `.xlsx`, tuỳ chọn CSV (UTF-8 BOM) | Should |
 | FR-01c | Map cột thủ công khi tên cột không nhận ra; nhớ cách map cho lần sau | Could |
 | FR-01d | Export task ra CSV (lọc theo board hiện tại), dùng được làm file import | Could |
 
