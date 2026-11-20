@@ -284,7 +284,7 @@ export function TaskFormModal({
           <Field
             label={tr('Phạm vi ghi (tuỳ chọn)')}
             error={touched ? errors.scope : undefined}
-            hint={tr('Chỉ cho task sửa file khớp mẫu, ví dụ docs/**, *.md. Để trống: không giới hạn. Sửa file ngoài phạm vi sẽ bị cảnh báo khi review.')}
+            hint={tr('Chỉ cho task sửa file khớp mẫu, ví dụ docs/**, *.md. Để trống: không giới hạn. Agent ghi file ngoài phạm vi sẽ bị từ chối.')}
           >
             <input className={`${inputCls} font-mono`} value={scope} onChange={(e) => setScope(e.target.value)} placeholder="docs/**, *.md" />
           </Field>

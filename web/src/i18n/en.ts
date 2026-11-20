@@ -766,8 +766,8 @@ export const EN: Record<string, string> = {
   // Phạm vi ghi của task (FR-49)
   'Phạm vi ghi': 'Write scope',
   'Phạm vi ghi (tuỳ chọn)': 'Write scope (optional)',
-  'Chỉ cho task sửa file khớp mẫu, ví dụ docs/**, *.md. Để trống: không giới hạn. Sửa file ngoài phạm vi sẽ bị cảnh báo khi review.':
-    'Only let the task change files matching these patterns, e.g. docs/**, *.md. Leave empty for no limit. Changes outside the scope are flagged at review.',
+  'Chỉ cho task sửa file khớp mẫu, ví dụ docs/**, *.md. Để trống: không giới hạn. Agent ghi file ngoài phạm vi sẽ bị từ chối.':
+    'Only let the task change files matching these patterns, e.g. docs/**, *.md. Leave empty for no limit. Writes outside the scope are refused.',
   'Task chỉ được ghi trong {scope} nhưng đã sửa {n} file ngoài phạm vi:': 'This task may only write to {scope} but changed {n} files outside that scope:',
   '… và {n} file khác': '… and {n} more files',
   'Phạm vi ghi:': 'Write scope:',

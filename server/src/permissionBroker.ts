@@ -7,6 +7,7 @@ import { posix } from 'node:path'
 import { toPosixPath } from './permissionRules.ts'
 import { requestPermission as realRequestPermission, type PermissionAsk, type PollResponse } from './permissions.ts'
 import { QUESTION_TOOL } from '../../web/src/lib/question.ts'
+import { scopeDenyMessage, scopeViolation } from './writeScopeGuard.ts'
 import type { Answers, PermissionMode, Question } from './types.ts'
 
 type Input = Record<string, unknown>
@@ -21,6 +22,8 @@ export interface AgentPermissionRequest {
   command?: string
   /** edit/write/read: đường dẫn (tuyệt đối hoặc tương đối với cwd) */
   path?: string
+  /** edit/write: mọi file của thao tác khi agent sửa nhiều file một lần (Codex fileChange); có thì xét phạm vi ghi trên cả danh sách */
+  paths?: string[]
   /** web: URL */
   url?: string
   /** mcp: `server/tool`; other: tên tool của agent */
@@ -119,9 +122,14 @@ export async function awaitQuestion(taskId: number, questions: Question[], deps:
  */
 export async function awaitPermission(
   r: AgentPermissionRequest,
-  ctx: { mode: PermissionMode; cwd?: string },
+  ctx: { mode: PermissionMode; cwd?: string; writeScope?: string[] },
   deps: BrokerDeps = defaultDeps,
 ): Promise<BrokerDecision> {
+  // FR-49: ghi file ngoài phạm vi ghi của task → từ chối ngay, trước khi mode acceptEdits kịp tự cho phép.
+  if ((r.kind === 'edit' || r.kind === 'write') && ctx.writeScope?.length) {
+    const bad = scopeViolation(r.paths?.length ? r.paths : [r.path], ctx.cwd, ctx.writeScope)
+    if (bad) return { allow: false, message: scopeDenyMessage(bad, ctx.writeScope) }
+  }
   const pre = modeDecision(ctx.mode, r, ctx.cwd)
   if (pre) return pre
   const { toolName, input } = toClaudeTool(r)

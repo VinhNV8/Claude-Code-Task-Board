@@ -120,13 +120,18 @@ export interface ClaudeArgsOptions {
   maxBudgetUsd?: number
   /** Nối thêm vào system prompt (`--append-system-prompt`), dùng cho quy ước BLOCKED_BY (FR-08). */
   appendSystemPrompt?: string
+  /** Task có phạm vi ghi (FR-49): mọi lệnh ghi file phải qua prompt tool để backend kiểm tra phạm vi. */
+  writeScoped?: boolean
 }
 
 /**
  * Mode quyền thực tế truyền cho CLI. Dự phòng (không có prompt tool): `manual` sẽ bị từ chối cả việc sửa file,
  * nên quay về `acceptEdits` + whitelist như PLAN (rủi ro P3). `plan` giữ nguyên vì không sửa gì.
  */
-export function effectivePermissionMode(mode: string, promptTool: boolean) {
+export function effectivePermissionMode(mode: string, promptTool: boolean, writeScoped = false) {
+  // FR-49: acceptEdits của CLI tự cho phép sửa file mà không hỏi → task có phạm vi ghi chạy manual, để từng lệnh ghi
+  // tới backend: ngoài phạm vi bị từ chối, trong phạm vi được tự cho phép (acceptEdits) hoặc theo mode Auto.
+  if (writeScoped && promptTool && (mode === 'acceptEdits' || mode === 'auto')) return 'manual'
   // `auto` là mode của Task Board, không phải của CLI: CLI chạy acceptEdits, phần còn lại
   // đi qua prompt tool và được backend tự duyệt nếu không rủi ro cao (permissions.ts).
   if (mode === 'auto') return 'acceptEdits'
@@ -140,7 +145,7 @@ export function buildClaudeArgs(o: ClaudeArgsOptions) {
     '--output-format', 'stream-json',
     '--verbose',
     ...(o.resume ? ['--resume', o.sessionId] : ['--session-id', o.sessionId]),
-    '--permission-mode', effectivePermissionMode(o.permissionMode, promptTool),
+    '--permission-mode', effectivePermissionMode(o.permissionMode, promptTool, o.writeScoped),
   ]
   if (o.mcpConfigPath) {
     // P3: lệnh ngoài whitelist được hỏi qua MCP tool, task chuyển Needs Input chờ duyệt trên web.

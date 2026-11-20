@@ -80,6 +80,7 @@ function prepare(o: RunInput): PreparedRun {
     fallbackModel: fallbackModelFor(o.model),
     maxBudgetUsd,
     appendSystemPrompt: BLOCKED_BY_INSTRUCTION,
+    writeScoped: !!task.writeScope?.length,
   })
   return {
     ok: true,

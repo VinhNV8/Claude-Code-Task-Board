@@ -444,7 +444,7 @@ function spawnAgent(
         if (child.stdin?.writable) child.stdin.write(`${line}\n`)
       },
       emit: handle,
-      requestPermission: (r) => awaitPermission({ ...r, taskId: task.id }, { mode: task.permissionMode, cwd }),
+      requestPermission: (r) => awaitPermission({ ...r, taskId: task.id }, { mode: task.permissionMode, cwd, writeScope: task.writeScope }),
       askUser: (questions) => awaitQuestion(task.id, questions),
       done: ({ exitCode }) => {
         if (driverExit !== undefined) return

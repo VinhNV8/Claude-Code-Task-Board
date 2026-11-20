@@ -9,6 +9,7 @@ import { db, events, projects, runs, settings, tasks } from './db.ts'
 import { AGENT_NAMES } from '../../web/src/lib/agent.ts'
 import { currentRunId, updateTask } from './runner.ts'
 import { describeInput, matchesAllowed, riskOf, rulesFor } from './permissionRules.ts'
+import { WRITE_TOOLS, scopeDenyMessage, scopeViolation, writePathOf } from './writeScopeGuard.ts'
 import { describeQuestions, isQuestionTool, noAnswerMessage, parseQuestions, validateAnswers, type Answers } from '../../web/src/lib/question.ts'
 import type { PermissionRequest } from './types.ts'
 
@@ -311,6 +312,18 @@ export async function requestPermission(a: PermissionAsk, waitMs = POLL_WAIT_MS)
   const question = isQuestionTool(a.toolName)
   if (question && !parseQuestions(a.input).length)
     return { decision: 'deny', message: 'AskUserQuestion không có câu hỏi hợp lệ nào. Hãy gọi lại với ít nhất một câu hỏi.' }
+  // FR-49: phạm vi ghi. Ghi file ngoài phạm vi → từ chối ngay (trước allowlist và mode Auto).
+  // Task có phạm vi thì Claude chạy CLI ở mode manual (permissionTool.ts) nên mọi lệnh ghi đều tới đây;
+  // ghi trong phạm vi ở task mức Edit automatically được tự cho phép như acceptEdits của CLI.
+  const writePath = writePathOf(a.toolName, a.input)
+  if (task.writeScope?.length && WRITE_TOOLS.has(a.toolName)) {
+    const bad = scopeViolation([writePath], cwd, task.writeScope)
+    if (bad) {
+      logToRun(task.id, `Từ chối ${a.toolName}(${bad}): ngoài phạm vi ghi ${task.writeScope.join(', ')}`)
+      return { decision: 'deny', message: scopeDenyMessage(bad, task.writeScope) }
+    }
+    if (task.permissionMode === 'acceptEdits' && !highRisk) return { decision: 'allow', updatedInput: a.input }
+  }
   if (!question && project && !highRisk && matchesAllowed(project.allowedTools, a.toolName, a.input ?? {}, { cwd })) {
     logToRun(task.id, `Tự động cho phép ${a.toolName}(${describeInput(a.toolName, a.input)}) theo quy tắc của project`)
     return { decision: 'allow', updatedInput: a.input }

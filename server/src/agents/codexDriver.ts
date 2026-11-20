@@ -156,7 +156,7 @@ export function createCodexDriver(ctx: DriverContext, o: { clientVersion: string
           const path = paths.find((x) => !isInside(x, input.cwd)) ?? paths[0]
           const allAdd = changes.length > 0 && changes.every((c) => c.kind?.type === 'add')
           const reason = paths.length > 1 ? `Sửa ${paths.length} file: ${paths.map(rel).join(', ')}` : (p.reason ?? undefined)
-          const d = await ctx.requestPermission({ kind: allAdd ? 'write' : 'edit', path, reason })
+          const d = await ctx.requestPermission({ kind: allAdd ? 'write' : 'edit', path, paths, reason })
           if (!d.allow) {
             denials.push({ tool: allAdd ? 'Write' : 'Edit', input: paths.map(rel).join(', ') })
             emitEvents({ type: 'system', text: `Từ chối sửa file: ${paths.map(rel).join(', ') || '(không rõ)'}${d.message ? ` (${d.message})` : ''}` })

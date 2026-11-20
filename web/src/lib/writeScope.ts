@@ -2,8 +2,8 @@
 //   `docs/**` hoặc `docs/` hoặc `docs`  mọi file trong thư mục docs
 //   `*.md`                             mẫu không có `/`: so với tên file ở mọi cấp thư mục
 //   `src/*.ts`                         `*` khớp trong một cấp thư mục, `**` khớp nhiều cấp, `?` một ký tự
-// Là lớp mềm: hệ thống gắn ràng buộc vào prompt và cảnh báo ở bước Review khi diff có file ngoài phạm vi;
-// chưa chặn cứng việc ghi file. Hàm thuần, dùng chung cho web và server.
+// Ba lớp: ràng buộc gắn vào prompt; lệnh ghi file ngoài phạm vi bị từ chối ngay (server/src/writeScopeGuard.ts);
+// bước Review cảnh báo file ngoài phạm vi còn lọt (vd sửa bằng lệnh shell). Hàm thuần, dùng chung cho web và server.
 
 export const MAX_SCOPE_PATTERNS = 20
 export const MAX_SCOPE_PATTERN_LENGTH = 200
@@ -81,6 +81,7 @@ export function scopePrompt(patterns: string[]): string {
     'Ràng buộc phạm vi ghi (do Task Board gắn thêm):',
     `- Chỉ được tạo, sửa, xoá hoặc đổi tên file khớp các mẫu sau (tương đối với thư mục làm việc): ${patterns.join(', ')}`,
     '- Được đọc mọi file để lấy ngữ cảnh.',
+    '- Lệnh ghi file ngoài phạm vi sẽ bị Task Board từ chối. Không dùng lệnh shell để ghi file ngoài phạm vi.',
     '- Nếu thấy cần sửa file ngoài phạm vi này, KHÔNG tự sửa: ghi rõ file và nội dung cần sửa vào mục "Đề xuất ngoài phạm vi" ở cuối câu trả lời.',
   ].join('\n')
 }
