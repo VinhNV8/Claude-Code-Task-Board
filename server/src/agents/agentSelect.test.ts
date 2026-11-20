@@ -130,7 +130,9 @@ test('agent có adapter nhưng không hỗ trợ mức quyền: báo lỗi; đú
 
 test('PATCH: đổi agent kiểm tra mức quyền, gửi rỗng = về kế thừa', async () => {
   setAdapterForTest('codex', fakeCodex)
-  const t = (await api<Task>('POST', '/api/tasks', taskBody({ permissionMode: 'plan' }))).body
+  // Mức quyền `plan` cũ được tách thành planMode 'only' + mức quyền theo project (SPEC-PLAN-HANDOFF A5): chọn rõ acceptEdits.
+  const t = (await api<Task>('POST', '/api/tasks', taskBody({ permissionMode: 'acceptEdits', planMode: 'only' }))).body
+  assert.equal(t.planMode, 'only')
   const toCodex = await api<Task>('PATCH', `/api/tasks/${t.id}`, { agent: 'codex' })
   assert.equal(toCodex.status, 200, toCodex.body.error)
   assert.equal(toCodex.body.agent, 'codex')

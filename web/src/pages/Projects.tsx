@@ -17,7 +17,8 @@ import { MODEL_OPTIONS, modelLabel } from '../lib/model'
 import { AgentSelect, ChainEditor, agentHint, useAgents } from '../components/AgentSelect'
 import { AGENT_NAMES } from '../lib/agent'
 import { mergeRules } from '../lib/rules'
-import { PERMISSION_MODES, permissionModeOf } from '../lib/permissionMode'
+import { SELECTABLE_MODES, permissionModeOf } from '../lib/permissionMode'
+import { PLAN_MODES } from '../lib/planMode'
 import type { FailoverMode, PermissionMode, PermissionPreset, PermissionSyncPlan, PermissionSyncTask, Project, RuleSuggestion, TaskStatus } from '../types'
 import { tr } from '../lib/i18n'
 
@@ -271,7 +272,7 @@ export function ProjectModal({ project, onClose, onSaved }: { project: Project |
         <fieldset className="space-y-1">
           <legend className="text-sm font-medium text-slate-700 dark:text-slate-200">{tr('Mức quyền mặc định')}</legend>
           <div className="grid gap-2 sm:grid-cols-2">
-            {PERMISSION_MODES.map((m) => {
+            {SELECTABLE_MODES.map((m) => {
               const active = p.permissionMode === m.value
               return (
                 <label
@@ -298,6 +299,31 @@ export function ProjectModal({ project, onClose, onSaved }: { project: Project |
             })}
           </div>
           <span className="block text-xs text-slate-500 dark:text-slate-400">{tr('Task mới của project sẽ dùng mức quyền này (có thể đổi riêng từng task). Khi đổi mức quyền, bạn sẽ được hỏi có áp dụng cho các task chưa chạy không.')}</span>
+        </fieldset>
+        <fieldset className="space-y-1">
+          {/* SPEC-PLAN-HANDOFF FR-100: cách làm mặc định cho task mới (form, import, lịch) */}
+          <legend className="text-sm font-medium text-slate-700 dark:text-slate-200">{tr('Cách làm mặc định của task mới')}</legend>
+          <div className="grid gap-2 sm:grid-cols-3">
+            {PLAN_MODES.map((m) => {
+              const active = (p.defaultPlanMode ?? 'none') === m.value
+              return (
+                <label
+                  key={m.value}
+                  className={`flex cursor-pointer items-start gap-2 rounded-lg border p-2.5 text-sm transition ${
+                    active
+                      ? 'border-indigo-500 bg-indigo-50 dark:border-indigo-400 dark:bg-indigo-950/40'
+                      : 'border-slate-200 hover:border-slate-300 dark:border-slate-700 dark:hover:border-slate-600'
+                  }`}
+                >
+                  <input type="radio" name="defaultPlanMode" className="mt-0.5" checked={active} onChange={() => setP({ ...p, defaultPlanMode: m.value })} />
+                  <span>
+                    <span className="block font-medium text-slate-800 dark:text-slate-100">{tr(m.label)}</span>
+                    <span className="block text-xs text-slate-500 dark:text-slate-400">{tr(m.description)}</span>
+                  </span>
+                </label>
+              )
+            })}
+          </div>
         </fieldset>
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label={tr('Số task song song tối đa')} hint={p.deliveryMode === 'direct' ? tr('Ghi thẳng vào thư mục: luôn chạy 1 task mỗi lúc') : undefined}>

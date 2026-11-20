@@ -7,6 +7,7 @@ import { execFile } from 'node:child_process'
 import { boardHash, claudeBinInExtension, parseAuthStatus, pickMainBranch, samePath, webviewHtml, type ServerInfo } from './core'
 import { ServerManager, type Health } from './serverManager'
 import { startClaudeLimitWatch } from './claudeLimitWatch'
+import { startHandoffClient } from './handoffClient'
 
 // Chuỗi hiển thị viết bằng tiếng Anh; bản dịch tiếng Việt ở l10n/bundle.l10n.vi.json (VS Code tự chọn theo ngôn ngữ).
 const t = vscode.l10n.t
@@ -50,6 +51,10 @@ export function activate(ctx: vscode.ExtensionContext) {
   status.show()
   // Gói Claude hết lượt: thanh trạng thái + thông báo VS Code (cả khi chưa mở tab Task Board)
   ctx.subscriptions.push(startClaudeLimitWatch({ ctx, status, readInfo: () => manager.readInfo(), openBoard: () => openBoard(ctx) }))
+  // "Mở trong Claude Code" (SPEC-PLAN-HANDOFF Phần B): nhận yêu cầu từ board, mở terminal chạy tiếp phiên của task.
+  ctx.subscriptions.push(
+    startHandoffClient({ readInfo: () => manager.readInfo(), ensureServer, log: (l) => output.appendLine(`[${new Date().toLocaleTimeString()}] ${l}`) }),
+  )
 
   // Khung "Bắt đầu" ở thanh bên: nội dung là viewsWelcome (package.json); mở khung thì mở luôn bảng công việc.
   const home = vscode.window.createTreeView('agentTaskBoard.home', { treeDataProvider: new EmptyTree() })

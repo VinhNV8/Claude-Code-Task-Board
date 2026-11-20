@@ -40,11 +40,16 @@ export type ServerMessage =
 export const bus = new EventEmitter()
 bus.setMaxListeners(100)
 
-/** Gắn thông tin chỉ tính lúc chạy vào task trước khi gửi (P6: blockedReason). budgetService.ts đăng ký. */
-let decorateTask: (t: Task) => Task = (t) => t
+/**
+ * Gắn thông tin chỉ tính lúc chạy vào task trước khi gửi: blockedReason (P6, budgetService.ts),
+ * handoff (SPEC-PLAN-HANDOFF FR-113, handoffRoutes.ts). Mỗi module đăng ký một lần; chạy theo thứ tự đăng ký.
+ */
+const decorators: ((t: Task) => Task)[] = []
 
 export function setTaskDecorator(fn: (t: Task) => Task) {
-  decorateTask = fn
+  if (!decorators.includes(fn)) decorators.push(fn)
 }
+
+export const decorateTask = (t: Task): Task => decorators.reduce((acc, fn) => fn(acc), t)
 
 export const broadcast = (m: ServerMessage) => bus.emit('message', m.type === 'task' ? { ...m, task: decorateTask(m.task) } : m)

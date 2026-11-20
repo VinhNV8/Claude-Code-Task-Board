@@ -6,7 +6,8 @@ import { normalizeModel } from './model.ts'
 import { BudgetError, parseUsd } from './budget.ts'
 import { parseAgent } from '../../web/src/lib/agent.ts'
 import { normalizeScope, scopeProblem } from '../../web/src/lib/writeScope.ts'
-import type { AgentId, PermissionMode, Priority } from './types.ts'
+import { isPlanMode, normalizePlanMode } from '../../web/src/lib/planMode.ts'
+import type { AgentId, PermissionMode, PlanMode, Priority, Project } from './types.ts'
 
 export const PRIORITIES: Priority[] = ['urgent', 'high', 'normal', 'low']
 // Không cho phép bypassPermissions (SPEC Mục 9)
@@ -29,7 +30,22 @@ export interface TaskBody {
   dependsOn?: number[] | null
   /** Phạm vi ghi (FR-49): mảng mẫu hoặc chuỗi cách nhau bởi dấu phẩy. [] / '' / null: không giới hạn. */
   writeScope?: string[] | string | null
+  /** FR-100: none / first / only (nhận cả tên tiếng Việt). Không gửi: theo `defaultPlanMode` của project. */
+  planMode?: PlanMode | string
   run?: boolean
+}
+
+/**
+ * SPEC-PLAN-HANDOFF A5: mức quyền `plan` của task (API cũ, file import cũ) chuyển thành planMode `only`, mức quyền
+ * theo project. Lượt Kế hoạch luôn chạy mode plan nên task không bị nới quyền.
+ */
+export function splitLegacyPlan(
+  v: { permissionMode?: PermissionMode; planMode?: PlanMode | string },
+  project: Pick<Project, 'permissionMode'>,
+): { permissionMode?: PermissionMode; planMode?: PlanMode } {
+  const planMode = v.planMode as PlanMode | undefined
+  if (v.permissionMode !== 'plan') return { permissionMode: v.permissionMode, planMode }
+  return { permissionMode: project.permissionMode === 'plan' ? 'manual' : project.permissionMode, planMode: planMode ?? 'only' }
 }
 
 export function validateTask(b: TaskBody, partial = false) {
@@ -53,6 +69,11 @@ export function validateTask(b: TaskBody, partial = false) {
   if (b.permissionMode !== undefined) {
     if (!MODES.includes(b.permissionMode)) throw new HttpError(400, 'Mức quyền không hợp lệ')
     out.permissionMode = b.permissionMode
+  }
+  if (b.planMode !== undefined) {
+    const m = normalizePlanMode(b.planMode) ?? 'none'
+    if (!isPlanMode(m)) throw new HttpError(400, 'Cách làm không hợp lệ (làm luôn / kế hoạch trước / chỉ kế hoạch)')
+    out.planMode = m
   }
   if (b.tags !== undefined) {
     try {

@@ -3,7 +3,7 @@ import { execFile } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { isAbsolute } from 'node:path'
 import { randomUUID } from 'node:crypto'
-import { bus, broadcast, type ServerMessage } from './bus.ts'
+import { bus, broadcast, decorateTask, type ServerMessage } from './bus.ts'
 import { approveTask, checkMerge, mergeTask, rejectTask, requestChanges } from './review.ts'
 import { readTaskFile, readTaskImage, saveTaskFile } from './reviewFiles.ts'
 import { PREVIEW_PORT, PREVIEW_TTL_MS, signPreviewToken } from './preview.ts'
@@ -31,10 +31,13 @@ import { answerQuestion, decidePermission, decidePermissionsBatch, initPermissio
 import { BudgetError, parseBudgetAction, parseUsd } from './budget.ts'
 import { PERMISSION_PRESETS } from './permissionPresets.ts'
 import { dismissRule, ruleSuggestionsFor, watchRuleSuggestions } from './ruleSuggestions.ts'
-import { getBudgets, isProjectBlocked, refreshBudgets, withBlockedReason } from './budgetService.ts'
+import { getBudgets, isProjectBlocked, refreshBudgets } from './budgetService.ts'
 import { getClaudeLimit } from './claudeLimit.ts'
 import { DepsError, pendingDeps, suggestDeps, validateDeps } from './taskDeps.ts'
-import { MODES, validateTask, type TaskBody } from './taskValidate.ts'
+import { MODES, splitLegacyPlan, validateTask, type TaskBody } from './taskValidate.ts'
+import { approvePlan } from './review.ts'
+import { isHandedOff, LOCKED_MESSAGE } from './handoff.ts'
+import { handoffRoutes } from './handoffRoutes.ts'
 import { planPermissionSync } from './permissionSync.ts'
 import { agentProblem, listAgents } from './agents/index.ts'
 import { parseAgent, parseChain, resolveAgent } from '../../web/src/lib/agent.ts'
@@ -100,7 +103,7 @@ export async function routes(app: FastifyInstance) {
     await Promise.all(inReview.map(async (t) => (diffs[t.id] = await safeDiff(t.projectId, t.id))))
     return {
       projects: projects.all(),
-      tasks: tasks.all().map(withBlockedReason),
+      tasks: tasks.all().map(decorateTask),
       runs: runs.all(),
       budgets: getBudgets(),
       settings: settings.get(),
@@ -341,6 +344,11 @@ export async function routes(app: FastifyInstance) {
 
   // ------------------------------------------------------------ tasks
 
+  /** FR-113: task đang mở trong Claude Code thì không chạy / sửa / xoá được. */
+  function assertNotLocked(taskId: number) {
+    if (isHandedOff(taskId)) throw new HttpError(409, LOCKED_MESSAGE)
+  }
+
   /** FR-91/FR-93: agent của task (sau khi kế thừa) phải chạy được với mức quyền của task (lỗi 400). */
   function checkTaskAgent(agent: AgentId | undefined, project: Project | undefined, mode: PermissionMode) {
     const err = agentProblem(resolveAgent({ agent }, project, settings.get()), mode)
@@ -362,7 +370,9 @@ export async function routes(app: FastifyInstance) {
     const v = validateTask(req.body)
     const project = projects.get(v.projectId!)!
     const deps = checkDeps(req.body.dependsOn, { projectId: project.id })
-    const permissionMode = v.permissionMode ?? project.permissionMode
+    const legacy = splitLegacyPlan(v, project)
+    const permissionMode = legacy.permissionMode ?? project.permissionMode
+    const planMode = legacy.planMode ?? project.defaultPlanMode ?? 'none'
     checkTaskAgent(v.agent || undefined, project, permissionMode)
     const created = tasks.create({
       projectId: v.projectId!,
@@ -375,6 +385,7 @@ export async function routes(app: FastifyInstance) {
       agent: v.agent || undefined,
       maxCostUsd: (v.maxCostUsd as number | null | undefined) ?? undefined,
       writeScope: (v.writeScope as string[] | undefined) ?? undefined,
+      planMode,
       status: req.body.run ? 'queued' : 'backlog',
     })
     if (deps.length) taskDeps.set(created.id, deps)
@@ -387,8 +398,14 @@ export async function routes(app: FastifyInstance) {
   app.patch<{ Params: { id: string }; Body: TaskBody }>('/api/tasks/:id', async (req) => {
     const t = getTask(req.params.id)
     if (t.status !== 'backlog' && t.status !== 'queued') throw new HttpError(409, 'Chỉ sửa được task ở Backlog hoặc Queued')
-    const v = validateTask(req.body, true)
-    const projectId = v.projectId ?? t.projectId
+    const parsed = validateTask(req.body, true)
+    const projectId = parsed.projectId ?? t.projectId
+    const legacy = splitLegacyPlan(parsed, projects.get(projectId) ?? { permissionMode: t.permissionMode })
+    const v = {
+      ...parsed,
+      ...(legacy.permissionMode !== undefined ? { permissionMode: legacy.permissionMode } : {}),
+      ...(legacy.planMode !== undefined ? { planMode: legacy.planMode } : {}),
+    }
     // FR-08: phụ thuộc chỉ trong cùng project. Đổi project thì phải gỡ hết liên kết hai chiều trước.
     const deps = req.body.dependsOn !== undefined ? checkDeps(req.body.dependsOn, { taskId: t.id, projectId }) : undefined
     if (projectId !== t.projectId) {
@@ -435,6 +452,7 @@ export async function routes(app: FastifyInstance) {
 
   app.delete<{ Params: { id: string } }>('/api/tasks/:id', async (req) => {
     const t = getTask(req.params.id)
+    assertNotLocked(t.id)
     if (isRunning(t.id)) throw new HttpError(409, 'Task đang chạy, hãy dừng trước khi xoá')
     if (!canDeleteTask(t.status)) throw new HttpError(409, 'Chỉ xoá được task chưa chạy (Backlog, Hàng đợi) hoặc đã thất bại/bị dừng')
     await stopTests(t.id, 'Task đã bị xoá.')
@@ -454,6 +472,7 @@ export async function routes(app: FastifyInstance) {
 
   app.post<{ Params: { id: string } }>('/api/tasks/:id/queue', async (req) => {
     const t = getTask(req.params.id)
+    assertNotLocked(t.id)
     if (t.status !== 'backlog') throw new HttpError(409, 'Chỉ đưa vào hàng đợi task ở Backlog')
     // Người dùng chủ động đưa vào hàng đợi: chạy ngay khi có slot, bộ đếm tự thử lại do giới hạn sử dụng về 0.
     updateTask(t.id, { status: 'queued', notBefore: null, rateLimitRetries: 0 })
@@ -471,6 +490,7 @@ export async function routes(app: FastifyInstance) {
   // Kéo thả task sang cột Running: chạy ngay nếu còn slot, hết slot thì vào hàng đợi.
   app.post<{ Params: { id: string }; Body: { ignoreDeps?: boolean } }>('/api/tasks/:id/run', async (req) => {
     const t = getTask(req.params.id)
+    assertNotLocked(t.id)
     if (t.status !== 'backlog' && t.status !== 'queued') throw new HttpError(409, 'Chỉ chạy ngay được task ở Backlog hoặc Queued')
     // P6 B3: project đặt "tạm dừng khi vượt budget" và đã vượt → không cho chạy tay.
     if (isProjectBlocked(t.projectId))
@@ -498,6 +518,7 @@ export async function routes(app: FastifyInstance) {
 
   app.post<{ Params: { id: string } }>('/api/tasks/:id/retry', async (req) => {
     const t = getTask(req.params.id)
+    assertNotLocked(t.id)
     if (t.status !== 'failed') throw new HttpError(409, 'Chỉ chạy lại task ở Failed')
     // PLAN 2.7: reset worktree về mainBranch (hoặc xoá branch/worktreePath nếu đã bị Reject), xoá session cũ, rồi Queued.
     await retryTask(t.id, { pump })
@@ -507,6 +528,7 @@ export async function routes(app: FastifyInstance) {
   // Tiếp tục task bị tạm dừng / lỗi / hết giới hạn sử dụng: giữ worktree, chạy tiếp phiên Claude cũ.
   app.post<{ Params: { id: string } }>('/api/tasks/:id/resume', async (req) => {
     const t = getTask(req.params.id)
+    assertNotLocked(t.id)
     const r = await resumeTask(t.id, { hasSlot, startRun, pump })
     return { ok: true, started: r.started }
   })
@@ -525,9 +547,15 @@ export async function routes(app: FastifyInstance) {
 
   // ------------------------------------------------------------ review (PLAN 2.4–2.8)
 
-  app.post<{ Params: { id: string }; Body: { action?: string; feedback?: string; comments?: unknown } }>('/api/tasks/:id/review', async (req) => {
+  app.post<{ Params: { id: string }; Body: { action?: string; feedback?: string; comments?: unknown; plan?: unknown } }>('/api/tasks/:id/review', async (req) => {
     const t = getTask(req.params.id)
     const action = req.body?.action
+    // FR-103: "Duyệt và thực hiện" kế hoạch (có thể đã sửa) → task Queued ở giai đoạn Thực hiện.
+    if (action === 'approve_plan') {
+      const r = await approvePlan(t.id, req.body?.plan)
+      pump()
+      return r
+    }
     if (action === 'approve' || action === 'merge') {
       // approve = chấp nhận output (không merge); merge = chấp nhận + merge nhánh task (mode worktree, tuỳ chọn)
       const r = action === 'merge' ? await mergeTask(t.id) : await approveTask(t.id)
@@ -536,7 +564,7 @@ export async function routes(app: FastifyInstance) {
     }
     if (action === 'request_changes') return requestChanges(t.id, req.body?.feedback, { hasSlot, startRun }, req.body?.comments)
     if (action === 'reject') return rejectTask(t.id, req.body?.feedback)
-    throw new HttpError(400, 'Thao tác review không hợp lệ (chỉ chấp nhận approve, merge, request_changes, reject)')
+    throw new HttpError(400, 'Thao tác review không hợp lệ (chỉ chấp nhận approve, merge, request_changes, reject, approve_plan)')
   })
 
   // ------------------------------------------------------------ duyệt quyền (PLAN 3.3–3.5)
@@ -813,6 +841,9 @@ export async function routes(app: FastifyInstance) {
     }
     return { ok: true }
   })
+
+  // SPEC-PLAN-HANDOFF Phần B: mở task trong Claude Code
+  handoffRoutes(app)
 
   // ------------------------------------------------------------ websocket
 

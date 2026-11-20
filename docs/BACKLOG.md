@@ -68,6 +68,16 @@ npm run seed:backlog                # tạo task ở cột Backlog
 | P7-03 | Duyệt quyền qua Telegram | low | — | P7 |
 | P7-04 | Phân loại rủi ro lệnh | normal | — | P7 |
 | P7-05 | Từ chối kèm lý do + duyệt hàng loạt | low | P7-04 | P7 |
+| **P9: Duyệt kế hoạch, Mở trong Claude Code** ([SPEC-PLAN-HANDOFF.md](SPEC-PLAN-HANDOFF.md)) | | | | |
+| P9-01 | ✅ Spike S1 (plan mode headless), S2 (resume theo thư mục) | high | — | §6 |
+| P9-02 | ✅ `planMode`, chuyển dữ liệu `plan` cũ (A5), form / project / import / lịch | high | P9-01 | A3–A5 |
+| P9-03 | ✅ Lượt Kế hoạch, Duyệt kế hoạch, lượt Thực hiện (FR-101..105) | high | P9-02 | A4 |
+| P9-04 | ✅ Khoá task, Đưa về Review, run `manual` (FR-113..115) | high | — | B4 |
+| P9-05 | ✅ Extension mở terminal, URI handler, Sao chép lệnh (FR-110..112, FR-116) | high | P9-04 | B4 |
+| P9-06 | Duyệt kế hoạch qua Telegram (FR-106) | low | P9-03 | A4 |
+| P9-07 | Nhắc task khoá quá 12 giờ (FR-114c) | low | P9-04 | B4 |
+| P9-08 | `planMode` trong template | low | P9-02 | A4 |
+| P9-09 | Spike S3: phiên tạo bằng API key resume bằng đăng nhập; nếu không được thì FR-116 chặn thay vì cảnh báo | normal | P9-05 | §6 |
 
 ## Việc của bạn (không giao cho Claude)
 - [x] **Điểm duyệt #1** (đạt 2026-11-18): bấm thử giao diện P1 trên trình duyệt (PLAN, mục "Kết quả kiểm thử P1").

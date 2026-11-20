@@ -4,10 +4,11 @@ import { Link2, Play, Plus, Save, X } from 'lucide-react'
 import { createTask, fetchDepSuggestions, updateTask, useStore, type DepSuggestion } from '../store/store'
 import { collectTags, normalizeTags } from '../lib/taskFilter'
 import { MODEL_OPTIONS, inheritedModelHint, modelLabel } from '../lib/model'
-import type { AgentId, PermissionMode, Priority, PromptTemplate, Task } from '../types'
+import type { AgentId, PermissionMode, PlanMode, Priority, PromptTemplate, Task } from '../types'
 import { AgentSelect, agentHint, useAgents } from './AgentSelect'
 import { resolveAgent } from '../lib/agent'
-import { PERMISSION_MODES, permissionModeOf } from '../lib/permissionMode'
+import { SELECTABLE_MODES, permissionModeOf } from '../lib/permissionMode'
+import { PLAN_MODES, planModeOf } from '../lib/planMode'
 import { TagInput } from './TagInput'
 import { Button, Field, Modal, inputCls } from './ui'
 import { tr } from '../lib/i18n'
@@ -35,6 +36,7 @@ export function TaskFormModal({
   const [tags, setTags] = useState<string[]>([])
   // FR-49: phạm vi ghi, nhập dạng chuỗi cách nhau bởi dấu phẩy
   const [scope, setScope] = useState('')
+  const [planMode, setPlanMode] = useState<PlanMode>('none')
   const [model, setModel] = useState('')
   /** '' = kế thừa project → Settings (SPEC-MULTI-AGENT FR-91) */
   const [agent, setAgent] = useState<AgentId | ''>('')
@@ -56,6 +58,7 @@ export function TaskFormModal({
       setMode(editing.permissionMode)
       setTags(editing.tags)
       setScope((editing.writeScope ?? []).join(', '))
+      setPlanMode(editing.planMode ?? 'none')
       setModel(editing.model ?? '')
       setAgent(editing.agent ?? '')
       setDeps(editing.dependsOn ?? [])
@@ -68,6 +71,7 @@ export function TaskFormModal({
       setMode(projects.find((p) => p.id === pid)?.permissionMode ?? 'acceptEdits')
       setTags([])
       setScope('')
+      setPlanMode(projects.find((p) => p.id === pid)?.defaultPlanMode ?? 'none')
       setModel('')
       setAgent('')
       setDeps([])
@@ -126,11 +130,36 @@ export function TaskFormModal({
     setSaving(true)
     try {
       if (editing) {
-        await updateTask(editing.id, { title, prompt, projectId, priority, permissionMode: mode, tags: tagList, model, agent, dependsOn: deps, writeScope: normalizeScope(scope) })
+        await updateTask(editing.id, {
+          title,
+          prompt,
+          projectId,
+          priority,
+          permissionMode: mode,
+          tags: tagList,
+          model,
+          agent,
+          dependsOn: deps,
+          writeScope: normalizeScope(scope),
+          planMode,
+        })
         onClose()
         return
       }
-      const id = await createTask({ title, prompt, projectId, priority, permissionMode: mode, tags: tagList, model, agent, dependsOn: deps, writeScope: normalizeScope(scope), run })
+      const id = await createTask({
+        title,
+        prompt,
+        projectId,
+        priority,
+        permissionMode: mode,
+        tags: tagList,
+        model,
+        agent,
+        dependsOn: deps,
+        writeScope: normalizeScope(scope),
+        planMode,
+        run,
+      })
       onClose()
       if (run) navigate(`/tasks/${id}`)
     } catch {
@@ -213,7 +242,10 @@ export function TaskFormModal({
                 // phụ thuộc chỉ trong cùng project
                 setDeps([])
                 const p = projects.find((x) => x.id === e.target.value)
-                if (p && !editing) setMode(p.permissionMode)
+                if (p && !editing) {
+                  setMode(p.permissionMode)
+                  setPlanMode(p.defaultPlanMode ?? 'none')
+                }
               }}
             >
               {projects.map((p) => (
@@ -231,9 +263,18 @@ export function TaskFormModal({
               <option value="low">{tr('Thấp')}</option>
             </select>
           </Field>
+          <Field label={tr('Cách làm')} hint={tr(planModeOf(planMode).description)}>
+            <select className={inputCls} value={planMode} onChange={(e) => setPlanMode(e.target.value as PlanMode)}>
+              {PLAN_MODES.map((m) => (
+                <option key={m.value} value={m.value}>
+                  {tr(m.label)}
+                </option>
+              ))}
+            </select>
+          </Field>
           <Field label={tr('Mức quyền')} hint={permissionModeOf(mode).description}>
             <select className={inputCls} value={mode} onChange={(e) => setMode(e.target.value as PermissionMode)}>
-              {PERMISSION_MODES.map((m) => (
+              {SELECTABLE_MODES.map((m) => (
                 <option key={m.value} value={m.value}>
                   {m.label}
                 </option>

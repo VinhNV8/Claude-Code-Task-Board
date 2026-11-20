@@ -138,3 +138,16 @@ Phục vụ [SPEC-MULTI-AGENT.md](SPEC-MULTI-AGENT.md), giai đoạn M0. Chạy 
 
 ## Kết luận
 Không còn trở ngại kỹ thuật cho `AntigravityAdapter` đủ 4 mode quyền qua ACP, với điều kiện chạy `toolPermission: "strict"` trong thư mục dữ liệu riêng của Task Board.
+
+---
+
+# Spike P9 (2026-11-19, Claude Code CLI 2.1.327): plan mode headless và resume tương tác
+
+Phục vụ [SPEC-PLAN-HANDOFF.md](SPEC-PLAN-HANDOFF.md).
+
+| # | Kiểm tra | Kết quả | Ghi chú |
+|---|---|---|---|
+| S1 | `claude -p --permission-mode plan` kết thúc thế nào | ✅ | Không có tool `ExitPlanMode` (Claude tìm bằng ToolSearch, không thấy). Kế hoạch được ghi vào `~/.claude/plans/<slug>.md` (ngoài repo) và trả trong `result`, kèm vài câu "hãy thoát plan mode". Không có `permission_denials`. ⇒ Task Board gắn chỉ dẫn "câu trả lời cuối chính là kế hoạch", lấy `result` làm kế hoạch |
+| S2 | Phiên của lượt `-p` có resume được không, và khi chữ hoa/thường của ổ đĩa khác nhau thì sao | ✅ | Phiên lưu ở `~/.claude/projects/<cwd mã hoá>/<id>.jsonl`, chung chỗ với phiên tương tác. `spawn(claude, ['-p','--resume',id], {cwd: 'c:\\...'})` vẫn tìm thấy phiên tạo từ `C:\\...` và nhớ đúng ngữ cảnh |
+| S3 | Phiên tạo bằng API key có resume được bằng đăng nhập Pro/Max không | ⏳ | File phiên có dòng `session-owner` (`accountUuid`, `organizationUuid`), nên có thể bị từ chối. Chưa kiểm vì máy chưa cấu hình API key |
+

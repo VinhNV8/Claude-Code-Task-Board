@@ -82,9 +82,28 @@ export interface Project {
    *   merge vào nhánh chính là thao tác riêng, tuỳ chọn.
    */
   deliveryMode: DeliveryMode
+  /** Giá trị planMode mặc định cho task mới của project (FR-100). Không có: `none`. */
+  defaultPlanMode?: PlanMode
 }
 
 export type DeliveryMode = 'direct' | 'worktree'
+
+/**
+ * Duyệt kế hoạch trước khi làm (SPEC-PLAN-HANDOFF FR-100): none = làm luôn · first = lập kế hoạch, duyệt rồi mới làm ·
+ * only = chỉ lập kế hoạch (thay cho mức quyền `plan` của task).
+ */
+export type PlanMode = 'none' | 'first' | 'only'
+
+/** Giai đoạn của task có lập kế hoạch: plan = lượt Kế hoạch (mode plan) · execute = lượt Thực hiện sau khi duyệt. */
+export type PlanPhase = 'plan' | 'execute'
+
+/** Task đang được mở trong agent tương tác (SPEC-PLAN-HANDOFF FR-113): mọi thao tác chạy bị khoá. */
+export interface TaskHandoff {
+  via: 'extension' | 'copy'
+  startedAt: number
+  /** Extension VS Code đã mở terminal. */
+  claimed: boolean
+}
 
 /** Một task trong kế hoạch đổi mức quyền theo project (FR-48). */
 export interface PermissionSyncTask {
@@ -184,14 +203,25 @@ export interface Task {
   maxCostUsd?: number
   /** Phạm vi ghi (FR-49): mẫu đường dẫn task được phép sửa, ví dụ `docs/**`. Không có: không giới hạn. */
   writeScope?: string[]
+  /** FR-100: làm luôn / kế hoạch trước / chỉ kế hoạch. Không có: `none`. */
+  planMode?: PlanMode
+  /** Giai đoạn hiện tại (task planMode khác none). Không có: chưa chạy, hoặc task làm luôn. */
+  planPhase?: PlanPhase
+  /** Kế hoạch người dùng đã duyệt (có thể đã sửa), gửi cho lượt Thực hiện (FR-103, D5). */
+  approvedPlan?: string
+  /** Đang mở trong Claude Code (FR-113). Chỉ tính lúc gửi, lưu ở bảng task_handoffs. */
+  handoff?: TaskHandoff
   /** Lý do task Queued đang bị giữ lại (ví dụ project vượt budget, P6 B3). Chỉ tính lúc chạy, không lưu DB. */
   blockedReason?: string
   /** Các task phải Done trước khi task này được chạy (SPEC FR-08). Lưu ở bảng task_deps. */
   dependsOn?: number[]
 }
 
-/** initial: lần đầu · resume: sửa theo feedback review · retry: chạy lại từ đầu · continue: tiếp tục phiên bị gián đoạn */
-export type RunKind = 'initial' | 'resume' | 'retry' | 'continue'
+/**
+ * initial: lần đầu · resume: sửa theo feedback review · retry: chạy lại từ đầu · continue: tiếp tục phiên bị gián đoạn ·
+ * manual: người dùng làm tay trong Claude Code (FR-115, không có tiến trình của Task Board, chi phí không rõ)
+ */
+export type RunKind = 'initial' | 'resume' | 'retry' | 'continue' | 'manual'
 
 export interface Run {
   id: string
@@ -219,6 +249,8 @@ export interface Run {
   contextTokens?: number
   /** P5-06: loại thất bại; chỉ 'claude' mới khiến Retry tự nâng model (D6). */
   failKind?: RunFailKind
+  /** FR-105: giai đoạn của lượt chạy (task có lập kế hoạch). */
+  phase?: PlanPhase
 }
 
 /** Run lỗi do Claude / bị người dùng dừng / gặp giới hạn sử dụng / lỗi hạ tầng (không phải lỗi của model). */
@@ -291,8 +323,8 @@ export interface PermissionRequest {
 export interface ReviewAction {
   id: string
   taskId: number
-  /** approve: chấp nhận output · merge: chấp nhận và merge nhánh task vào nhánh chính (mode worktree) */
-  action: 'approve' | 'merge' | 'request_changes' | 'reject'
+  /** approve: chấp nhận output · merge: chấp nhận và merge nhánh task vào nhánh chính (mode worktree) · approve_plan: duyệt kế hoạch (FR-103) */
+  action: 'approve' | 'merge' | 'request_changes' | 'reject' | 'approve_plan'
   feedback?: string
   /** Nhận xét theo file/dòng gửi kèm "Request changes" */
   comments?: ReviewComment[]

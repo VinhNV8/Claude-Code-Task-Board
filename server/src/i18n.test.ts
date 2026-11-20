@@ -31,6 +31,8 @@ const TRANSLATED = [
   'store/store.ts',
   'components/ScheduleManager.tsx',
   'pages/Stats.tsx',
+  'components/PlanReview.tsx',
+  'components/Handoff.tsx',
 ]
 
 test('normalizeLang / resolveLang: lựa chọn đã lưu → URL → trình duyệt', () => {

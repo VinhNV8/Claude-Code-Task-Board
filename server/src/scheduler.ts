@@ -23,6 +23,7 @@ export function runSchedules(now = Date.now()) {
           prompt: s.prompt,
           priority: s.priority,
           permissionMode: project.permissionMode,
+          planMode: project.defaultPlanMode, // FR-100: task tạo theo lịch dùng cách làm mặc định của project
           tags: [],
           status: 'queued',
         })

@@ -159,7 +159,8 @@ Bấm **Giao việc mới** (hoặc `N`):
 | Template | Chọn prompt mẫu (quản lý ở Cài đặt) |
 | Project | Project sẽ chạy task |
 | Độ ưu tiên | Quyết định thứ tự trong hàng đợi |
-| Mức quyền | Manual / Edit automatically / Plan / Auto (mục 7) |
+| Cách làm | **Làm luôn** · **Kế hoạch trước** (agent lập kế hoạch, bạn duyệt rồi agent mới sửa code, mục 8.1) · **Chỉ kế hoạch** (chỉ phân tích, không sửa code). Mặc định theo project |
+| Mức quyền | Manual / Edit automatically / Auto (mục 7) |
 | Tag | Để lọc và để hệ thống học chọn model |
 | Model | Để trống là kế thừa; form hiện model sẽ dùng và lý do ngay khi bạn gõ |
 | Chờ task | Task chỉ chạy khi các task này đã **Done** |
@@ -237,8 +238,9 @@ Khi Claude cần chạy lệnh hoặc dùng công cụ cần duyệt, task chuy�
 |---|---|
 | **Manual** | Mọi thao tác ghi (sửa file, chạy lệnh) đều chờ bạn duyệt |
 | **Edit automatically** | Tự sửa file; lệnh ngoài allowlist của project phải chờ duyệt |
-| **Plan** | Chỉ đọc code và lập kế hoạch, không sửa gì |
 | **Auto** | Tự duyệt mọi thao tác qua kiểm tra an toàn; chỉ dừng chờ bạn với lệnh rủi ro cao. Mọi thao tác tự duyệt đều ghi log. **Không phải mặc định**, hãy chỉ bật khi tin tưởng task |
+
+Muốn agent chỉ phân tích, không sửa gì: chọn **Cách làm = Chỉ kế hoạch** (mục 8.1). Từ v0.6, Plan không còn là một mức quyền; task và project cũ đang để Plan được tự chuyển sang "Chỉ kế hoạch" với mức quyền Manual.
 
 **Khi duyệt:**
 
@@ -283,6 +285,32 @@ Mọi task chạy xong đều vào **Review**.
 | **Từ chối** | Huỷ thay đổi (chế độ nhánh riêng thì xoá worktree/nhánh) |
 
 Việc merge/PR ở chế độ nhánh riêng do bạn quyết định, Task Board không tự merge.
+
+### 8.1 Duyệt kế hoạch (task "Kế hoạch trước" / "Chỉ kế hoạch")
+
+Task có cách làm **Kế hoạch trước** chạy thành 2 lượt:
+
+1. **Lượt Kế hoạch:** agent chỉ đọc code và viết kế hoạch (Hiểu yêu cầu · File sẽ sửa · Các bước · Rủi ro · Câu hỏi còn mở), không sửa file nào, kể cả khi project để mức Auto.
+2. Task vào **Review** với nhãn **Duyệt kế hoạch**. Lúc này task không chiếm slot chạy, nên bạn duyệt lúc nào cũng được.
+   - **Duyệt và thực hiện**: có thể bấm **Sửa kế hoạch** trước khi duyệt. Task vào hàng đợi, rồi agent chạy tiếp **đúng phiên cũ** theo kế hoạch bạn đã duyệt, với mức quyền của task.
+   - **Góp ý**: agent lập lại kế hoạch theo góp ý, vẫn chưa sửa code.
+   - **Từ chối**: task sang Failed. Bấm Chạy lại thì agent lập kế hoạch mới.
+3. **Lượt Thực hiện** xong thì task vào Review như bình thường.
+
+Task **Chỉ kế hoạch** dừng ở bước 2: nút **Chấp nhận kế hoạch** chuyển task sang Done.
+
+Nên dùng "Kế hoạch trước" cho việc lớn hoặc dễ hiểu sai: sai hướng được phát hiện khi agent mới đọc code, chưa tốn chi phí sửa. Đặt mặc định cho cả project ở trang Projects → **Cách làm mặc định của task mới**.
+
+### 8.2 Mở task trong Claude Code
+
+Khi task làm sai, hoặc bạn muốn tự hỏi đáp thêm với agent, bấm **Mở trong Claude Code** ở đầu trang task (có ở task Review, Failed, và cả task đang chạy hoặc đang chờ, sau khi xác nhận dừng):
+
+- Extension VS Code mở một terminal **đúng thư mục của task** và chạy `claude --resume <phiên của task>`. Agent nhớ đầy đủ những gì đã làm, bạn chat tiếp như bình thường.
+- Trong lúc đó task bị **khoá**: không chạy, duyệt hay sửa được, để không có hai tiến trình cùng làm trên một phiên.
+- Làm xong, thoát Claude Code hoặc đóng terminal: task tự về **Review**, diff có cả thay đổi bạn làm tay, lịch sử có thêm lượt "Làm tay trong Claude Code" (chi phí phần này không tính được).
+- Mở board bằng trình duyệt ngoài VS Code: nếu sau vài giây không có cửa sổ VS Code nào mở terminal, banner hiện nút **Mở bằng VS Code** và **Sao chép lệnh** để bạn tự chạy. Khi đó, làm xong thì bấm **Đưa về Review**.
+
+Hỗ trợ task chạy bằng Claude và Codex. Project dùng **API key**: phiên tương tác dùng đăng nhập Claude Code trên máy, không dùng key của Task Board.
 
 ---
 

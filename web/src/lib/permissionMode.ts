@@ -30,4 +30,10 @@ export const PERMISSION_MODES: PermissionModeOption[] = [
   },
 ]
 
+/**
+ * Mức quyền chọn được ở form task / project. `plan` không còn là mức quyền mà là cách làm "Chỉ kế hoạch"
+ * (SPEC-PLAN-HANDOFF A5); vẫn giữ trong PERMISSION_MODES để hiển thị dữ liệu cũ.
+ */
+export const SELECTABLE_MODES = PERMISSION_MODES.filter((m) => m.value !== 'plan')
+
 export const permissionModeOf = (m: PermissionMode) => PERMISSION_MODES.find((o) => o.value === m) ?? PERMISSION_MODES[1]

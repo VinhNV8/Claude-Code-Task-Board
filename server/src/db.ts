@@ -7,6 +7,8 @@ import type {
   AgentId,
   LogEvent,
   LogEventInput,
+  PlanMode,
+  PlanPhase,
   Project,
   PromptTemplate,
   ReviewAction,
@@ -172,6 +174,8 @@ for (const [col, type] of [
   ['fail_kind', 'TEXT'],
   // SPEC-MULTI-AGENT FR-95: agent đã chạy run này. NULL = run cũ (Claude).
   ['agent', 'TEXT'],
+  // SPEC-PLAN-HANDOFF FR-105: giai đoạn của lượt chạy ('plan' | 'execute'), NULL = task làm luôn.
+  ['phase', 'TEXT'],
 ] as const)
   if (!runCols.some((c) => c.name === col)) db.exec(`ALTER TABLE runs ADD COLUMN ${col} ${type}`)
 // P5-03: cấu hình model 3 tầng (D2). NULL/'' = kế thừa tầng dưới.
@@ -195,6 +199,26 @@ if (!projectCols.some((c) => c.name === 'budget_action'))
 if (!taskCols.some((c) => c.name === 'max_cost_usd')) db.exec('ALTER TABLE tasks ADD COLUMN max_cost_usd REAL')
 // FR-49: phạm vi ghi của task (JSON mảng mẫu đường dẫn), NULL = không giới hạn
 if (!taskCols.some((c) => c.name === 'write_scope')) db.exec('ALTER TABLE tasks ADD COLUMN write_scope TEXT')
+// SPEC-PLAN-HANDOFF FR-100: duyệt kế hoạch trước khi làm. plan_mode 'none' | 'first' | 'only'; plan_phase 'plan' | 'execute'.
+if (!taskCols.some((c) => c.name === 'plan_mode')) db.exec("ALTER TABLE tasks ADD COLUMN plan_mode TEXT NOT NULL DEFAULT 'none'")
+if (!taskCols.some((c) => c.name === 'plan_phase')) db.exec('ALTER TABLE tasks ADD COLUMN plan_phase TEXT')
+if (!taskCols.some((c) => c.name === 'approved_plan')) db.exec('ALTER TABLE tasks ADD COLUMN approved_plan TEXT')
+if (!projectCols.some((c) => c.name === 'default_plan_mode'))
+  db.exec("ALTER TABLE projects ADD COLUMN default_plan_mode TEXT NOT NULL DEFAULT 'none'")
+// SPEC-PLAN-HANDOFF A5: mức quyền `plan` cũ chuyển thành planMode 'only' (chạy một lần, sau đó không còn dữ liệu 'plan').
+//   Project 'plan' → mặc định "Chỉ kế hoạch", mức quyền về Manual (chặt nhất).
+//   Task 'plan' → planMode 'only', mức quyền theo project. Task đã chạy (không ở Backlog/Queued) đang ở giai đoạn Kế hoạch.
+// Không task nào bị nới quyền: lượt Kế hoạch luôn chạy mode plan bất kể mức quyền (AC-49).
+export function migrateLegacyPlan() {
+  db.exec(`
+UPDATE projects SET default_plan_mode = 'only', permission_mode = 'manual' WHERE permission_mode = 'plan';
+UPDATE tasks SET plan_mode = 'only',
+  plan_phase = CASE WHEN status IN ('backlog', 'queued') THEN NULL ELSE 'plan' END,
+  permission_mode = COALESCE((SELECT p.permission_mode FROM projects p WHERE p.id = tasks.project_id), 'manual')
+WHERE permission_mode = 'plan';
+`)
+}
+migrateLegacyPlan()
 // P7-05 (FR-46): lý do người dùng nhập khi Từ chối, gửi kèm message deny cho Claude.
 const permCols = db.prepare('PRAGMA table_info(permission_requests)').all() as { name: string }[]
 if (!permCols.some((c) => c.name === 'deny_reason')) db.exec('ALTER TABLE permission_requests ADD COLUMN deny_reason TEXT')
@@ -256,7 +280,12 @@ const toProject = (r: Row): Project => ({
   monthlyBudgetUsd: (r.monthly_budget_usd as number | null) ?? undefined,
   budgetAction: r.budget_action === 'pause' ? 'pause' : 'warn',
   deliveryMode: r.delivery_mode === 'direct' ? 'direct' : 'worktree',
+  defaultPlanMode: planModeOf(r.default_plan_mode),
 })
+
+/** plan_mode lưu DB → PlanMode; 'none' / lạ → undefined (= làm luôn). */
+const planModeOf = (v: unknown): PlanMode | undefined => (v === 'first' || v === 'only' ? v : undefined)
+const planPhaseOf = (v: unknown): PlanPhase | undefined => (v === 'plan' || v === 'execute' ? v : undefined)
 
 const opt = <T>(v: unknown) => (v === null ? undefined : (v as T))
 
@@ -299,6 +328,9 @@ const toTask = (r: Row): Task => ({
   activeAgent: parseAgent(r.active_agent) || undefined,
   maxCostUsd: (r.max_cost_usd as number | null) ?? undefined,
   writeScope: optList(r.write_scope ? (JSON.parse(r.write_scope as string) as string[]) : []),
+  planMode: planModeOf(r.plan_mode),
+  planPhase: planPhaseOf(r.plan_phase),
+  approvedPlan: opt(r.approved_plan),
   dependsOn: optList(depsOf(r.id as number)),
 })
 
@@ -361,6 +393,7 @@ const toRun = (r: Row): Run => ({
   requestedModel: opt(r.requested_model),
   contextTokens: opt(r.context_tokens),
   failKind: opt(r.fail_kind),
+  phase: planPhaseOf(r.phase),
 })
 
 function parseModelUsage(v: unknown): Run['modelUsage'] {
@@ -385,14 +418,14 @@ export const projects = {
   upsert: (p: Project) => {
     db.prepare(
       `INSERT INTO projects (id, name, repo_path, main_branch, permission_mode, allowed_tools, max_parallel, test_command, default_model,
-         monthly_budget_usd, budget_action, delivery_mode, default_agent, failover_mode, failover_chain)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         monthly_budget_usd, budget_action, delivery_mode, default_agent, failover_mode, failover_chain, default_plan_mode)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET name=excluded.name, repo_path=excluded.repo_path, main_branch=excluded.main_branch,
          permission_mode=excluded.permission_mode, allowed_tools=excluded.allowed_tools, max_parallel=excluded.max_parallel,
          test_command=excluded.test_command, default_model=excluded.default_model,
          monthly_budget_usd=excluded.monthly_budget_usd, budget_action=excluded.budget_action,
          delivery_mode=excluded.delivery_mode, default_agent=excluded.default_agent,
-         failover_mode=excluded.failover_mode, failover_chain=excluded.failover_chain`,
+         failover_mode=excluded.failover_mode, failover_chain=excluded.failover_chain, default_plan_mode=excluded.default_plan_mode`,
     ).run(
       p.id,
       p.name,
@@ -409,6 +442,7 @@ export const projects = {
       p.defaultAgent || null,
       p.failoverMode && p.failoverMode !== 'inherit' ? p.failoverMode : null,
       p.failoverChain?.length ? JSON.stringify(p.failoverChain) : null,
+      p.defaultPlanMode === 'first' || p.defaultPlanMode === 'only' ? p.defaultPlanMode : 'none',
     )
     return projects.get(p.id)!
   },
@@ -442,6 +476,9 @@ const TASK_COLS: Record<string, string> = {
   activeAgent: 'active_agent',
   maxCostUsd: 'max_cost_usd',
   writeScope: 'write_scope',
+  planMode: 'plan_mode',
+  planPhase: 'plan_phase',
+  approvedPlan: 'approved_plan',
 }
 
 /** Cột NOT NULL kiểu cờ: `null`/`false` lưu thành 0. */
@@ -457,13 +494,14 @@ export const tasks = {
     (db.prepare(`SELECT * FROM tasks WHERE status IN (${st.map(() => '?').join(',')})`).all(...st) as Row[]).map(toTask),
   create: (
     t: Pick<Task, 'projectId' | 'title' | 'prompt' | 'status' | 'priority' | 'permissionMode' | 'tags'> &
-      Pick<Partial<Task>, 'model' | 'maxCostUsd' | 'agent' | 'writeScope'>,
+      Pick<Partial<Task>, 'model' | 'maxCostUsd' | 'agent' | 'writeScope' | 'planMode'>,
   ) => {
     const now = Date.now()
     const r = db
       .prepare(
-        `INSERT INTO tasks (project_id, title, prompt, status, priority, permission_mode, tags, model, max_cost_usd, agent, write_scope, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO tasks (project_id, title, prompt, status, priority, permission_mode, tags, model, max_cost_usd, agent, write_scope, plan_mode,
+           created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         t.projectId,
@@ -477,6 +515,7 @@ export const tasks = {
         t.maxCostUsd ?? null,
         t.agent || null,
         t.writeScope?.length ? JSON.stringify(t.writeScope) : null,
+        t.planMode ?? 'none',
         now,
         now,
       )
@@ -492,6 +531,7 @@ export const tasks = {
       sets.push(`${col} = ?`)
       if (FLAG_COLS.has(k)) vals.push(v ? 1 : 0)
       else if (k === 'writeScope') vals.push(Array.isArray(v) && v.length ? JSON.stringify(v) : null)
+      else if (k === 'planMode') vals.push(v === 'first' || v === 'only' ? v : 'none') // cột NOT NULL
       else vals.push(k === 'tags' ? JSON.stringify(v) : v === undefined ? null : (v as string | number | null))
     }
     sets.push('updated_at = ?')
@@ -516,11 +556,11 @@ export const runs = {
   since: (from: number) => (db.prepare('SELECT * FROM runs WHERE started_at >= ? ORDER BY started_at').all(from) as Row[]).map(toRun),
   create: (
     r: Pick<Run, 'id' | 'taskId' | 'kind' | 'feedback' | 'sessionId' | 'startedAt'> &
-      Partial<Pick<Run, 'requestedModel' | 'modelSource' | 'modelReason' | 'agent'>>,
+      Partial<Pick<Run, 'requestedModel' | 'modelSource' | 'modelReason' | 'agent' | 'phase'>>,
   ) => {
     db.prepare(
-      `INSERT INTO runs (id, task_id, kind, feedback, session_id, started_at, requested_model, model_source, model_reason, agent)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO runs (id, task_id, kind, feedback, session_id, started_at, requested_model, model_source, model_reason, agent, phase)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       r.id,
       r.taskId,
@@ -532,6 +572,7 @@ export const runs = {
       r.modelSource ?? null,
       r.modelReason ?? null,
       r.agent ?? null,
+      r.phase ?? null,
     )
     return runs.get(r.id)!
   },

@@ -46,6 +46,7 @@ const fieldLabel = (f: ImportField) =>
     permissionMode: tr('Mức quyền'),
     maxCostUsd: tr('Giới hạn chi phí'),
     writeScope: tr('Phạm vi ghi'),
+    planMode: tr('Cách làm'),
   })[f]
 
 const encodingLabel = (e: CsvEncoding) =>
@@ -364,7 +365,7 @@ export function ImportModal({ open, onClose, defaultProjectId }: { open: boolean
         <p>
           <b>title</b> / {tr('Tiêu đề')} ({tr('bắt buộc')}), <b>prompt</b> / {tr('Mô tả')} ({tr('bắt buộc')}), <b>key</b> / {tr('Mã')}, <b>depends_on</b> /{' '}
           {tr('Chờ task')}, <b>project</b>, <b>priority</b> / {tr('Độ ưu tiên')}, <b>tags</b>, <b>model</b>, <b>agent</b>, <b>permission_mode</b> / {tr('Mức quyền')},{' '}
-          <b>max_cost_usd</b>.
+          <b>max_cost_usd</b>, <b>write_scope</b> / {tr('Phạm vi ghi')}, <b>plan_mode</b> / {tr('Cách làm')}.
         </p>
         <p className="mt-1">{tr('Chờ task: mã của dòng khác trong file hoặc #id task đã có, cách nhau bởi dấu phẩy.')}</p>
       </div>

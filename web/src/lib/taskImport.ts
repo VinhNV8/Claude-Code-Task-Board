@@ -2,7 +2,7 @@
 // Hàm thuần, dùng chung web và server (server/src/taskImport.ts):
 // - web: đọc file → bảng chuỗi → ImportRow[] (nhận tên cột), không kiểm tra giá trị;
 // - server: chuẩn hoá giá trị (ưu tiên, mức quyền tiếng Việt) và kiểm tra.
-import type { AgentId, PermissionMode, Priority } from '../types.ts'
+import type { AgentId, PermissionMode, PlanMode, Priority } from '../types.ts'
 
 /** I6: giới hạn mỗi lần import. */
 export const IMPORT_MAX_ROWS = 200
@@ -27,6 +27,8 @@ export interface ImportRow {
   maxCostUsd?: string
   /** Phạm vi ghi (FR-49), mẫu cách nhau bởi dấu phẩy, vd `docs/**, *.md`. */
   writeScope?: string
+  /** Cách làm (SPEC-PLAN-HANDOFF FR-100): làm luôn / kế hoạch trước / chỉ kế hoạch. */
+  planMode?: string
 }
 
 export interface ImportRequest {
@@ -54,6 +56,8 @@ export interface ImportRowResult {
   projectId?: string
   /** Mức quyền sẽ dùng (để đếm Auto). */
   permissionMode?: PermissionMode
+  /** Cách làm sẽ dùng (FR-100). */
+  planMode?: PlanMode
   /** Id task đã tạo (chỉ khi dryRun = false). */
   taskId?: number
 }
@@ -93,6 +97,7 @@ const HEADER_ALIASES: Record<ImportField, string[]> = {
   permissionMode: ['permission_mode', 'permission mode', 'mức quyền', 'quyền', 'mode'],
   maxCostUsd: ['max_cost_usd', 'max cost usd', 'max cost', 'giới hạn chi phí', 'chi phí tối đa'],
   writeScope: ['write_scope', 'write scope', 'phạm vi ghi', 'phạm vi', 'scope'],
+  planMode: ['plan_mode', 'plan mode', 'cách làm', 'kế hoạch', 'lập kế hoạch'],
 }
 
 const HEADER_LOOKUP = new Map<string, ImportField>(
@@ -327,9 +332,9 @@ export const TEMPLATE_BASENAME = 'task-import-mau'
 
 /** Dữ liệu mẫu dùng chung cho file .xlsx và .csv: dòng tiêu đề cột + 2 task, task 2 chờ task 1. */
 export const TEMPLATE_ROWS: string[][] = [
-  ['key', 'title', 'prompt', 'depends_on', 'priority', 'tags', 'model', 'agent', 'permission_mode', 'max_cost_usd', 'write_scope'],
-  ['A1', 'Thêm API xuất báo cáo', 'Thêm endpoint GET /api/report trả về tổng số task theo trạng thái.\nViết unit test cho endpoint.', '', 'high', 'backend, api', '', '', '', '', ''],
-  ['A2', 'Hiển thị báo cáo trên trang Thống kê', 'Gọi /api/report và hiển thị bảng tổng hợp trên trang Thống kê.', 'A1', 'normal', 'web', 'sonnet', '', '', '', ''],
+  ['key', 'title', 'prompt', 'depends_on', 'priority', 'tags', 'model', 'agent', 'permission_mode', 'max_cost_usd', 'write_scope', 'plan_mode'],
+  ['A1', 'Thêm API xuất báo cáo', 'Thêm endpoint GET /api/report trả về tổng số task theo trạng thái.\nViết unit test cho endpoint.', '', 'high', 'backend, api', '', '', '', '', '', 'first'],
+  ['A2', 'Hiển thị báo cáo trên trang Thống kê', 'Gọi /api/report và hiển thị bảng tổng hợp trên trang Thống kê.', 'A1', 'normal', 'web', 'sonnet', '', '', '', '', ''],
 ]
 
 /** Sheet "Hướng dẫn" của file mẫu .xlsx (import chỉ đọc sheet đầu nên sheet này không ảnh hưởng). */
@@ -344,9 +349,10 @@ export const TEMPLATE_GUIDE: string[][] = [
   ['tags', '', 'Cách nhau bởi dấu phẩy hoặc ;'],
   ['model', '', 'auto / haiku / sonnet / opus hoặc ID claude-…. Chỉ dùng cho Claude. Trống: kế thừa project'],
   ['agent', '', 'claude / codex / antigravity. Trống: agent mặc định của project. Agent phải hỗ trợ mức quyền của dòng'],
-  ['permission_mode', '', 'manual / acceptEdits / plan / auto. Trống: mặc định của project. Auto phải xác nhận khi import'],
+  ['permission_mode', '', 'manual / acceptEdits / auto. Trống: mặc định của project. Auto phải xác nhận khi import. Giá trị plan của file cũ được hiểu là plan_mode = only'],
   ['max_cost_usd', '', 'Giới hạn chi phí mỗi lần chạy (USD), vd 1,5'],
   ['write_scope', '', 'Phạm vi ghi: chỉ cho task sửa các file khớp mẫu, cách nhau bởi dấu phẩy (vd docs/**, *.md). Trống: không giới hạn'],
+  ['plan_mode', '', 'none / first / only (hoặc làm luôn / kế hoạch trước / chỉ kế hoạch). first: agent lập kế hoạch, bạn duyệt rồi mới sửa code. Trống: mặc định của project'],
   ['', '', ''],
   ['Lưu ý', '', 'Chỉ đọc sheet đầu tiên. Tối đa 200 dòng mỗi lần. Dòng trùng tiêu đề với task đã có mặc định bị bỏ qua'],
 ]

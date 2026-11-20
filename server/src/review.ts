@@ -4,12 +4,14 @@
 // - Merge (tuỳ chọn, chỉ mode worktree): chấp nhận + merge nhánh task vào nhánh chính.
 // Mỗi project chỉ một thao tác review chạy tại một thời điểm.
 import { broadcast } from './bus.ts'
-import { projects, reviews, tasks } from './db.ts'
+import { projects, reviews, runs, tasks } from './db.ts'
 import { branchChangedFiles, git, mainRepoStatus, mergeBranch, removeWorktree, taskBranch } from './git.ts'
 import { isTesting, stopTests } from './testRunner.ts'
 import { MIN_FEEDBACK, REJECT_REASON } from '../../web/src/lib/review.ts'
 import { formatReviewFeedback, parseComments } from '../../web/src/lib/reviewComments.ts'
 import type { MergeCheck, Project, ReviewAction, ReviewComment, Task } from './types.ts'
+import { isHandedOff, LOCKED_MESSAGE } from './handoff.ts'
+import { awaitingPlanApproval, EXECUTE_FEEDBACK, MAX_PLAN_LENGTH, replanPrompt } from '../../web/src/lib/planMode.ts'
 
 /** Lỗi có mã HTTP (Fastify dùng `statusCode`). */
 export class ReviewError extends Error {
@@ -139,9 +141,53 @@ function reviewable(taskId: number): { task: Task; project: Project } {
   const task = tasks.get(taskId)
   if (!task) throw new ReviewError(404, `Không tìm thấy task #${taskId}`)
   if (task.status !== 'review') throw new ReviewError(409, `Task #${taskId} không ở trạng thái Review`)
+  if (isHandedOff(taskId)) throw new ReviewError(409, LOCKED_MESSAGE)
+  // FR-103: kế hoạch của task "Kế hoạch trước" được duyệt bằng "Duyệt và thực hiện", không phải Approve (sẽ thành Done).
+  if (task.planMode === 'first' && awaitingPlanApproval(task))
+    throw new ReviewError(409, 'Task đang chờ duyệt kế hoạch: dùng "Duyệt và thực hiện" để agent bắt đầu làm.')
   const project = projects.get(task.projectId)
   if (!project) throw new ReviewError(404, `Không tìm thấy project của task #${taskId}`)
   return { task, project }
+}
+
+// ---------------------------------------------------------------- duyệt kế hoạch (SPEC-PLAN-HANDOFF FR-103)
+
+/** Kế hoạch người dùng gửi lên (đã sửa) hoặc kết quả của lượt Kế hoạch gần nhất. */
+export function validatePlan(raw: unknown, fallback: string | undefined): { plan: string; edited: boolean } {
+  const edited = typeof raw === 'string' && raw.trim() !== '' && raw.trim() !== (fallback ?? '').trim()
+  const plan = (typeof raw === 'string' && raw.trim() ? raw : (fallback ?? '')).trim()
+  if (!plan) throw new ReviewError(400, 'Kế hoạch đang trống: hãy Góp ý để agent lập lại kế hoạch')
+  if (plan.length > MAX_PLAN_LENGTH) throw new ReviewError(400, `Kế hoạch tối đa ${MAX_PLAN_LENGTH.toLocaleString('vi-VN')} ký tự`)
+  return { plan, edited }
+}
+
+/**
+ * "Duyệt và thực hiện": lưu kế hoạch đã duyệt (có thể đã sửa), task sang Queued ở giai đoạn Thực hiện (D3: vẫn theo
+ * slot, phụ thuộc, budget). Lượt kế tiếp resume đúng phiên của lượt Kế hoạch với mức quyền của task (AC-44).
+ * Người gọi chạy pump() sau đó.
+ */
+export async function approvePlan(taskId: number, rawPlan?: unknown): Promise<{ task: Task; review: ReviewAction }> {
+  const first = tasks.get(taskId)
+  if (!first) throw new ReviewError(404, `Không tìm thấy task #${taskId}`)
+  return withLock(first.projectId, async () => {
+    const task = tasks.get(taskId)
+    if (!task) throw new ReviewError(404, `Không tìm thấy task #${taskId}`)
+    if (isHandedOff(taskId)) throw new ReviewError(409, LOCKED_MESSAGE)
+    if (task.planMode !== 'first' || !awaitingPlanApproval(task))
+      throw new ReviewError(409, `Task #${taskId} không ở bước duyệt kế hoạch`)
+    const lastPlan = runs.byTask(taskId).filter((r) => r.phase === 'plan').at(-1)?.summary
+    const { plan, edited } = validatePlan(rawPlan, lastPlan)
+    if (isTesting(taskId)) await stopTests(taskId, 'Kế hoạch đã được duyệt.')
+    const review = recordReview({ taskId, action: 'approve_plan', feedback: edited ? 'Đã sửa kế hoạch trước khi duyệt' : undefined })
+    const queued = patchTask(taskId, {
+      status: 'queued',
+      planPhase: 'execute',
+      approvedPlan: plan,
+      pendingFeedback: EXECUTE_FEEDBACK,
+      reviewWarning: null,
+    })!
+    return { task: queued, review }
+  })
 }
 
 /**
@@ -282,7 +328,7 @@ export async function requestChanges(
 ): Promise<{ task: Task; review: ReviewAction; queued: boolean }> {
   const { feedback, comments } = validateRequest(rawFeedback, rawComments)
   // Nội dung Claude nhận: feedback chung + từng nhận xét kèm file:dòng và nội dung dòng
-  const prompt = formatReviewFeedback(feedback, comments)
+  let prompt = formatReviewFeedback(feedback, comments)
   const first = tasks.get(taskId)
   if (!first) throw new ReviewError(404, `Không tìm thấy task #${taskId}`)
   // Cùng khoá với approve: không thể vừa merge vừa yêu cầu sửa một task.
@@ -290,10 +336,13 @@ export async function requestChanges(
     const task = tasks.get(taskId)
     if (!task) throw new ReviewError(404, `Không tìm thấy task #${taskId}`)
     if (task.status !== 'review') throw new ReviewError(409, `Task #${taskId} không ở trạng thái Review`)
+    if (isHandedOff(taskId)) throw new ReviewError(409, LOCKED_MESSAGE)
     const project = projects.get(task.projectId)
     if (!project) throw new ReviewError(404, `Không tìm thấy project của task #${taskId}`)
 
     const review = recordReview({ taskId, action: 'request_changes', feedback, comments })
+    // FR-103 "Góp ý": lập lại kế hoạch, vẫn ở mode plan (AC-46).
+    if (awaitingPlanApproval(task)) prompt = replanPrompt({ feedback: prompt, resume: true, taskPrompt: task.prompt })
     const queued = !deps.hasSlot(project)
     if (queued) {
       if (isTesting(taskId)) await stopTests(taskId, 'Đã dừng vì task được yêu cầu sửa.')
@@ -320,6 +369,7 @@ export async function rejectTask(taskId: number, feedback?: unknown): Promise<{ 
     const task = tasks.get(taskId)
     if (!task) throw new ReviewError(404, `Không tìm thấy task #${taskId}`)
     if (task.status !== 'review') throw new ReviewError(409, `Task #${taskId} không ở trạng thái Review`)
+    if (isHandedOff(taskId)) throw new ReviewError(409, LOCKED_MESSAGE)
     const project = projects.get(task.projectId)
     if (!project) throw new ReviewError(404, `Không tìm thấy project của task #${taskId}`)
 

@@ -57,6 +57,10 @@ import { useReviewDraft } from '../lib/reviewDraft'
 import { STOP_REASON, canResume, isWaitingRateLimit } from '../lib/resume'
 import { permissionModeOf } from '../lib/permissionMode'
 import { outOfScope } from '../lib/writeScope'
+import { awaitingPlanApproval, planModeOf } from '../lib/planMode'
+import { PlanReview } from './PlanReview'
+import { HandoffBanner, HandoffButton } from './Handoff'
+import type { HandoffStart } from '../store/store'
 import { AgentBadge } from './AgentSelect'
 import { AGENT_NAMES, effectiveAgent, resolveAgent, runAgent } from '../lib/agent'
 import { canDeleteTask } from '../lib/taskDelete'
@@ -71,6 +75,7 @@ const RUN_KIND: Record<Run['kind'], string> = {
   resume: tr('Sửa theo feedback'),
   retry: tr('Chạy lại'),
   continue: tr('Tiếp tục'),
+  manual: tr('Làm tay trong Claude Code'),
 }
 
 const TABS: Tab[] = ['log', 'review', 'result', 'history', 'prompt']
@@ -117,6 +122,8 @@ export function TaskView({
   // Đang gửi approve/request changes/reject: khoá cả thanh hành động để không bấm hai lần
   const [busy, setBusy] = useState<null | 'approve' | 'merge' | 'request_changes' | 'reject'>(null)
   const [diffLoading, setDiffLoading] = useState(false)
+  // Lệnh mở phiên tương tác của lần "Mở trong Claude Code" gần nhất (để sao chép nếu VS Code chưa nhận)
+  const [handoffStart, setHandoffStart] = useState<HandoffStart | undefined>()
   const [diffError, setDiffError] = useState<string | null>(null)
   // Nhận xét theo file/dòng chưa gửi + file đã đánh dấu "Đã xem" (G3)
   const draft = useReviewDraft(task?.id)
@@ -307,6 +314,11 @@ export function TaskView({
               switched={!!task.activeAgent}
             />
             <span>{project?.name}</span>
+            {task.planPhase && (
+              <span className="rounded bg-indigo-50 px-1.5 text-xs text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300">
+                {awaitingPlanApproval(task) ? tr('Duyệt kế hoạch') : task.planPhase === 'plan' ? tr('Kế hoạch') : tr('Thực hiện')}
+              </span>
+            )}
             <span className={PRIORITY_META[task.priority].cls}>· {PRIORITY_META[task.priority].label}</span>
             {task.branch && (
               <span className="inline-flex items-center gap-1 font-mono text-xs">
@@ -355,12 +367,13 @@ export function TaskView({
               <StepForward size={16} /> {tr('Tiếp tục ngay')}
             </Button>
           )}
-          {task.status === 'failed' && resumable && (
+          {task.status === 'failed' && resumable && !task.handoff && (
             <Button variant="primary" onClick={() => resumeTask(task.id)} title={tr('Giữ thay đổi đang dở, chạy tiếp phiên Claude cũ')}>
               <StepForward size={16} /> {tr('Tiếp tục')}
             </Button>
           )}
-          {task.status === 'failed' && (
+          <HandoffButton task={task} runs={runs} onStarted={setHandoffStart} />
+          {task.status === 'failed' && !task.handoff && (
             <Button
               variant={resumable ? 'secondary' : 'primary'}
               onClick={() => (resumable ? setConfirm('retry') : retryTask(task.id))}
@@ -373,6 +386,7 @@ export function TaskView({
       </div>
 
       {/* Banner trạng thái */}
+      <HandoffBanner task={task} runs={runs} started={handoffStart} />
       {pending.map((p) => (
         <div key={p.id} className="mb-4">
           <PermissionCard req={p} />
@@ -450,7 +464,11 @@ export function TaskView({
         </div>
       )}
 
-      {tab === 'review' && (
+      {tab === 'review' && awaitingPlanApproval(task) && !task.handoff && (
+        <PlanReview task={task} planRun={runs.filter((r) => r.phase === 'plan').at(-1)} onSent={() => setTab('log')} />
+      )}
+
+      {tab === 'review' && (!awaitingPlanApproval(task) || task.handoff) && (
         <div className="space-y-3">
           {outside.length > 0 && (
             <div className="flex gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
@@ -473,7 +491,7 @@ export function TaskView({
               </div>
             </div>
           )}
-{task.reviewWarning && (
+          {task.reviewWarning && (
             <div className="flex gap-2 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-300">
               <TriangleAlert size={18} className="shrink-0" />
               <span>{task.reviewWarning}</span>
@@ -517,7 +535,7 @@ export function TaskView({
             <DiffView files={diffs} review={diffReview} />
           )}
 
-          {task.status === 'review' && (
+          {task.status === 'review' && !task.handoff && (
             <div className="sticky bottom-0 -mx-1 rounded-lg border border-slate-200 bg-white/95 p-3 shadow-lg backdrop-blur dark:border-slate-800 dark:bg-slate-900/95">
               {feedbackOpen ? (
                 <div className="space-y-2">
@@ -749,6 +767,10 @@ export function TaskView({
           <div className="grid gap-2 text-sm sm:grid-cols-2">
             <p>
               <span className="text-slate-500">{tr('Mức quyền:')}</span> <span>{permissionModeOf(task.permissionMode).label}</span>
+            </p>
+            <p>
+              <span className="text-slate-500">{tr('Cách làm:')}</span> <span>{tr(planModeOf(task.planMode).label)}</span>
+              {task.approvedPlan && <span className="text-slate-500"> · {tr('đã duyệt kế hoạch')}</span>}
             </p>
             <p>
               <span className="text-slate-500">{tr('Phạm vi ghi:')}</span>{' '}

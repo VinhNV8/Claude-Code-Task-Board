@@ -16,6 +16,7 @@ import type {
   LogEvent,
   LogEventInput,
   PermissionMode,
+  PlanMode,
   PermissionRequest,
   PermissionSyncPlan,
   Priority,
@@ -495,7 +496,14 @@ export interface NewTask {
   model?: string
   dependsOn?: number[]
   writeScope?: string[]
+  planMode?: PlanMode
   run: boolean
+}
+
+export interface HandoffStart {
+  requestId: string
+  command: { file: string; args: string[]; cwd: string; display: string }
+  warning?: string
 }
 
 export async function createTask(input: NewTask): Promise<number> {
@@ -511,6 +519,7 @@ export async function createTask(input: NewTask): Promise<number> {
     model: input.model || undefined,
     dependsOn: input.dependsOn?.length ? input.dependsOn : undefined,
     writeScope: input.writeScope?.length ? input.writeScope : undefined,
+    planMode: input.planMode ?? state.projects.find((p) => p.id === input.projectId)?.defaultPlanMode,
     status: input.run ? 'queued' : 'backlog',
     createdAt: Date.now(),
     updatedAt: Date.now(),
@@ -596,7 +605,10 @@ export async function importTasks(req: ImportRequest): Promise<ImportResult & { 
   return { ...out, created: created.length, tasks: created }
 }
 
-export function updateTask(id: number, patch: Partial<Pick<Task, 'title' | 'prompt' | 'priority' | 'projectId' | 'tags' | 'permissionMode' | 'model' | 'dependsOn' | 'writeScope'>>) {
+export function updateTask(
+  id: number,
+  patch: Partial<Pick<Task, 'title' | 'prompt' | 'priority' | 'projectId' | 'tags' | 'permissionMode' | 'model' | 'dependsOn' | 'writeScope' | 'planMode'>>,
+) {
   const p = patch.writeScope ? { ...patch, writeScope: patch.writeScope.length ? patch.writeScope : undefined } : patch
   patchTask(id, p.dependsOn ? { ...p, dependsOn: p.dependsOn.length ? p.dependsOn : undefined } : p)
   afterChange()
@@ -731,6 +743,34 @@ export function mergeTask(id: number): boolean {
   addReview(id, 'merge')
   patchTask(id, { status: 'done', reviewWarning: undefined })
   toast({ kind: 'success', title: `Đã merge #${id} vào ${project.mainBranch}`, body: task.title })
+  return true
+}
+
+/** FR-103, bản giả lập: lưu kế hoạch đã duyệt, chạy lượt Thực hiện. */
+export function approvePlan(id: number, plan?: string): boolean {
+  const task = state.tasks.find((t) => t.id === id)!
+  const last = state.runs.filter((r) => r.taskId === id).at(-1)?.summary
+  addReview(id, 'approve_plan', plan && plan.trim() !== (last ?? '').trim() ? 'Đã sửa kế hoạch trước khi duyệt' : undefined)
+  patchTask(id, { planPhase: 'execute', approvedPlan: (plan?.trim() || last || '').trim(), reviewWarning: undefined })
+  startRun(id, 'resume', 'Thực hiện theo kế hoạch đã duyệt')
+  toast({ kind: 'success', title: `Đã duyệt kế hoạch #${id}`, body: task.title })
+  return true
+}
+
+/** FR-110..112, bản giả lập: khoá task, trả lệnh mẫu (không có extension để mở terminal). */
+export async function startHandoff(id: number, via: 'extension' | 'copy', stop = false): Promise<HandoffStart | 'needs_stop' | null> {
+  const task = state.tasks.find((t) => t.id === id)!
+  if (['running', 'needs_input', 'queued'].includes(task.status) && !stop) return 'needs_stop'
+  if (task.status === 'running' || task.status === 'needs_input' || task.status === 'queued') patchTask(id, { status: 'failed', failReason: 'Đã dừng bởi người dùng' })
+  patchTask(id, { handoff: { via, startedAt: Date.now(), claimed: via === 'extension' } })
+  const cwd = task.worktreePath ?? state.projects.find((p) => p.id === task.projectId)?.repoPath ?? '.'
+  const args = ['--resume', task.sessionId ?? 'mock-session']
+  return { requestId: uid(), command: { file: 'claude', args, cwd, display: `cd "${cwd}" && claude ${args.join(' ')}` } }
+}
+
+/** FR-114b, bản giả lập: mở khoá, task về Review. */
+export async function endHandoff(id: number): Promise<boolean> {
+  patchTask(id, { handoff: undefined, status: 'review', failReason: undefined })
   return true
 }
 

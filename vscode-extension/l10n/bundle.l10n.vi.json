@@ -21,5 +21,6 @@
   "Open a folder in VS Code first.": "Hãy mở một thư mục trong VS Code trước.",
   "Claude Code was not found on this machine. Install the Claude Code extension (it includes the CLI), or set the CLI path.": "Chưa tìm thấy Claude Code trên máy. Cài extension Claude Code (có sẵn CLI), hoặc chỉ định đường dẫn CLI.",
   "Claude Code was not found on this machine. API key mode still runs tasks with the Claude Code CLI: install the Claude Code extension (it includes the CLI), or set the CLI path.": "Chưa tìm thấy Claude Code trên máy. Chế độ API key vẫn chạy task bằng Claude Code CLI: cài extension Claude Code (có sẵn CLI), hoặc chỉ định đường dẫn CLI.",
-  "Set CLI path": "Chỉ định đường dẫn CLI"
+  "Set CLI path": "Chỉ định đường dẫn CLI",
+  "Invalid Task Board link.": "Link Task Board không hợp lệ."
 }

@@ -10,6 +10,7 @@ import type {
   MergeCheck,
   LogEvent,
   PermissionMode,
+  PlanMode,
   PermissionPreset,
   PermissionRequest,
   PermissionSyncPlan,
@@ -486,6 +487,8 @@ export interface NewTask {
   dependsOn?: number[]
   /** Phạm vi ghi (FR-49); [] = không giới hạn */
   writeScope?: string[]
+  /** FR-100: làm luôn / kế hoạch trước / chỉ kế hoạch. Không gửi: theo mặc định của project. */
+  planMode?: PlanMode
   run: boolean
 }
 
@@ -506,7 +509,9 @@ export async function importTasks(req: ImportRequest): Promise<ImportResult & { 
 
 export function updateTask(
   id: number,
-  patch: Partial<Pick<Task, 'title' | 'prompt' | 'priority' | 'projectId' | 'tags' | 'permissionMode' | 'model' | 'dependsOn' | 'writeScope'>> & { agent?: AgentId | '' },
+  patch: Partial<Pick<Task, 'title' | 'prompt' | 'priority' | 'projectId' | 'tags' | 'permissionMode' | 'model' | 'dependsOn' | 'writeScope' | 'planMode'>> & {
+    agent?: AgentId | ''
+  },
 ) {
   return act(() => api('PATCH', `/tasks/${id}`, patch), tr('Không lưu được task'))
 }
@@ -587,6 +592,48 @@ export async function mergeTask(id: number): Promise<boolean> {
   applyReview(r)
   const main = state.projects.find((p) => p.id === r.task.projectId)?.mainBranch
   toast({ kind: 'success', title: main ? tr('Đã merge #{id} vào {main}', { id, main }) : tr('Đã merge #{id}', { id }), body: r.task.title })
+  return true
+}
+
+/**
+ * FR-103 "Duyệt và thực hiện": gửi kế hoạch (có thể đã sửa; bỏ trống = giữ nguyên kết quả lượt Kế hoạch).
+ * Task sang Queued ở giai đoạn Thực hiện.
+ */
+export async function approvePlan(id: number, plan?: string): Promise<boolean> {
+  const r = await act(() => api<ReviewResult>('POST', `/tasks/${id}/review`, { action: 'approve_plan', plan }), tr('Không duyệt được kế hoạch'))
+  if (!r) return false
+  applyReview(r)
+  toast({ kind: 'success', title: tr('Đã duyệt kế hoạch #{id}', { id }), body: tr('Agent sẽ bắt đầu làm theo kế hoạch khi tới lượt.') })
+  return true
+}
+
+// ---------------------------------------------------------------- mở trong Claude Code (SPEC-PLAN-HANDOFF Phần B)
+
+export interface HandoffStart {
+  requestId: string
+  command: { file: string; args: string[]; cwd: string; display: string }
+  warning?: string
+}
+
+/**
+ * FR-110..112: khoá task và yêu cầu mở phiên tương tác. `via: 'extension'`: extension VS Code tự mở terminal;
+ * `'copy'`: trả lệnh để người dùng tự chạy. Task đang chạy / trong hàng đợi trả `'needs_stop'` (hỏi xác nhận rồi gọi lại với stop).
+ */
+export async function startHandoff(id: number, via: 'extension' | 'copy', stop = false): Promise<HandoffStart | 'needs_stop' | null> {
+  try {
+    return await api<HandoffStart>('POST', `/tasks/${id}/handoff`, { via, stop })
+  } catch (e) {
+    if (e instanceof ApiError && e.code === 'NEEDS_STOP') return 'needs_stop'
+    toast({ kind: 'error', title: tr('Không mở được trong Claude Code'), body: (e as Error).message })
+    return null
+  }
+}
+
+/** FR-114b "Đưa về Review": mở khoá, ghi nhận thay đổi làm tay, task về Review. */
+export async function endHandoff(id: number): Promise<boolean> {
+  const t = await act(() => api<Task>('POST', `/tasks/${id}/handoff/end`, {}), tr('Không đưa task về Review được'))
+  if (!t) return false
+  onMessage({ type: 'task', task: t })
   return true
 }
 

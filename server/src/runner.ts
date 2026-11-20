@@ -30,6 +30,7 @@ import { agentLimitedUntil } from './agents/limits.ts'
 import { AGENT_NAMES, agentForRun, resolveAgent } from '../../web/src/lib/agent.ts'
 import type { Project, Run, RunFailKind, RunKind, Task, TaskStatus } from './types.ts'
 import { withScope } from '../../web/src/lib/writeScope.ts'
+import { executePrompt, phaseForRun, phasePrompt, runPermissionMode } from '../../web/src/lib/planMode.ts'
 
 export { isMissingSession } from './agents/claude.ts'
 
@@ -218,7 +219,11 @@ export function startRun(task: Task, kind: RunKind, feedback?: string) {
       agentId = fb
     }
   }
-  const problem = agentProblem(agentId, task.permissionMode)
+  // SPEC-PLAN-HANDOFF FR-101: lượt Kế hoạch luôn chạy mode plan, bất kể mức quyền của task. Task gửi cho agent
+  // (và broker duyệt quyền) mang mức quyền thực tế của lượt chạy này.
+  const phase = phaseForRun(task, kind)
+  const runTask: Task = { ...task, permissionMode: runPermissionMode(task.permissionMode, phase) }
+  const problem = agentProblem(agentId, runTask.permissionMode)
   const adapter = getAdapter(agentId)
   if (problem || !adapter) {
     updateTask(task.id, { status: 'failed', failReason: problem ?? `Task Board chưa hỗ trợ agent "${agentId}".` })
@@ -263,16 +268,32 @@ export function startRun(task: Task, kind: RunKind, feedback?: string) {
   const switchedAgent = !!prevRun && (prevRun.agent ?? 'claude') !== agentId
   if (switchedAgent) plan.notes.push(`Lần chạy trước dùng ${prevRun!.agent ?? 'claude'}, lần này dùng ${agentId}: mở phiên mới, không chạy tiếp phiên cũ.`)
   const { resume, sessionId } = plan.freshSession || switchedAgent ? sessionFor('retry', undefined) : sessionFor(kind, task.sessionId)
+  // SPEC-PLAN-HANDOFF: prompt theo giai đoạn của task có lập kế hoạch.
+  // - Lượt Thực hiện đầu tiên (ngay sau khi duyệt): gửi kế hoạch đã duyệt (resume: chỉ kế hoạch; phiên mới: kèm prompt gốc).
+  // - initial / retry: kèm chỉ dẫn lập kế hoạch, hoặc kèm kế hoạch đã duyệt (Chạy lại lượt Thực hiện).
+  // - resume / continue trên phiên MỚI (đổi agent, mất phiên): prompt gốc theo giai đoạn để không mất chỉ dẫn / kế hoạch (AC-47).
+  const scoped = withScope(task.prompt, task.writeScope)
+  const phaseBase = phasePrompt(phase, scoped, task.approvedPlan)
+  const phased =
+    phase === 'execute' && prevRun?.phase === 'plan' && task.approvedPlan
+      ? executePrompt({ approvedPlan: task.approvedPlan, resume: !!resume, taskPrompt: scoped })
+      : !phaseBase
+        ? undefined
+        : kind === 'initial' || kind === 'retry'
+          ? phaseBase
+          : !resume
+            ? resumePrompt({ kind, resume: false, feedback, taskPrompt: phaseBase })
+            : undefined
   const prompt = plan.freshSession
     ? escalationPrompt({
-        taskPrompt: withScope(task.prompt, task.writeScope),
+        taskPrompt: phased ?? scoped,
         lastSummary: prevRun?.summary,
         prevModel: prevRun?.requestedModel ?? prevRun?.model,
         feedback,
         branch: task.branch,
         mainBranch: project.mainBranch,
       })
-    : undefined
+    : phased
   const run = runs.create({
     id: randomUUID(),
     taskId: task.id,
@@ -284,8 +305,12 @@ export function startRun(task: Task, kind: RunKind, feedback?: string) {
     requestedModel: choice.requestedModel,
     modelSource: choice.modelSource,
     modelReason: choice.modelReason,
+    phase,
   })
   broadcast({ type: 'run', run })
+  if (phase === 'plan') addEvent(run.id, { type: 'system', text: 'Giai đoạn Kế hoạch: agent chỉ đọc và phân tích (mode plan), kết quả là kế hoạch chờ bạn duyệt.' })
+  if (phase === 'execute' && kind !== 'resume' && kind !== 'continue')
+    addEvent(run.id, { type: 'system', text: 'Giai đoạn Thực hiện: chạy theo kế hoạch đã duyệt.' })
   // P5-04: ghi lý do tự chọn model vào log của run.
   if (!plan.escalated && base.suggestion) addEvent(run.id, { type: 'system', text: autoModelNote(base.suggestion) })
   for (const text of [...failoverNotes, ...plan.notes]) addEvent(run.id, { type: 'system', text })
@@ -301,6 +326,7 @@ export function startRun(task: Task, kind: RunKind, feedback?: string) {
     pendingFeedback: null, // feedback (nếu có) đã nằm trên run vừa tạo
     resumeNext: null,
     notBefore: null,
+    planPhase: phase ?? null,
   })
   preparing.set(task.id, run.id)
 
@@ -312,7 +338,7 @@ export function startRun(task: Task, kind: RunKind, feedback?: string) {
       preparing.delete(task.id)
       if (wt.created) updateTask(task.id, { branch: wt.branch, worktreePath: wt.path, baseRef: wt.baseRef ?? null })
       spawnAgent(adapter, {
-        task,
+        task: runTask,
         project,
         bin: bin.path,
         runId: run.id,
