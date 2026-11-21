@@ -1,6 +1,6 @@
 // Duyệt kế hoạch (SPEC-PLAN-HANDOFF FR-102, FR-103): hiện kế hoạch của lượt Kế hoạch, cho sửa trước khi duyệt.
 //   Kế hoạch trước: Duyệt và thực hiện / Góp ý / Từ chối
-//   Chỉ kế hoạch:   Chấp nhận kế hoạch (Done) / Góp ý / Từ chối
+//   Chỉ kế hoạch:   Chấp nhận kết quả (Done) / Góp ý / Từ chối
 import { useEffect, useState } from 'react'
 import { Check, ClipboardList, Loader2, MessageSquareReply, Pencil, Play, X } from 'lucide-react'
 import { approvePlan, approveTask, rejectTask, requestChanges } from '../store/store'
@@ -45,7 +45,7 @@ export function PlanReview({ task, planRun, onSent }: { task: Task; planRun?: Ru
       <div className="rounded-lg border border-indigo-200 bg-white p-3 text-sm dark:border-indigo-900 dark:bg-slate-900">
         <div className="mb-2 flex flex-wrap items-center gap-2">
           <ClipboardList size={16} className="text-indigo-600 dark:text-indigo-400" />
-          <span className="font-medium">{only ? tr('Kế hoạch (chỉ lập kế hoạch)') : tr('Kế hoạch chờ duyệt')}</span>
+          <span className="font-medium">{only ? tr('Kết quả phân tích (task chỉ phân tích, không sửa code)') : tr('Kế hoạch chờ duyệt')}</span>
           {planRun && (
             <span className="text-xs text-slate-500 dark:text-slate-400">
               {planRun.endedAt ? duration(planRun.endedAt - planRun.startedAt) : ''}
@@ -68,7 +68,7 @@ export function PlanReview({ task, planRun, onSent }: { task: Task; planRun?: Ru
             <Markdown text={plan} />
           </div>
         ) : (
-          <p className="text-slate-500 dark:text-slate-400">{tr('Agent không trả về kế hoạch. Hãy Góp ý để agent lập lại kế hoạch.')}</p>
+          <p className="text-slate-500 dark:text-slate-400">{tr('Agent không trả về nội dung. Hãy Góp ý để agent làm lại.')}</p>
         )}
         {!only && edited && !editing && <p className="mt-2 text-xs text-indigo-700 dark:text-indigo-300">{tr('Bạn đã sửa kế hoạch. Agent sẽ làm theo bản đã sửa.')}</p>}
       </div>
@@ -76,7 +76,9 @@ export function PlanReview({ task, planRun, onSent }: { task: Task; planRun?: Ru
       <div className="sticky bottom-0 -mx-1 rounded-lg border border-slate-200 bg-white/95 p-3 shadow-lg backdrop-blur dark:border-slate-800 dark:bg-slate-900/95">
         {feedbackOpen ? (
           <div className="space-y-2">
-            <label className="text-sm font-medium">{tr('Góp ý cho kế hoạch (agent lập lại kế hoạch, vẫn chưa sửa code)')}</label>
+            <label className="text-sm font-medium">
+              {only ? tr('Góp ý cho kết quả (agent làm lại, vẫn không sửa code)') : tr('Góp ý cho kế hoạch (agent lập lại kế hoạch, vẫn chưa sửa code)')}
+            </label>
             <textarea
               autoFocus
               className={`${inputCls} min-h-[90px]`}
@@ -109,7 +111,7 @@ export function PlanReview({ task, planRun, onSent }: { task: Task; planRun?: Ru
         ) : (
           <div className="flex flex-wrap items-center gap-2">
             <span className="mr-auto text-sm text-slate-500 dark:text-slate-400">
-              {only ? tr('Task chỉ lập kế hoạch: chấp nhận sẽ chuyển task sang Done.') : tr('Agent chưa sửa code. Duyệt thì agent bắt đầu làm theo kế hoạch.')}
+              {only ? tr('Task chỉ phân tích: chấp nhận sẽ chuyển task sang Done.') : tr('Agent chưa sửa code. Duyệt thì agent bắt đầu làm theo kế hoạch.')}
             </span>
             <Button variant="ghost" className="text-rose-600" disabled={!!busy} onClick={() => setConfirmReject(true)}>
               {busy === 'reject' ? <Loader2 size={16} className="animate-spin" /> : <X size={16} />} {tr('Từ chối')}
@@ -119,7 +121,7 @@ export function PlanReview({ task, planRun, onSent }: { task: Task; planRun?: Ru
             </Button>
             {only ? (
               <Button variant="success" disabled={!!busy} onClick={() => run('approve', () => approveTask(task.id))}>
-                {busy === 'approve' ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />} {tr('Chấp nhận kế hoạch')}
+                {busy === 'approve' ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />} {tr('Chấp nhận kết quả')}
               </Button>
             ) : (
               <Button

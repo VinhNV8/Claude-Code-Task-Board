@@ -1,6 +1,6 @@
 # Agent Task Board
 
-Bảng công việc ngay trong VS Code để giao việc cho **Claude Code**. Mặc định Claude ghi output thẳng vào thư mục project (không cần git); bạn review thay đổi rồi chấp nhận output hoặc yêu cầu sửa. Project cũng có thể chọn cho mỗi task một nhánh git riêng ở local (worktree) để chạy song song; việc merge do bạn làm theo quy trình riêng. Bạn duyệt quyền khi Claude cần chạy lệnh và theo dõi chi phí theo từng project.
+Bảng công việc ngay trong VS Code để giao việc cho **Claude Code**. Nếu thư mục project là git repo, mặc định mỗi task làm trên một nhánh git riêng ở local (worktree): các task chạy song song được và không lẫn với thay đổi khác trong thư mục; việc merge do bạn làm theo quy trình riêng. Thư mục không có git thì dùng cách còn lại: Claude ghi output thẳng vào thư mục. Cả hai cách, bạn đều review thay đổi rồi chấp nhận output hoặc yêu cầu sửa. Bạn duyệt quyền khi Claude cần chạy lệnh và theo dõi chi phí theo từng project.
 
 > Đây là extension độc lập, **không phải sản phẩm của Anthropic** và không được Anthropic tài trợ hay xác nhận. "Claude" và "Claude Code" là thương hiệu của Anthropic, được nhắc tới ở đây chỉ để nói extension chạy cùng công cụ nào. Extension dùng Claude Code mà bạn đã cài và đăng nhập trên máy, hoặc API key Anthropic của chính bạn.
 

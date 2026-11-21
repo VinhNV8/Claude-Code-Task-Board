@@ -747,6 +747,183 @@ export const EN: Record<string, string> = {
   '{n} token ngữ cảnh': '{n} context tokens',
   '{n} task đang chạy bằng {agent}': '{n} task(s) running on {agent}',
 
+  // Template prompt (TemplateManager)
+  'Sửa template {name}': 'Edit template {name}',
+  'Thêm template': 'Add template',
+  'Lưu template': 'Save template',
+  'Tên template': 'Template name',
+  'Hiện trên nút chọn trong form tạo task': 'Shown on the picker in the new task form',
+  'VD: Sửa lỗi': 'E.g. Bug fix',
+  'Để trống: dùng cho mọi project': 'Leave empty to use it for every project',
+  'Tiêu đề task gợi ý': 'Suggested task title',
+  'Điền vào tiêu đề nếu đang trống': 'Filled into the title when it is empty',
+  'VD: Sửa lỗi: ': 'E.g. Bug fix: ',
+  'Phân cách bằng dấu phẩy': 'Comma separated',
+  'Nội dung prompt': 'Prompt',
+  'Dùng <...> để đánh dấu chỗ cần điền': 'Use <...> to mark the parts to fill in',
+  'Chưa có template nào.': 'No templates yet.',
+  'Điền sẵn agent cho task khi dùng template': 'Pre-fills the agent for tasks created from this template',
+  'Theo project / hệ thống': 'Project / system default',
+  'Xoá template {name}?': 'Delete template {name}?',
+  'Task đã tạo từ template này không bị ảnh hưởng.': 'Tasks created from this template are not affected.',
+
+  // Gói Claude hết lượt (claudeLimit)
+  'trong khung 5 giờ': 'for the 5-hour window',
+  'của tuần này': 'for this week',
+  'dành cho Opus trong tuần này': 'for Opus this week',
+  'hiện tại': 'for now',
+  'chưa đầy 1 phút': 'less than a minute',
+  '{d} ngày {h} giờ': '{d} d {h} h',
+  '{d} ngày': '{d} days',
+  '{h} giờ {m} phút': '{h} h {m} min',
+  '{h} giờ': '{h} h',
+  '{m} phút': '{m} min',
+  '{time} ngày mai': '{time} tomorrow',
+  'Chủ nhật': 'Sunday',
+  'thứ Hai': 'Monday',
+  'thứ Ba': 'Tuesday',
+  'thứ Tư': 'Wednesday',
+  'thứ Năm': 'Thursday',
+  'thứ Sáu': 'Friday',
+  'thứ Bảy': 'Saturday',
+  'Claude tạm nghỉ một chút: gói đã dùng hết lượt {kind}': 'Claude is taking a short break: your plan has used up its usage {kind}',
+  'Lượt mới có lại lúc {time} (khoảng {left} nữa).': 'Usage comes back at {time} (in about {left}).',
+  'Chưa rõ giờ có lượt lại, hệ thống sẽ tự thử lại sau khoảng {left}.': 'It\'s not clear when usage comes back; the system tries again in about {left}.',
+  '{n} task đang xếp hàng sẽ tự chạy tiếp khi có lượt, bạn không cần làm gì thêm.': '{n} queued tasks resume on their own when usage is back; you don\'t need to do anything.',
+  'Task giao lúc này sẽ được xếp hàng và tự chạy khi có lượt.': 'Tasks you assign now are queued and run on their own when usage is back.',
+
+  // Chạy test (TestPanel)
+  'Đạt': 'Passed',
+  'Không chạy được': 'Couldn\'t run',
+  'Project chưa cấu hình lệnh test': 'The project doesn\'t have a test command',
+  'Task chưa có thư mục làm việc': 'The task doesn\'t have a working folder yet',
+  'Claude đang làm việc trong thư mục của task': 'Claude is working in the task\'s folder',
+  'Chưa cấu hình lệnh test cho project này. Thêm trong trang Projects (ví dụ': 'This project doesn\'t have a test command. Add one on the Projects page (e.g.',
+  ') để chạy test ngay tại đây.': ') to run tests right here.',
+  'Kiểm thử': 'Tests',
+  '(mã {code})': '(code {code})',
+  'Dừng': 'Stop',
+  'Chạy lại test': 'Run tests again',
+  'Chạy test': 'Run tests',
+  'Đang chờ output…': 'Waiting for output…',
+  '(không có output)': '(no output)',
+
+  // Xem trước HTML (HtmlPreview)
+  'Không tạo được link xem trước': 'Couldn\'t create a preview link',
+  'Khổ màn hình': 'Screen size',
+  'Phiên bản': 'Version',
+  'Bản trước khi giao task': 'Before the task',
+  'Bản của task': 'The task\'s version',
+  'thu nhỏ {pct}%': 'scaled to {pct}%',
+  'Tải lại trang (lấy link mới)': 'Reload the page (gets a new link)',
+  'Mở trang ở tab mới (link hết hạn sau 30 phút)': 'Open in a new tab (the link expires after 30 minutes)',
+  'Mở tab mới': 'Open in new tab',
+  'Xem trước {path}': 'Preview of {path}',
+  'Trang chạy trong vùng cách ly: không truy cập được Task Board, không dùng cookie/localStorage. Đường dẫn tương đối (CSS, JS, ảnh) lấy từ cùng thư mục của task.': 'The page runs in a sandbox: it can\'t reach the Task Board and has no cookies or localStorage. Relative paths (CSS, JS, images) load from the task\'s folder.',
+
+  // Bảng lệnh (CommandPalette)
+  'Giao việc mới': 'New task',
+  'Xem dạng Bảng': 'Board view',
+  'Xem Điều phối · Cần bạn': 'Operations view · Needs you',
+  'Xem Phân luồng': 'Triage view',
+  'Mở Projects': 'Open Projects',
+  'Mở Thống kê': 'Open Stats',
+  'Mở Cài đặt': 'Open Settings',
+  'Bảng lệnh': 'Command palette',
+  'Tìm task theo tên hoặc #id, hoặc gõ lệnh…': 'Search tasks by name or #id, or type a command…',
+  'Không tìm thấy task hay lệnh nào': 'No matching tasks or commands',
+
+  // Kiểm tra trước khi merge (MergeStatus)
+  'Đang kiểm tra repo chính…': 'Checking the main repository…',
+  'Chưa kiểm tra được repo chính.': 'Couldn\'t check the main repository yet.',
+  'Repo chính sạch, sẵn sàng merge vào': 'The main repository is clean and ready to merge into',
+  'Repo chính có {n} file chưa commit nhưng không trùng với file task sửa. Merge vẫn an toàn, các file đó giữ nguyên.': 'The main repository has {n} uncommitted files, but none overlap with the task\'s changes. Merging is still safe and those files stay as they are.',
+  'Xem file': 'Show files',
+  'File chưa commit (không liên quan)': 'Uncommitted files (unrelated)',
+  'Repo chính chưa sẵn sàng để merge.': 'The main repository is not ready to merge.',
+  'Trùng với file task sửa (cần commit hoặc bỏ thay đổi)': 'Overlap with the task\'s changes (commit or discard them)',
+  'Đã stage nhưng chưa commit': 'Staged but not committed',
+  'Chưa commit, không liên quan (không chặn)': 'Uncommitted, unrelated (not blocking)',
+  'Sau khi commit xong, quay lại trang này: trạng thái tự kiểm tra lại.': 'After committing, come back to this page; the status checks itself again.',
+
+  // Log (LogView)
+  'Lỗi (không có nội dung)': 'Error (no content)',
+  'Xong (không có output)': 'Done (no output)',
+  '{messages} tin nhắn · {tools} lần gọi tool': '{messages} messages · {tools} tool calls',
+  'Chỉ hiện tin nhắn của Claude': 'Show only Claude\'s messages',
+  'Chưa có log. Task sẽ hiển thị log khi bắt đầu chạy.': 'No log yet. The log appears once the task starts running.',
+  'Claude đang làm việc…': 'Claude is working…',
+  'Mới nhất': 'Latest',
+
+  // Phân luồng (TriageView)
+  'Claude hỏi: {q}': 'Claude asks: {q}',
+  'Xin dùng {tool}: {input}': 'Wants to use {tool}: {input}',
+  'Cảnh báo: {w}': 'Warning: {w}',
+  'Chờ bạn duyệt': 'Waiting for your review',
+  'có cảnh báo': 'has warnings',
+  'Chờ {ids} xong': 'Waiting for {ids} to finish',
+  'Không có task nào khớp bộ lọc.': 'No tasks match the filters.',
+  'Mở tất cả': 'Expand all',
+  'Thu gọn tất cả': 'Collapse all',
+  'Thu gọn nhóm': 'Collapse group',
+  'Mở nhóm': 'Expand group',
+
+  // Nhận xét review (reviewComments)
+  '(cả file)': '(whole file)',
+  '(bản cũ, dòng đã xoá)': '(old version, deleted line)',
+
+  // Lỗi hiển thị (ErrorBoundary)
+  'Trang này gặp lỗi khi hiển thị': 'This page couldn\'t be displayed',
+  'Dữ liệu của bạn vẫn an toàn. Thử tải lại trang, nếu vẫn lỗi hãy gửi nội dung bên dưới cho người phát triển.': 'Your data is safe. Try reloading the page; if the error persists, send the details below to the developer.',
+  'Tải lại trang': 'Reload page',
+
+  // Đăng nhập (Login)
+  'Đăng nhập': 'Sign in',
+  'Nhập token đăng nhập': 'Enter the sign-in token',
+  'Truy cập từ xa cần đăng nhập. Nhập token đã đặt trong biến': 'Remote access requires signing in. Enter the token set in the',
+  'trên máy chạy backend.': 'variable on the machine running the backend.',
+  'Đang đăng nhập…': 'Signing in…',
+
+  // Mức quyền (permissionMode)
+  'Mọi thao tác ghi (sửa file, chạy lệnh) đều chờ người duyệt.': 'Every write action (editing files, running commands) waits for your approval.',
+  'Tự sửa file; lệnh ngoài whitelist của project phải chờ người duyệt.': 'Edits files on its own; commands outside the project\'s allowlist wait for your approval.',
+  'Chỉ đọc code và lập kế hoạch, không sửa gì.': 'Only reads code and plans; changes nothing.',
+  'Tự động duyệt mọi thao tác qua được kiểm tra an toàn; chỉ dừng chờ người với lệnh rủi ro cao.': 'Automatically approves every action that passes the safety check; stops for you only on high-risk commands.',
+
+  // Thông báo (notify)
+  'Cần review: #{id}': 'Needs review: #{id}',
+  'Claude cần bạn: #{id}': 'Claude needs you: #{id}',
+  'Task lỗi: #{id}': 'Task failed: #{id}',
+  '(không có tham số)': '(no arguments)',
+
+  // Budget (budget)
+  'Budget tháng phải là số (USD)': 'The monthly budget must be a number (USD)',
+  'Budget tháng không được âm': 'The monthly budget can\'t be negative',
+  'Budget tháng chỉ được có tối đa 2 chữ số thập phân': 'The monthly budget can have at most 2 decimal places',
+
+  // Tag (TagInput)
+  'Bỏ tag {tag}': 'Remove tag {tag}',
+  'Tối đa {n} tag': 'Up to {n} tags',
+  'Enter hoặc dấu phẩy để thêm, chọn từ gợi ý các tag đã dùng': 'Press Enter or a comma to add, or pick from tags you have used',
+
+  // Model (model)
+  '🤖 Tự động': '🤖 Automatic',
+  'Theo mặc định hệ thống: {model}': 'System default: {model}',
+  'Theo mặc định của Claude CLI': 'Claude CLI default',
+
+  // Thành phần chung (ui)
+  'Xác nhận': 'Confirm',
+
+  // Banner hết lượt (ClaudeLimitBanner)
+  'Thông báo gốc của Claude: {raw}': 'Claude\'s original message: {raw}',
+  'Xem hàng đợi': 'View queue',
+
+  // Thương hiệu (brand)
+  'Điều phối Claude Code theo bảng công việc': 'Coordinate Claude Code with a task board',
+
+  // Budget (budget)
+  'tháng {n}': 'month {n}',
+
   // Đổi mức quyền project, áp dụng cho task chưa chạy (FR-48)
   'Đã đổi mức quyền cho {n} task chưa chạy.': 'Changed the permission level of {n} tasks that have not run yet.',
   'Đổi mức quyền: {from} → {to}': 'Change permission level: {from} → {to}',
@@ -788,21 +965,24 @@ export const EN: Record<string, string> = {
   'Duyệt kế hoạch': 'Plan review',
   'Kế hoạch': 'Planning',
   'Thực hiện': 'Execution',
-  'Kế hoạch (chỉ lập kế hoạch)': 'Plan (plan-only task)',
   'Kế hoạch chờ duyệt': 'Plan awaiting approval',
   'Xem': 'View',
   'Sửa kế hoạch': 'Edit plan',
   'Kế hoạch tối đa {n} ký tự': 'The plan can be at most {n} characters',
-  'Agent không trả về kế hoạch. Hãy Góp ý để agent lập lại kế hoạch.': 'The agent returned no plan. Send feedback to have it plan again.',
   'Bạn đã sửa kế hoạch. Agent sẽ làm theo bản đã sửa.': 'You edited the plan. The agent will follow your edited version.',
   'Góp ý cho kế hoạch (agent lập lại kế hoạch, vẫn chưa sửa code)': 'Feedback on the plan (the agent plans again and still does not change code)',
   'VD: Không đổi schema DB; tách bước 3 thành task riêng…': "E.g. Don't change the DB schema; move step 3 into its own task…",
   'Gửi góp ý': 'Send feedback',
-  'Task chỉ lập kế hoạch: chấp nhận sẽ chuyển task sang Done.': 'Plan-only task: accepting moves it to Done.',
   'Agent chưa sửa code. Duyệt thì agent bắt đầu làm theo kế hoạch.': 'No code has been changed yet. Approve and the agent starts working from the plan.',
   'Góp ý': 'Feedback',
-  'Chấp nhận kế hoạch': 'Accept plan',
   'Duyệt và thực hiện': 'Approve and execute',
+  'Theo project': 'Follow project',
+  'Kết quả phân tích (task chỉ phân tích, không sửa code)': 'Analysis result (analysis-only task, no code changes)',
+  'Agent không trả về nội dung. Hãy Góp ý để agent làm lại.': 'The agent returned nothing. Send feedback to have it try again.',
+  'Góp ý cho kết quả (agent làm lại, vẫn không sửa code)': 'Feedback on the result (the agent redoes it, still without changing code)',
+  'Task chỉ phân tích: chấp nhận sẽ chuyển task sang Done.': 'Analysis-only task: accepting moves it to Done.',
+  'Chấp nhận kết quả': 'Accept result',
+  'Điền sẵn cách làm cho task khi dùng template': 'Pre-fill the approach for tasks created from this template',
   'Từ chối kế hoạch?': 'Reject the plan?',
   'Task chuyển sang Failed. Bạn vẫn có thể Chạy lại để agent lập kế hoạch mới.': 'The task moves to Failed. You can still Retry to have the agent make a new plan.',
   'Không duyệt được kế hoạch': "Couldn't approve the plan",
@@ -831,4 +1011,14 @@ export const EN: Record<string, string> = {
   'Đưa về Review': 'Back to Review',
   'Không mở được trong Claude Code': "Couldn't open in Claude Code",
   'Không đưa task về Review được': "Couldn't move the task back to Review",
+
+  // Mặc định Nhánh git riêng (FR-63) và chỉ ghi nhận thay đổi của chính task (FR-64)
+  'Tự chọn (khuyên dùng)': 'Automatic (recommended)',
+  'Thư mục là git repo có commit: dùng Nhánh git riêng. Thư mục không có git: Ghi thẳng vào thư mục.':
+    'A git repository with at least one commit gets a separate git branch per task. A folder without git gets output written straight into the folder.',
+  'Có session Claude Code khác, công cụ khác hoặc bạn cùng sửa thư mục này? Nên dùng Nhánh git riêng để thay đổi của từng task tách hẳn.':
+    "Do other Claude Code sessions, other tools or you also edit this folder? Use a separate git branch so each task's changes stay fully apart.",
+  'Thay đổi khác trong thư mục, không phải của task này ({n} file)': 'Other changes in the folder, not made by this task ({n} files)',
+  'Các file này thay đổi trong lúc task chạy nhưng agent không ghi chúng (session Claude Code khác, công cụ khác hoặc bạn sửa tay), nên không tính vào diff của task. Muốn tách hẳn, đổi project sang Nhánh git riêng.':
+    'These files changed while the task was running, but the agent did not write them (another Claude Code session, another tool or your own edits), so they are left out of the task diff. To keep them fully apart, switch the project to a separate git branch.',
 }

@@ -76,7 +76,7 @@ Tạo task (bật "Lập kế hoạch trước")
 | FR-100 | Task có thuộc tính `planMode` ∈ `none / first / only`. Đặt được ở form tạo task, template, cột `plan_mode` của file import (nhận cả *làm luôn / kế hoạch trước / chỉ kế hoạch*) và lịch chạy. Mặc định lấy từ `defaultPlanMode` của project | Must |
 | FR-101 | **Lượt Kế hoạch** chạy với mode `plan` bất kể mức quyền của project. Hệ thống gắn thêm chỉ dẫn yêu cầu agent trả về kế hoạch theo khung: *Hiểu yêu cầu · Các file sẽ sửa hoặc tạo · Các bước · Rủi ro và giả định · Câu hỏi còn mở*. Agent vẫn hỏi lại được bằng `AskUserQuestion` (FR-40) | Must |
 | FR-102 | Lượt Kế hoạch xong thì task chuyển **Review** với nhãn **"Duyệt kế hoạch"** trên thẻ, trang Review và thông báo (web, Telegram). Trang Review hiển thị kế hoạch dạng Markdown, kèm chi phí và thời gian của lượt Kế hoạch | Must |
-| FR-103 | Ba thao tác ở Review:<br>• **Duyệt và thực hiện** (`first`): người dùng có thể **sửa trực tiếp kế hoạch** trước khi duyệt. Hệ thống lưu `approvedPlan` và chuyển task sang Queued. Lượt Thực hiện chạy `--resume` với mức quyền của task (D4), prompt là *"Kế hoạch đã được duyệt (bản cuối bên dưới). Thực hiện đúng kế hoạch…"*.<br>• **Góp ý lại**: lập lại kế hoạch bằng `--resume` kèm góp ý, vẫn ở mode `plan`.<br>• **Từ chối**: task chuyển Failed như FR-33.<br>Với `only`, nút *Approve* đổi thành **"Chấp nhận kế hoạch"** và task chuyển Done | Must |
+| FR-103 | Ba thao tác ở Review:<br>• **Duyệt và thực hiện** (`first`): người dùng có thể **sửa trực tiếp kế hoạch** trước khi duyệt. Hệ thống lưu `approvedPlan` và chuyển task sang Queued. Lượt Thực hiện chạy `--resume` với mức quyền của task (D4), prompt là *"Kế hoạch đã được duyệt (bản cuối bên dưới). Thực hiện đúng kế hoạch…"*.<br>• **Góp ý lại**: lập lại kế hoạch bằng `--resume` kèm góp ý, vẫn ở mode `plan`.<br>• **Từ chối**: task chuyển Failed như FR-33.<br>Với `only`, nút *Approve* đổi thành **"Chấp nhận kết quả"** và task chuyển Done | Must |
 | FR-104 | Lượt Thực hiện không resume được (FR-97 đổi agent, mất phiên, nâng model sang phiên mới) thì mở phiên mới với prompt *gốc + kế hoạch đã duyệt*. Log ghi rõ lý do | Must |
 | FR-105 | Lịch sử run ghi rõ **giai đoạn** của mỗi lượt (Kế hoạch / Thực hiện). Thống kê tách chi phí của lượt Kế hoạch | Should |
 | FR-106 | **Duyệt kế hoạch qua Telegram**: gửi tóm tắt kế hoạch (cắt ở 3.500 ký tự, kèm link xem đầy đủ), có nút *Duyệt / Mở trên web*. Góp ý thì phải làm trên web | Could |
@@ -85,7 +85,7 @@ Tạo task (bật "Lập kế hoạch trước")
 
 | Dữ liệu hiện có | Sau khi chuyển |
 |---|---|
-| Task có `permission_mode = 'plan'` | `planMode = 'only'`, mức quyền lấy theo project. Task đã chạy (không ở Backlog/Queued) được đặt `planPhase = 'plan'` để vẫn duyệt được bằng "Chấp nhận kế hoạch" |
+| Task có `permission_mode = 'plan'` | `planMode = 'only'`, mức quyền lấy theo project. Task đã chạy (không ở Backlog/Queued) được đặt `planPhase = 'plan'` để vẫn duyệt được bằng "Chấp nhận kết quả" |
 | Project có `permission_mode = 'plan'` | `defaultPlanMode = 'only'`, mức quyền chuyển về `manual` (mức chặt nhất), log ghi lại thay đổi |
 | File import có cột `permission_mode = plan` | Hiểu là `plan_mode = only`, hiện một dòng cảnh báo ở bước xem trước |
 | Mức quyền `plan` trong API | Vẫn nhận ở bản này và tự chuyển như trên. Bỏ hẳn ở bản sau. Form task / project không còn cho chọn `plan` |
@@ -101,7 +101,7 @@ Tạo task (bật "Lập kế hoạch trước")
 | AC-45 | Người dùng sửa kế hoạch rồi duyệt: agent nhận đúng bản đã sửa, và bản này lưu ở `approvedPlan` |
 | AC-46 | Góp ý lại: lượt mới vẫn ở mode `plan`, resume phiên cũ, kế hoạch mới thay kế hoạch cũ trên trang Review. Lịch sử run giữ cả hai |
 | AC-47 | Lượt Thực hiện bị failover sang agent khác: phiên mới có prompt gốc và kế hoạch đã duyệt |
-| AC-48 | Task `only`: *Chấp nhận kế hoạch* chuyển task sang Done. Không có lượt Thực hiện, không có diff |
+| AC-48 | Task `only`: *Chấp nhận kết quả* chuyển task sang Done. Không có lượt Thực hiện, không có diff |
 | AC-49 | Dữ liệu cũ có mode `plan` được chuyển đúng theo bảng A5. Không task nào bị nới quyền sau khi chuyển |
 | AC-50 | Đang chờ duyệt kế hoạch thì task **không chiếm slot**: task khác của project vẫn chạy được |
 
@@ -269,11 +269,11 @@ Thêm vào `AgentAdapter`:
 
 | Hạng mục | Trạng thái | Ghi chú |
 |---|---|---|
-| FR-100..105 | ✅ | `planMode` có ở form task, project (`defaultPlanMode`), import (cột `plan_mode`) và lịch chạy. Template **chưa** có `planMode` (lấy theo project) |
-| FR-106 Telegram duyệt kế hoạch | ⏳ Chưa làm | Hiện Telegram chỉ báo task sang Review như mọi task |
+| FR-100..105 | ✅ | `planMode` có ở form task, project (`defaultPlanMode`), import (cột `plan_mode`), lịch chạy và **template** (P9-08, 2026-11-20) |
+| FR-106 Telegram duyệt kế hoạch | ✅ (2026-11-20) | Tin "📝 Kế hoạch chờ duyệt" (hoặc "Kết quả phân tích chờ duyệt") kèm kế hoạch (cắt ở 3.500 ký tự) và một nút: **Duyệt và thực hiện** / **Chấp nhận kết quả**. Tin này thay cho tin "Cần review" chung. Duyệt trên web trước thì tin được sửa, bỏ nút. Mỗi lượt Kế hoạch (kể cả sau Góp ý) gửi một tin. Theo cài đặt thông báo Review |
 | FR-110..113, FR-115, FR-116 | ✅ | |
 | FR-114a/b | ✅ | Đóng terminal hoặc thoát agent thì task tự mở khoá; có nút "Đưa về Review" |
-| FR-114c nhắc sau 12 giờ | ⏳ Chưa làm | Đã có cột `reminded_at` và hằng `HANDOFF_REMIND_MS` |
+| FR-114c nhắc sau 12 giờ | ✅ (2026-11-20, bản rút gọn) | Task khoá quá 12 giờ thì nhắc **một lần** (thông báo web + Telegram), không tự mở khoá. **Khác spec:** không xét điều kiện "thư mục không đổi", vì phải chụp trạng thái thư mục định kỳ. Nhắc theo thời gian là đủ để không quên task đang khoá |
 | Spike S3 (phiên tạo bằng API key có resume được bằng đăng nhập không) | ⏳ Chưa kiểm | FR-116 đang cảnh báo, chưa chặn |
 | Spike S4 (mở thẳng panel Claude Code) | ⏳ Bản 2 | |
 
@@ -284,4 +284,7 @@ Thêm vào `AgentAdapter`:
 - **Chạy lại** một task "Kế hoạch trước" đã có kế hoạch được duyệt thì vào thẳng lượt Thực hiện với kế hoạch đó, không lập lại kế hoạch.
 - **Agent hỗ trợ mở phiên tương tác:** Claude (`claude --resume <id> [--model <alias>]`) và Codex (`codex resume <id>`). Với Antigravity và Cursor, nút bị ẩn.
 
-**Test:** `server/src/handoff.test.ts`, `planMode.test.ts`, `planHandoff.test.ts` (qua API), `agents/runnerPlan.test.ts` (qua runner với agent giả).
+- **Chỉ dẫn của lượt Kế hoạch theo cách làm (2026-11-20):** "Kế hoạch trước" ép khung kế hoạch (Hiểu yêu cầu · File sẽ sửa · Các bước · Rủi ro · Câu hỏi) để người dùng có bản chuẩn để duyệt. "Chỉ kế hoạch" chỉ yêu cầu không sửa gì, còn kết quả **theo đúng định dạng prompt yêu cầu**, vì task phân tích (phân rã task, phân tích tác động, kiểm tra yêu cầu) thường đã ghi rõ định dạng. Trên giao diện, task "Chỉ kế hoạch" hiện "Kết quả phân tích" và nút **Chấp nhận kết quả**.
+- **Template mặc định** "Làm rõ yêu cầu", "Phân rã thành task", "Phân tích tác động", "Kiểm tra theo yêu cầu" có cách làm **Chỉ kế hoạch** (prompt của chúng đã ghi "Không sửa code"). "Viết đặc tả" vẫn làm luôn vì phải ghi file tài liệu. Chỉ áp dụng cho bản cài mới: template đã nạp trước đó không bị đổi.
+
+**Test:** `server/src/handoff.test.ts`, `planMode.test.ts`, `planHandoff.test.ts` (qua API), `agents/runnerPlan.test.ts` (qua runner với agent giả), `telegramPlan.test.ts` (FR-106), `templates.test.ts` (P9-08).

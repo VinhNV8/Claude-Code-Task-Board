@@ -2,11 +2,13 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  ANALYSIS_INSTRUCTION,
   awaitingPlanApproval,
   executePrompt,
   initialPhase,
   normalizePlanMode,
   PLAN_INSTRUCTION,
+  phasePrompt,
   planPrompt,
   replanPrompt,
   runPermissionMode,
@@ -39,6 +41,15 @@ test('awaitingPlanApproval: chỉ Review của lượt Kế hoạch', () => {
   assert.equal(awaitingPlanApproval({ status: 'review', planPhase: 'execute' }), false)
   assert.equal(awaitingPlanApproval({ status: 'running', planPhase: 'plan' }), false)
   assert.equal(awaitingPlanApproval({ status: 'review' }), false)
+})
+
+test('Chỉ kế hoạch: chỉ dẫn không ép khung kế hoạch, giữ định dạng của prompt (template phân tích)', () => {
+  const p = planPrompt('Phân rã thành danh sách task', 'only')
+  assert.ok(p.includes(ANALYSIS_INSTRUCTION) && !p.includes('## Các file sẽ sửa hoặc tạo'))
+  assert.ok(planPrompt('X', 'first').includes('## Các file sẽ sửa hoặc tạo'))
+  const again = replanPrompt({ feedback: 'Gộp task 2 và 3', resume: true, taskPrompt: 'X', mode: 'only' })
+  assert.ok(again.includes('góp ý cho kết quả') && again.includes(ANALYSIS_INSTRUCTION))
+  assert.equal(phasePrompt('plan', 'X', undefined, 'only'), planPrompt('X', 'only'))
 })
 
 test('prompt lượt Kế hoạch / Góp ý / Thực hiện', () => {

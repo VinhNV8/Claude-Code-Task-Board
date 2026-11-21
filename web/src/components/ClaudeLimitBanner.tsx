@@ -31,7 +31,7 @@ export function ClaudeLimitBanner() {
     <div
       role="status"
       className="flex items-start gap-3 border-b border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-900 md:px-6 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200"
-      title={claudeLimit.raw ? `Thông báo gốc của Claude: ${claudeLimit.raw}` : undefined}
+      title={claudeLimit.raw ? tr('Thông báo gốc của Claude: {raw}', { raw: claudeLimit.raw }) : undefined}
     >
       <Coffee size={18} className="mt-0.5 shrink-0 text-amber-600 dark:text-amber-400" />
       <div className="min-w-0 flex-1">
@@ -44,7 +44,7 @@ export function ClaudeLimitBanner() {
           to="/?view=ops"
           className="shrink-0 self-center rounded-md border border-amber-300 px-2.5 py-1 text-xs font-medium hover:bg-amber-100 dark:border-amber-800 dark:hover:bg-amber-900/50"
         >
-          Xem hàng đợi
+          {tr('Xem hàng đợi')}
         </Link>
       )}
     </div>

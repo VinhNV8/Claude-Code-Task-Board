@@ -184,7 +184,8 @@ export function createAntigravityDriver(ctx: DriverContext, o: { clientVersion: 
         return
       case 'tool_call':
         flushText()
-        if (u.toolCallId) calls.set(u.toolCallId, { ...u })
+        // _startedAt: tool_use chỉ được ghi lúc tool xong; FR-64 cần biết lệnh chạy trong khoảng nào
+        if (u.toolCallId) calls.set(u.toolCallId, { ...u, _startedAt: Date.now() })
         return
       case 'tool_call_update': {
         const c = { ...(calls.get(u.toolCallId) ?? {}), ...u }
@@ -203,7 +204,7 @@ export function createAntigravityDriver(ctx: DriverContext, o: { clientVersion: 
               ? JSON.stringify(c.rawOutput)
               : ''
         return emitEvents(
-          { type: 'tool_use', tool, input: truncate(shown, 500) },
+          { type: 'tool_use', tool, input: truncate(shown, 500), startedAt: typeof c._startedAt === 'number' ? c._startedAt : undefined },
           { type: 'tool_result', tool, output: truncate(out || (c.status === 'completed' ? 'Xong.' : 'Thất bại.')), isError: c.status === 'failed' },
         )
       }

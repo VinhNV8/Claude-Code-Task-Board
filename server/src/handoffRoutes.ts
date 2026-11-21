@@ -6,12 +6,23 @@
 import type { FastifyInstance } from 'fastify'
 import { randomUUID } from 'node:crypto'
 import { broadcast, setTaskDecorator } from './bus.ts'
-import { events, projects, runs, settings, tasks } from './db.ts'
+import { events, projects, runs, settings, tasks, telegramToken } from './db.ts'
+import { sendTelegram, taskLink } from './telegram.ts'
 import { HttpError } from './httpError.ts'
 import { getAdapter } from './agents/index.ts'
 import { captureChanges, runNumber } from './capture.ts'
 import { stopTask, updateTask } from './runner.ts'
-import { displayCommand, handoffCheck, handoffs, interactiveArgs, sessionAgent, type Handoff, type HandoffVia, type InteractiveCommand } from './handoff.ts'
+import {
+  HANDOFF_REMIND_MS,
+  displayCommand,
+  handoffCheck,
+  handoffs,
+  interactiveArgs,
+  sessionAgent,
+  type Handoff,
+  type HandoffVia,
+  type InteractiveCommand,
+} from './handoff.ts'
 import type { Task } from './types.ts'
 
 /** Yêu cầu mở qua extension cũ hơn mốc này không còn phát cho extension (người dùng đã chuyển sang cách khác). */
@@ -105,6 +116,52 @@ export async function endHandoff(taskId: number, now = Date.now()) {
     ? updateTask(taskId, { status: 'failed', failReason })
     : updateTask(taskId, { status: 'review', failReason: null, reviewWarning: null, ...(headRef ? { headRef } : {}) })
 }
+
+// ---------------------------------------------------------------- nhắc task khoá lâu (FR-114c)
+
+export interface RemindDeps {
+  notifyWeb: (taskId: number, message: string) => void
+  notifyTelegram: (text: string) => Promise<void>
+  log: (msg: string) => void
+}
+
+const defaultRemindDeps: RemindDeps = {
+  notifyWeb: (taskId, message) => {
+    const runId = runs.byTask(taskId).at(-1)?.id ?? ''
+    broadcast({ type: 'notification', taskId, runId, title: 'Task vẫn đang khoá', message })
+  },
+  notifyTelegram: async (text) => {
+    const s = settings.get()
+    const token = telegramToken.get()
+    if (!s.telegram.enabled || !s.telegram.chatId || !token) return
+    await sendTelegram({ token, chatId: s.telegram.chatId }, text)
+  },
+  log: (msg) => console.warn(msg),
+}
+
+/**
+ * FR-114c (bản 1): task khoá quá 12 giờ thì nhắc một lần (web + Telegram), không tự mở khoá.
+ * Khác spec ban đầu: không xét "thư mục không đổi", vì cần chụp trạng thái thư mục định kỳ; nhắc theo thời gian là đủ
+ * để người dùng không quên task đang khoá (ví dụ mở từ lệnh sao chép rồi đóng máy).
+ */
+export function remindStaleHandoffs(now = Date.now(), deps: RemindDeps = defaultRemindDeps): number[] {
+  const due = handoffs.all().filter((h) => !h.remindedAt && now - h.startedAt >= HANDOFF_REMIND_MS)
+  for (const h of due) {
+    handoffs.markReminded(h.taskId, now)
+    const t = tasks.get(h.taskId)
+    if (!t) continue
+    const hours = Math.floor((now - h.startedAt) / 3_600_000)
+    const message = `Task #${t.id} "${t.title}" đã mở trong Claude Code ${hours} giờ và vẫn đang khoá. Làm xong thì đóng terminal hoặc bấm "Đưa về Review".`
+    deps.notifyWeb(t.id, message)
+    const link = taskLink(settings.get().telegram.appUrl, t.id)
+    const text = `🔒 ${message}${link ? `\nMở task: ${link}` : ''}`
+    deps.notifyTelegram(text).catch((e) => deps.log(`Gửi Telegram nhắc task khoá #${t.id} thất bại: ${(e as Error).message}`))
+  }
+  return due.map((h) => h.taskId)
+}
+
+const REMIND_EVERY_MS = 30 * 60 * 1000
+setInterval(() => remindStaleHandoffs(), REMIND_EVERY_MS).unref()
 
 // ---------------------------------------------------------------- routes
 

@@ -55,6 +55,18 @@ function gitToplevel(path: string) {
   )
 }
 
+/** Thư mục nằm trong git repo đã có ít nhất một commit (worktree cần một commit để tạo nhánh task). */
+function gitHasCommit(path: string) {
+  return new Promise<boolean>((res) =>
+    execFile('git', ['-C', path, 'rev-parse', '--verify', '--quiet', 'HEAD'], { windowsHide: true }, (err) => res(!err)),
+  )
+}
+
+/** FR-63: project mới không chọn cách giao output → git repo có commit thì Nhánh git riêng, ngược lại Ghi thẳng. */
+export async function defaultDeliveryMode(repoPath: string): Promise<Project['deliveryMode']> {
+  return (await gitToplevel(repoPath)) && (await gitHasCommit(repoPath)) ? 'worktree' : 'direct'
+}
+
 /** Diff của task; lỗi git (repo bị xoá, nhánh chính đổi tên...) thì coi như không có diff. */
 async function safeDiff(projectId: string, taskId: number): Promise<FileDiff[]> {
   const project = projects.get(projectId)
@@ -206,8 +218,11 @@ export async function routes(app: FastifyInstance) {
     if (!existsSync(repoPath)) throw new HttpError(400, 'Thư mục không tồn tại')
     // Project mới mặc định direct (output ghi thẳng vào thư mục, không cần git); form cũ không gửi trường thì giữ giá trị đang có.
     const cur = body.id ? projects.get(body.id) : undefined
+    // FR-63: project mới không gửi deliveryMode thì tự chọn theo thư mục; project đã có giữ lựa chọn hiện tại.
     const deliveryMode: Project['deliveryMode'] =
-      body.deliveryMode === 'direct' || body.deliveryMode === 'worktree' ? body.deliveryMode : (cur?.deliveryMode ?? 'direct')
+      body.deliveryMode === 'direct' || body.deliveryMode === 'worktree'
+        ? body.deliveryMode
+        : (cur?.deliveryMode ?? (await defaultDeliveryMode(repoPath)))
     if (deliveryMode === 'worktree' && !(await gitToplevel(repoPath)))
       throw new HttpError(400, 'Thư mục này không phải git repo (không tìm thấy .git). Chọn "Ghi thẳng vào thư mục project" hoặc khởi tạo git.')
     const mode = (body.permissionMode ?? 'acceptEdits') as PermissionMode

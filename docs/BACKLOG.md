@@ -74,9 +74,9 @@ npm run seed:backlog                # tạo task ở cột Backlog
 | P9-03 | ✅ Lượt Kế hoạch, Duyệt kế hoạch, lượt Thực hiện (FR-101..105) | high | P9-02 | A4 |
 | P9-04 | ✅ Khoá task, Đưa về Review, run `manual` (FR-113..115) | high | — | B4 |
 | P9-05 | ✅ Extension mở terminal, URI handler, Sao chép lệnh (FR-110..112, FR-116) | high | P9-04 | B4 |
-| P9-06 | Duyệt kế hoạch qua Telegram (FR-106) | low | P9-03 | A4 |
-| P9-07 | Nhắc task khoá quá 12 giờ (FR-114c) | low | P9-04 | B4 |
-| P9-08 | `planMode` trong template | low | P9-02 | A4 |
+| P9-06 | ✅ Duyệt kế hoạch qua Telegram (FR-106) | low | P9-03 | A4 |
+| P9-07 | ✅ Nhắc task khoá quá 12 giờ (FR-114c, nhắc theo thời gian) | low | P9-04 | B4 |
+| P9-08 | ✅ `planMode` trong template; template phân tích mặc định là "Chỉ kế hoạch" | low | P9-02 | A4 |
 | P9-09 | Spike S3: phiên tạo bằng API key resume bằng đăng nhập; nếu không được thì FR-116 chặn thay vì cảnh báo | normal | P9-05 | §6 |
 
 ## Việc của bạn (không giao cho Claude)

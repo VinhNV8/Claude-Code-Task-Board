@@ -157,6 +157,43 @@ interface SentMessage {
   text: string
 }
 
+// ---------------------------------------------------------------- duyệt kế hoạch (SPEC-PLAN-HANDOFF FR-106)
+
+/** Kế hoạch đang chờ duyệt của task (lượt Kế hoạch gần nhất). */
+export interface PendingPlan {
+  task: Pick<Task, 'id' | 'title' | 'projectId' | 'planMode'>
+  /** Id lượt Kế hoạch: mỗi lượt (kể cả sau Góp ý) gửi một tin. */
+  runId: string
+  plan: string
+}
+
+/** Kế hoạch dài hơn mức này thì cắt, kèm link xem đầy đủ trên web (tin Telegram tối đa 4096 ký tự). */
+export const PLAN_PREVIEW_MAX = 3500
+
+export const planCallbackData = (taskId: number) => `plan:${taskId}:approve`
+
+export function parsePlanCallback(data: unknown): { taskId: number } | undefined {
+  if (typeof data !== 'string') return
+  const m = /^plan:(\d+):approve$/.exec(data)
+  return m ? { taskId: Number(m[1]) } : undefined
+}
+
+export function formatPlanMessage(p: PendingPlan, opts: { projectName?: string; appUrl: string }) {
+  const only = p.task.planMode === 'only'
+  const lines = [only ? `📝 Kết quả phân tích chờ duyệt: #${p.task.id}` : `📝 Kế hoạch chờ duyệt: #${p.task.id}`, p.task.title]
+  if (opts.projectName) lines.push(`Project: ${opts.projectName}`)
+  const plan = p.plan.trim()
+  lines.push('', plan.length > PLAN_PREVIEW_MAX ? `${plan.slice(0, PLAN_PREVIEW_MAX)}…\n(đã cắt bớt, xem đầy đủ trên web)` : plan || '(agent không trả về nội dung)')
+  const link = taskLink(opts.appUrl, p.task.id)
+  lines.push('', only ? 'Góp ý hoặc từ chối thì làm trên web.' : 'Muốn sửa kế hoạch, góp ý hoặc từ chối thì làm trên web.')
+  if (link) lines.push(`Mở task: ${link}`)
+  return lines.join('\n')
+}
+
+export function planKeyboard(p: PendingPlan) {
+  return { inline_keyboard: [[{ text: p.task.planMode === 'only' ? '✅ Chấp nhận kết quả' : '▶️ Duyệt và thực hiện', callback_data: planCallbackData(p.task.id) }]] }
+}
+
 export interface ApproveDeps {
   fetchImpl: FetchLike
   getSettings: () => Settings
@@ -167,6 +204,10 @@ export interface ApproveDeps {
   decide: (id: string, decision: Action) => unknown
   /** answerQuestion của permissions.ts (FR-40). Không truyền thì nút lựa chọn báo "trả lời trên web". */
   answer?: (id: string, answers: Answers) => unknown
+  /** FR-106: kế hoạch đang chờ duyệt của task (undefined = task không ở bước duyệt kế hoạch). */
+  pendingPlan?: (taskId: number) => PendingPlan | undefined
+  /** FR-106: "Duyệt và thực hiện" (kế hoạch trước) / "Chấp nhận" (chỉ kế hoạch); ném lỗi có statusCode khi không hợp lệ. */
+  approvePlan?: (taskId: number) => Promise<unknown>
   now: () => number
   log: (msg: string) => void
 }
@@ -198,6 +239,8 @@ export function createTelegramApprover(deps: ApproveDeps) {
   const announced = new Set<string>()
   /** FR-40: câu hỏi đã gửi (requestId → câu hỏi), để biết nút số i ứng với nhãn nào. */
   const questions = new Map<string, NonNullable<PermissionRequest['questions']>>()
+  /** FR-106: taskId → tin kế hoạch đã gửi (kèm id lượt Kế hoạch để không gửi lại cùng một kế hoạch). */
+  const planSent = new Map<number, SentMessage & { runId: string }>()
 
   const api = (token: string, method: string, body: Record<string, unknown>) => callTelegram(token, method, body, deps.fetchImpl)
 
@@ -240,8 +283,41 @@ export function createTelegramApprover(deps: ApproveDeps) {
     }
   }
 
+  /** FR-106: task vào bước duyệt kế hoạch → gửi tin có nút; rời bước đó (duyệt trên web, góp ý…) → sửa tin, bỏ nút. */
+  async function onPlanTask(task: Task) {
+    const prev = planSent.get(task.id)
+    const p = deps.pendingPlan?.(task.id)
+    if (!p) {
+      if (!prev) return
+      planSent.delete(task.id)
+      const token = deps.getToken()
+      if (token) await edit(token, prev, `🖥 Đã xử lý trên web lúc ${hhmm(deps.now())}`)
+      return
+    }
+    if (prev?.runId === p.runId) return
+    const s = deps.getSettings()
+    const cfg = activeConfig(s, deps.getToken())
+    if (!cfg || !s.notifyOn.review) return
+    const text = formatPlanMessage(p, { projectName: deps.projectName(p.task.projectId), appUrl: s.telegram.appUrl })
+    planSent.set(task.id, { chatId: cfg.chatId, messageId: 0, text, runId: p.runId }) // giữ chỗ: không gửi trùng khi bus phát lại
+    try {
+      const msg = (await api(cfg.token, 'sendMessage', {
+        chat_id: cfg.chatId,
+        text: text.slice(0, 4000),
+        disable_web_page_preview: true,
+        reply_markup: planKeyboard(p),
+      })) as { message_id: number }
+      planSent.set(task.id, { chatId: cfg.chatId, messageId: msg.message_id, text, runId: p.runId })
+    } catch (e) {
+      deps.log(`Gửi Telegram duyệt kế hoạch cho task #${task.id} thất bại: ${(e as Error)?.message ?? e}`)
+    }
+  }
+
   /** Bộ nghe bus: yêu cầu pending mới → gửi tin có nút; yêu cầu được chốt ngoài Telegram → sửa tin, bỏ nút. */
-  function onMessage(m: { type: string; permission?: PermissionRequest }): Promise<void> | undefined {
+  function onMessage(m: { type: string; permission?: PermissionRequest; task?: Task }): Promise<void> | undefined {
+    if (m.type === 'task' && m.task && deps.pendingPlan) {
+      return onPlanTask(m.task).catch((e) => deps.log(`Lỗi xử lý duyệt kế hoạch Telegram: ${(e as Error)?.message ?? e}`))
+    }
     if (m.type !== 'permission' || !m.permission) return
     const req = m.permission
     try {
@@ -274,6 +350,29 @@ export function createTelegramApprover(deps: ApproveDeps) {
     if (!isConfiguredChat(cq.message?.chat, cfg.chatId)) {
       deps.log(`Bỏ qua nút duyệt quyền Telegram từ chat lạ ${cq.message?.chat?.id ?? '?'}`)
       return answer('Không có quyền')
+    }
+    // FR-106: nút "Duyệt và thực hiện" / "Chấp nhận kết quả"
+    const plan = parsePlanCallback(cq.data)
+    if (plan) {
+      const m = cq.message!
+      const msg: SentMessage = planSent.get(plan.taskId) ?? { chatId: String(m.chat.id), messageId: m.message_id, text: m.text ?? '' }
+      if (!deps.approvePlan) return answer('Hãy duyệt trên web')
+      planSent.delete(plan.taskId) // xoá trước: task đổi trạng thái sẽ phát bus, không để onPlanTask sửa thành "trên web"
+      try {
+        await deps.approvePlan(plan.taskId)
+      } catch (e) {
+        const code = (e as { statusCode?: number; status?: number })?.statusCode ?? (e as { status?: number })?.status
+        if (code === 409 || code === 404) {
+          await answer('Kế hoạch đã được xử lý trước đó')
+          await edit(cfg.token, msg, 'ℹ️ Kế hoạch đã được xử lý trước đó')
+          return
+        }
+        return answer(code === 400 ? (e as Error).message.slice(0, 190) : 'Lỗi khi xử lý, hãy duyệt trên web')
+      }
+      const line = '✅ Đã duyệt'
+      await answer(line)
+      await edit(cfg.token, msg, `${line} lúc ${hhmm(deps.now())}`)
+      return
     }
     const parsed = parseCallbackData(cq.data)
     if (!parsed) return answer('Nút không hợp lệ')
@@ -311,7 +410,7 @@ export function createTelegramApprover(deps: ApproveDeps) {
     await edit(cfg.token, msg, `${resultLine} lúc ${hhmm(deps.now())}`)
   }
 
-  return { onMessage, handleCallback, sent, questions }
+  return { onMessage, handleCallback, sent, questions, planSent }
 }
 
 // ---------------------------------------------------------------- long polling

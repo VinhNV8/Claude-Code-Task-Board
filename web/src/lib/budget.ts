@@ -1,6 +1,7 @@
 // Hiển thị budget tháng theo project (PLAN P6, B1–B5). Hàm thuần, server test được (server/src/budgetUi.test.ts).
 // Mọi số tiền là giá niêm yết quy đổi: luôn hiện kèm chữ "ước tính" (B5).
 import type { BudgetLevel, Project, ProjectBudget } from '../types'
+import { LANG, LOCALE, tr } from './i18n.ts'
 
 /** Ngưỡng cảnh báo (B2). Trùng với server/src/budget.ts. */
 export const WARN_RATIO = 0.8
@@ -14,7 +15,8 @@ export function formatUsd(n: number): string {
 
 /** 'YYYY-MM' → "tháng 11". */
 export function monthLabel(month: string): string {
-  return `tháng ${Number(month.slice(5, 7))}`
+  const n = Number(month.slice(5, 7))
+  return LANG === 'en' ? new Date(2000, n - 1, 1).toLocaleString(LOCALE, { month: 'long' }) : tr('tháng {n}', { n })
 }
 
 /** 'YYYY-MM' theo giờ địa phương của trình duyệt. */
@@ -93,8 +95,8 @@ export function parseBudgetInput(raw: string): { value?: number; error?: string 
   const s = raw.trim()
   if (!s) return {}
   const n = Number(s.replace(',', '.'))
-  if (!Number.isFinite(n)) return { error: 'Budget tháng phải là số (USD)' }
-  if (n < 0) return { error: 'Budget tháng không được âm' }
-  if (Math.abs(Math.round(n * 100) - n * 100) > 1e-6) return { error: 'Budget tháng chỉ được có tối đa 2 chữ số thập phân' }
+  if (!Number.isFinite(n)) return { error: tr('Budget tháng phải là số (USD)') }
+  if (n < 0) return { error: tr('Budget tháng không được âm') }
+  if (Math.abs(Math.round(n * 100) - n * 100) > 1e-6) return { error: tr('Budget tháng chỉ được có tối đa 2 chữ số thập phân') }
   return { value: Math.round(n * 100) / 100 }
 }

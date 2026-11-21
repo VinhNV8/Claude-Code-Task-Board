@@ -12,7 +12,11 @@ import { idleExitMinutes, startIdleExit } from './idle.ts'
 import { isElectron } from './runtime.ts'
 import { bus, type ServerMessage } from './bus.ts'
 import { startScheduler, stopScheduler } from './scheduler.ts'
-import { kv, projects, schedules, settings, tasks, telegramToken } from './db.ts'
+import { kv, projects, runs, schedules, settings, tasks, telegramToken } from './db.ts'
+import { approvePlan, approveTask } from './review.ts'
+import { isHandedOff } from './handoff.ts'
+import { awaitingPlanApproval } from '../../web/src/lib/planMode.ts'
+import type { PendingPlan } from './telegramApprove.ts'
 import { createTelegramNotifier, sendTelegram, type FetchLike } from './telegram.ts'
 import { AGENT_NAMES, effectiveAgent } from '../../web/src/lib/agent.ts'
 import { activeConfig, createTelegramApprover, createTelegramPoller } from './telegramApprove.ts'
@@ -81,10 +85,20 @@ bus.on(
     getTask: (id) => tasks.get(id),
     send: (cfg, text) => sendTelegram(cfg, text),
     log: (msg) => app.log.warn(msg),
-    // Needs Input do xin quyền: tin kèm nút duyệt (P7-03) đã thay cho tin chung
-    skip: (t) => t.status === 'needs_input' && listPermissions().some((p) => p.taskId === t.id && p.status === 'pending'),
+    // Needs Input do xin quyền: tin kèm nút duyệt (P7-03) đã thay cho tin chung.
+    // Chờ duyệt kế hoạch: tin kèm kế hoạch và nút Duyệt (FR-106) đã thay cho tin "Cần review".
+    skip: (t) =>
+      (t.status === 'needs_input' && listPermissions().some((p) => p.taskId === t.id && p.status === 'pending')) || !!pendingPlan(t.id),
   }),
 )
+
+/** FR-106: kế hoạch đang chờ duyệt của task (kết quả lượt Kế hoạch gần nhất). */
+function pendingPlan(taskId: number): PendingPlan | undefined {
+  const t = tasks.get(taskId)
+  if (!t || !awaitingPlanApproval(t) || isHandedOff(t.id)) return
+  const run = runs.byTask(t.id).filter((r) => r.phase === 'plan').at(-1)
+  return run ? { task: t, runId: run.id, plan: run.summary ?? '' } : undefined
+}
 
 // P7-03 (FR-46): duyệt quyền bằng nút inline trên Telegram, nhận phản hồi qua long polling getUpdates.
 const realFetch = fetch as unknown as FetchLike
@@ -96,6 +110,13 @@ const approver = createTelegramApprover({
   projectName: (id) => projects.get(id)?.name,
   decide: (id, d) => decidePermission(id, d),
   answer: (id, a) => answerQuestion(id, a, 'trả lời qua Telegram'),
+  pendingPlan,
+  // FR-106: giống nút trên web: "Kế hoạch trước" → Duyệt và thực hiện (vào hàng đợi); "Chỉ kế hoạch" → Chấp nhận (Done)
+  approvePlan: async (taskId) => {
+    const t = tasks.get(taskId)
+    await (t?.planMode === 'only' ? approveTask(taskId) : approvePlan(taskId))
+    pump()
+  },
   now: Date.now,
   log: (msg) => app.log.warn(msg),
 })

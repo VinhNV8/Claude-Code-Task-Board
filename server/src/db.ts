@@ -191,6 +191,8 @@ if (!taskCols.some((c) => c.name === 'active_agent')) db.exec('ALTER TABLE tasks
 // Template gợi ý agent (NULL = theo project/hệ thống).
 const templateCols = db.prepare('PRAGMA table_info(templates)').all() as { name: string }[]
 if (!templateCols.some((c) => c.name === 'agent')) db.exec('ALTER TABLE templates ADD COLUMN agent TEXT')
+// P9-08: cách làm gợi ý của template ('first' | 'only'; NULL = theo project).
+if (!templateCols.some((c) => c.name === 'plan_mode')) db.exec('ALTER TABLE templates ADD COLUMN plan_mode TEXT')
 // P6 (B1): budget tháng theo project (NULL = không giới hạn) và hành động khi vượt.
 if (!projectCols.some((c) => c.name === 'monthly_budget_usd')) db.exec('ALTER TABLE projects ADD COLUMN monthly_budget_usd REAL')
 if (!projectCols.some((c) => c.name === 'budget_action'))
@@ -199,6 +201,8 @@ if (!projectCols.some((c) => c.name === 'budget_action'))
 if (!taskCols.some((c) => c.name === 'max_cost_usd')) db.exec('ALTER TABLE tasks ADD COLUMN max_cost_usd REAL')
 // FR-49: phạm vi ghi của task (JSON mảng mẫu đường dẫn), NULL = không giới hạn
 if (!taskCols.some((c) => c.name === 'write_scope')) db.exec('ALTER TABLE tasks ADD COLUMN write_scope TEXT')
+// FR-64: file không phải của task trong diff mode Ghi thẳng (JSON mảng đường dẫn), NULL = không có
+if (!taskCols.some((c) => c.name === 'foreign_files')) db.exec('ALTER TABLE tasks ADD COLUMN foreign_files TEXT')
 // SPEC-PLAN-HANDOFF FR-100: duyệt kế hoạch trước khi làm. plan_mode 'none' | 'first' | 'only'; plan_phase 'plan' | 'execute'.
 if (!taskCols.some((c) => c.name === 'plan_mode')) db.exec("ALTER TABLE tasks ADD COLUMN plan_mode TEXT NOT NULL DEFAULT 'none'")
 if (!taskCols.some((c) => c.name === 'plan_phase')) db.exec('ALTER TABLE tasks ADD COLUMN plan_phase TEXT')
@@ -328,6 +332,7 @@ const toTask = (r: Row): Task => ({
   activeAgent: parseAgent(r.active_agent) || undefined,
   maxCostUsd: (r.max_cost_usd as number | null) ?? undefined,
   writeScope: optList(r.write_scope ? (JSON.parse(r.write_scope as string) as string[]) : []),
+  foreignFiles: optList(r.foreign_files ? (JSON.parse(r.foreign_files as string) as string[]) : []),
   planMode: planModeOf(r.plan_mode),
   planPhase: planPhaseOf(r.plan_phase),
   approvedPlan: opt(r.approved_plan),
@@ -476,6 +481,7 @@ const TASK_COLS: Record<string, string> = {
   activeAgent: 'active_agent',
   maxCostUsd: 'max_cost_usd',
   writeScope: 'write_scope',
+  foreignFiles: 'foreign_files',
   planMode: 'plan_mode',
   planPhase: 'plan_phase',
   approvedPlan: 'approved_plan',
@@ -530,7 +536,7 @@ export const tasks = {
       if (!col) continue
       sets.push(`${col} = ?`)
       if (FLAG_COLS.has(k)) vals.push(v ? 1 : 0)
-      else if (k === 'writeScope') vals.push(Array.isArray(v) && v.length ? JSON.stringify(v) : null)
+      else if (k === 'writeScope' || k === 'foreignFiles') vals.push(Array.isArray(v) && v.length ? JSON.stringify(v) : null)
       else if (k === 'planMode') vals.push(v === 'first' || v === 'only' ? v : 'none') // cột NOT NULL
       else vals.push(k === 'tags' ? JSON.stringify(v) : v === undefined ? null : (v as string | number | null))
     }
@@ -684,6 +690,7 @@ const toTemplate = (r: Row): PromptTemplate => ({
   tags: JSON.parse(r.tags as string),
   projectId: opt(r.project_id),
   ...(parseAgent(r.agent) ? { agent: parseAgent(r.agent)! } : {}),
+  ...(planModeOf(r.plan_mode) ? { planMode: planModeOf(r.plan_mode) } : {}),
 })
 
 export const templates = {
@@ -697,10 +704,10 @@ export const templates = {
   /** Thêm mới hoặc cập nhật (giữ nguyên thứ tự created_at khi cập nhật). */
   upsert: (t: PromptTemplate, createdAt = Date.now()) => {
     db.prepare(
-      `INSERT INTO templates (id, name, title, prompt, tags, project_id, agent, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO templates (id, name, title, prompt, tags, project_id, agent, plan_mode, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET name=excluded.name, title=excluded.title, prompt=excluded.prompt,
-         tags=excluded.tags, project_id=excluded.project_id, agent=excluded.agent`,
-    ).run(t.id, t.name, t.title, t.prompt, JSON.stringify(t.tags), t.projectId ?? null, t.agent ?? null, createdAt)
+         tags=excluded.tags, project_id=excluded.project_id, agent=excluded.agent, plan_mode=excluded.plan_mode`,
+    ).run(t.id, t.name, t.title, t.prompt, JSON.stringify(t.tags), t.projectId ?? null, t.agent ?? null, t.planMode ?? null, createdAt)
     return templates.get(t.id)!
   },
   remove: (id: string) => db.prepare('DELETE FROM templates WHERE id = ?').run(id),

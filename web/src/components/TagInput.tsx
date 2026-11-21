@@ -1,6 +1,7 @@
 import { useId, useRef, useState, type KeyboardEvent } from 'react'
 import { X } from 'lucide-react'
 import { MAX_TAG_LENGTH, MAX_TAGS, normalizeTags, splitTags, suggestTags } from '../lib/taskFilter'
+import { tr } from '../lib/i18n'
 
 /** Ô nhập tag dạng chip, gợi ý từ các tag đã dùng (FR-07). Enter hoặc dấu phẩy để thêm. */
 export function TagInput({
@@ -44,7 +45,8 @@ export function TagInput({
       // Enter chọn gợi ý đang sáng (sau khi dùng phím mũi tên); nếu không thì thêm chữ đã gõ
       const pick = e.key === 'Enter' && showList && hi >= 0 ? list[hi] : undefined
       if (!pick && !text.trim()) {
-        if (e.key !== 'Tab') e.preventDefault() // tránh submit form / gõ dấu phẩy thừa
+        // tránh submit form / gõ dấu phẩy thừa
+      if (e.key !== 'Tab') e.preventDefault()
         return
       }
       e.preventDefault()
@@ -76,7 +78,7 @@ export function TagInput({
           {value.map((t) => (
             <span key={t} className="inline-flex items-center gap-0.5 rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-700 dark:bg-slate-800 dark:text-slate-200">
               {t}
-              <button type="button" onClick={() => onChange(value.filter((x) => x !== t))} className="text-slate-400 hover:text-slate-700 dark:hover:text-white" aria-label={`Bỏ tag ${t}`}>
+              <button type="button" onClick={() => onChange(value.filter((x) => x !== t))} className="text-slate-400 hover:text-slate-700 dark:hover:text-white" aria-label={tr('Bỏ tag {tag}', { tag: t })}>
                 <X size={12} />
               </button>
             </span>
@@ -87,7 +89,7 @@ export function TagInput({
             className="min-w-[80px] flex-1 bg-transparent py-1 outline-none"
             value={text}
             disabled={full}
-            placeholder={full ? `Tối đa ${MAX_TAGS} tag` : value.length ? '' : placeholder}
+            placeholder={full ? tr('Tối đa {n} tag', { n: MAX_TAGS }) : value.length ? '' : placeholder}
             maxLength={MAX_TAG_LENGTH * 4}
             onChange={(e) => {
               const v = e.target.value
@@ -137,7 +139,7 @@ export function TagInput({
           </ul>
         )}
       </div>
-      <span className="block text-xs text-slate-500 dark:text-slate-400">Enter hoặc dấu phẩy để thêm, chọn từ gợi ý các tag đã dùng</span>
+      <span className="block text-xs text-slate-500 dark:text-slate-400">{tr('Enter hoặc dấu phẩy để thêm, chọn từ gợi ý các tag đã dùng')}</span>
     </div>
   )
 }

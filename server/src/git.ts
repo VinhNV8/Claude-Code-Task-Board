@@ -5,6 +5,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node
 import { dirname, join, resolve } from 'node:path'
 import { DATA_DIR, tasks } from './db.ts'
 import { parseGitDiff } from '../../web/src/lib/diff.ts'
+import { attributeDiff } from './attribution.ts'
 import type { FileDiff, Project } from './types.ts'
 
 export interface GitResult {
@@ -214,7 +215,11 @@ export async function taskDiff(project: DiffProject, taskId: number): Promise<Fi
     if (!project.id || !existsSync(project.repoPath)) return []
     // Đang chạy: so với thư mục hiện tại. Đã xong: so với snapshot lúc run xong (không lẫn task chạy sau).
     const head = task.status === 'running' ? undefined : task.headRef
-    return snapshotDiff({ id: project.id, repoPath: project.repoPath }, task.baseRef, head)
+    const files = await snapshotDiff({ id: project.id, repoPath: project.repoPath }, task.baseRef, head)
+    // FR-64: chỉ giữ file của task. So với thư mục hiện tại (đang chạy): tính trực tiếp; đã chốt: theo danh sách lúc run kết thúc.
+    if (!head) return attributeDiff(task.id, task.worktreePath ?? project.repoPath, files).own
+    const foreign = new Set(task.foreignFiles ?? [])
+    return foreign.size ? files.filter((f) => !foreign.has(f.path)) : files
   }
   const branch = taskBranch(taskId)
   const repo = project.repoPath

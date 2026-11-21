@@ -1,6 +1,7 @@
 // Đăng nhập bằng token khi backend mở truy cập từ xa (PLAN 4.7, NFR-04).
 // Phiên lưu trong cookie HttpOnly do backend đặt; web chỉ hỏi trạng thái và gửi token.
 // Không phụ thuộc store để store (và WebSocket) chỉ được nạp sau khi đã đăng nhập.
+import { tr } from './i18n.ts'
 
 export interface AuthStatus {
   required: boolean
@@ -11,7 +12,7 @@ export interface AuthStatus {
 export async function fetchAuthStatus(): Promise<AuthStatus> {
   if (__APP_ENV__ === 'mock') return { required: false, authenticated: true }
   const res = await fetch('/api/auth/status', { cache: 'no-store' })
-  if (!res.ok) throw new Error(`Lỗi ${res.status}`)
+  if (!res.ok) throw new Error(tr('Lỗi {status}', { status: res.status }))
   return (await res.json()) as AuthStatus
 }
 
@@ -25,9 +26,9 @@ export async function login(token: string): Promise<string | null> {
     })
     if (res.ok) return null
     const data = (await res.json().catch(() => ({}))) as { error?: string }
-    return data.error ?? `Lỗi ${res.status}`
+    return data.error ?? tr('Lỗi {status}', { status: res.status })
   } catch {
-    return 'Không kết nối được tới backend'
+    return tr('Không kết nối được tới backend')
   }
 }
 

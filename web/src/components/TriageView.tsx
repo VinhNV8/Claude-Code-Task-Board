@@ -7,23 +7,24 @@ import { StatusGlyph, useNow } from './ui'
 import { duration, timeAgo, STATUS_META } from '../lib/format'
 import { unmetDeps } from '../lib/deps'
 import type { Project, Task, TaskStatus } from '../types'
+import { tr } from '../lib/i18n'
 
 /** Dòng phụ dưới tiêu đề: việc đang làm / đang chờ gì. */
 function subline(t: Task, s: ReturnType<typeof useStore>): string {
   if (t.status === 'needs_input') {
     const p = s.permissions.find((x) => x.taskId === t.id && x.status === 'pending')
-    if (p?.questions?.length) return `Claude hỏi: ${p.questions[0].question}`
-    return p ? `Xin dùng ${p.tool}:${p.input.trim().split('\n')[0]}` : 'Đang chờ bạn'
+    if (p?.questions?.length) return tr('Claude hỏi: {q}', { q: p.questions[0].question })
+    return p ? tr('Xin dùng {tool}: {input}', { tool: p.tool, input: p.input.trim().split('\n')[0] }) : tr('Đang chờ bạn')
   }
   if (t.status === 'review') {
     const f = s.diffs[t.id]
-    if (!f) return t.reviewWarning ? `Cảnh báo: ${t.reviewWarning}` : 'Chờ bạn duyệt'
-    return `${f.length} file · +${f.reduce((a, x) => a + x.additions, 0)} −${f.reduce((a, x) => a + x.deletions, 0)}${t.reviewWarning ? ' · có cảnh báo' : ''}`
+    if (!f) return t.reviewWarning ? tr('Cảnh báo: {w}', { w: t.reviewWarning }) : tr('Chờ bạn duyệt')
+    return `${f.length} file · +${f.reduce((a, x) => a + x.additions, 0)} −${f.reduce((a, x) => a + x.deletions, 0)}${t.reviewWarning ? ` · ${tr('có cảnh báo')}` : ''}`
   }
-  if (t.status === 'failed') return t.failReason ?? 'Lỗi'
+  if (t.status === 'failed') return t.failReason ?? tr('Lỗi')
   if (t.status === 'queued' || t.status === 'backlog') {
     const waiting = unmetDeps(t, (id) => s.tasks.find((x) => x.id === id)?.status)
-    if (waiting.length) return `Chờ ${waiting.map((id) => `#${id}`).join(', ')} xong`
+    if (waiting.length) return tr('Chờ {ids} xong', { ids: waiting.map((id) => `#${id}`).join(', ') })
   }
   return t.tags.length ? t.tags.join(', ') : ''
 }
@@ -57,7 +58,7 @@ export function TriageList({
     listRef.current?.querySelector('[aria-current="true"]')?.scrollIntoView({ block: 'nearest' })
   }, [selectedId])
 
-  if (!groups.length) return <p className="px-4 py-10 text-center text-sm text-slate-400">Không có task nào khớp bộ lọc.</p>
+  if (!groups.length) return <p className="px-4 py-10 text-center text-sm text-slate-400">{tr('Không có task nào khớp bộ lọc.')}</p>
 
   const allCollapsed = groups.every((g) => collapsed.includes(g.status))
 
@@ -69,7 +70,7 @@ export function TriageList({
           className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs text-slate-500 hover:bg-slate-100 hover:text-slate-800 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200"
         >
           {allCollapsed ? <ChevronsUpDown size={13} /> : <ChevronsDownUp size={13} />}
-          {allCollapsed ? 'Mở tất cả' : 'Thu gọn tất cả'}
+          {allCollapsed ? tr('Mở tất cả') : tr('Thu gọn tất cả')}
         </button>
       </div>
       {groups.map((g) => {
@@ -81,7 +82,7 @@ export function TriageList({
               onClick={() => onCollapsedChange(toggleGroup(collapsed, g.status))}
               aria-expanded={open}
               className="flex w-full items-center gap-1.5 px-3.5 py-1.5 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200"
-              title={open ? 'Thu gọn nhóm' : 'Mở nhóm'}
+              title={open ? tr('Thu gọn nhóm') : tr('Mở nhóm')}
             >
               <ChevronRight size={13} className={`shrink-0 transition-transform ${open ? 'rotate-90' : ''}`} />
               <StatusGlyph status={g.status} size={12} /> {STATUS_META[g.status].label}

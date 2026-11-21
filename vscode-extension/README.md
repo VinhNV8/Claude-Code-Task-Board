@@ -1,6 +1,6 @@
 # Agent Task Board
 
-A task board inside VS Code for handing work to **Claude Code**. By default Claude writes its output straight into your project folder (no git needed); you review the changes, then accept the output or ask for changes. Projects can instead give each task its own local git branch (worktree) and run several tasks in parallel; merging stays with you and your own process. You approve permissions when Claude wants to run a command and track spending per project.
+A task board inside VS Code for handing work to **Claude Code**. If your project folder is a git repository, each task works on its own local git branch (worktree) by default, so tasks run in parallel and never mix with other edits to the folder; merging stays with you and your own process. A folder without git gets the other option: Claude writes its output straight into the folder. Either way you review the changes, then accept the output or ask for changes. You approve permissions when Claude wants to run a command and track spending per project.
 
 > This is an independent extension. It is **not made, sponsored or endorsed by Anthropic**. "Claude" and "Claude Code" are trademarks of Anthropic and are used here only to say which tool the extension works with. The extension runs the Claude Code you installed and signed in to yourself, or uses your own Anthropic API key.
 

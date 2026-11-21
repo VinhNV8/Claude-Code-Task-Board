@@ -219,3 +219,19 @@ test('task đang chạy / trong hàng đợi: phải xác nhận dừng; Backlog
   runs.create({ id: randomUUID(), taskId: g.id, kind: 'resume', sessionId: 'x', startedAt: 5, agent: 'antigravity' })
   assert.equal((await api('POST', `/api/tasks/${g.id}/handoff`, { via: 'copy' })).status, 409)
 })
+
+test('FR-114c: task khoá quá 12 giờ được nhắc đúng một lần (web + Telegram), không tự mở khoá', async () => {
+  const { remindStaleHandoffs } = await import('./handoffRoutes.ts')
+  const t = reviewTask()
+  handoffs.start({ taskId: t.id, via: 'copy', cwd: DIR, agent: 'claude' }, 1_000)
+  const web: string[] = []
+  const tg: string[] = []
+  const deps = { notifyWeb: (_: number, m: string) => web.push(m), notifyTelegram: async (m: string) => void tg.push(m), log: () => {} }
+  assert.deepEqual(remindStaleHandoffs(1_000 + 11 * 3_600_000, deps), [], 'chưa đủ 12 giờ')
+  assert.deepEqual(remindStaleHandoffs(1_000 + 12 * 3_600_000, deps).includes(t.id), true)
+  assert.deepEqual(remindStaleHandoffs(1_000 + 20 * 3_600_000, deps).includes(t.id), false, 'chỉ nhắc một lần')
+  assert.equal(web.filter((m) => m.includes(`#${t.id}`)).length, 1)
+  assert.match(tg.find((m) => m.includes(`#${t.id}`))!, /12 giờ/)
+  assert.ok(handoffs.get(t.id), 'vẫn khoá')
+  handoffs.end(t.id)
+})

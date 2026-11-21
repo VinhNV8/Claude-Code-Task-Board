@@ -276,7 +276,7 @@ async function workspaceProject(ctx: vscode.ExtensionContext, info: ServerInfo, 
     output.appendLine(`Could not read the project list: ${(e as Error).message}`)
     return undefined
   }
-  // Git không bắt buộc: project mới ghi output thẳng vào thư mục (deliveryMode 'direct').
+  // Git không bắt buộc. Không gửi deliveryMode: server tự chọn (FR-63) Nhánh git riêng nếu là git repo có commit, ngược lại Ghi thẳng.
   // Thư mục nằm trong git repo thì dùng gốc repo; không thì dùng chính thư mục workspace.
   const roots: { name: string; top: string; git: boolean }[] = []
   for (const f of folders) {
@@ -314,8 +314,8 @@ async function workspaceProject(ctx: vscode.ExtensionContext, info: ServerInfo, 
     }
     const p = await api<ProjectLite>(info, '/api/projects', {
       method: 'POST',
-      // Output ghi thẳng vào thư mục workspace; đổi sang nhánh riêng cho từng task ở trang Projects nếu cần
-      body: JSON.stringify({ name: target.name, repoPath: target.top, mainBranch, deliveryMode: 'direct' }),
+      // Không gửi deliveryMode: server tự chọn theo thư mục (FR-63); đổi lại ở trang Projects nếu cần
+      body: JSON.stringify({ name: target.name, repoPath: target.top, mainBranch }),
     })
     await ctx.workspaceState.update(DECLINED_KEY, undefined)
     void vscode.window.showInformationMessage(t('Added project "{0}". You can adjust permissions and budget on the Projects page.', p.name))

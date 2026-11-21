@@ -1,7 +1,7 @@
 // Duyệt kế hoạch trước khi làm (SPEC-PLAN-HANDOFF Phần A, FR-100..105). Hàm thuần, dùng chung web và server.
 //   none  Làm luôn
 //   first Lập kế hoạch trước: lượt Kế hoạch (mode plan) → người dùng duyệt ở Review → lượt Thực hiện (mức quyền project)
-//   only  Chỉ lập kế hoạch: lượt Kế hoạch → Review → "Chấp nhận kế hoạch" là Done
+//   only  Chỉ lập kế hoạch: lượt Kế hoạch → Review → "Chấp nhận kết quả" là Done
 import type { PermissionMode, PlanMode, PlanPhase, RunKind } from '../types.ts'
 
 export const PLAN_MODES: { value: PlanMode; label: string; description: string }[] = [
@@ -69,8 +69,8 @@ export function phaseForRun(t: { planMode?: PlanMode; planPhase?: PlanPhase; app
 }
 
 /** Prompt lượt chạy initial / retry của task có lập kế hoạch (undefined = dùng prompt gốc như task làm luôn). */
-export function phasePrompt(phase: PlanPhase | undefined, taskPrompt: string, approvedPlan?: string) {
-  if (phase === 'plan') return planPrompt(taskPrompt)
+export function phasePrompt(phase: PlanPhase | undefined, taskPrompt: string, approvedPlan?: string, mode?: PlanMode) {
+  if (phase === 'plan') return planPrompt(taskPrompt, mode)
   if (phase === 'execute' && approvedPlan) return executePrompt({ approvedPlan, resume: false, taskPrompt })
   return undefined
 }
@@ -94,15 +94,30 @@ export const PLAN_INSTRUCTION = [
   'Nếu yêu cầu chưa rõ tới mức không lập được kế hoạch, hãy hỏi lại bằng AskUserQuestion (nếu có) hoặc ghi vào mục "Câu hỏi còn mở".',
 ].join('\n')
 
-/** Prompt lượt Kế hoạch đầu tiên (hoặc phiên mới). */
-export const planPrompt = (taskPrompt: string) => `${taskPrompt}\n\n${PLAN_INSTRUCTION}`
+/**
+ * Chỉ dẫn cho task "Chỉ kế hoạch": cũng chỉ đọc, nhưng KHÔNG ép khung kế hoạch, vì task phân tích (phân rã task,
+ * phân tích tác động, kiểm tra yêu cầu…) thường đã ghi rõ định dạng kết quả trong prompt.
+ */
+export const ANALYSIS_INSTRUCTION = [
+  '[Task Board: task CHỈ PHÂN TÍCH, không sửa code]',
+  'Chỉ đọc code và phân tích, KHÔNG sửa file, KHÔNG chạy lệnh làm thay đổi gì. Không cần gọi ExitPlanMode hay xin thoát plan mode.',
+  'Câu trả lời cuối cùng của bạn CHÍNH LÀ kết quả người dùng sẽ duyệt: viết bằng Markdown, theo đúng định dạng yêu cầu ở trên (nếu có), không thêm lời dẫn.',
+].join('\n')
 
-/** Prompt "Góp ý lại" kế hoạch: resume đúng phiên chỉ cần góp ý + nhắc lại chỉ dẫn; phiên mới gửi kèm prompt gốc. */
-export function replanPrompt(o: { feedback: string; resume: boolean; taskPrompt: string; lastPlan?: string }) {
-  const ask = `Người dùng góp ý cho kế hoạch:\n${o.feedback}\n\nHãy lập lại kế hoạch theo góp ý.`
-  if (o.resume) return `${ask}\n\n${PLAN_INSTRUCTION}`
-  const prev = o.lastPlan ? `\n\nKế hoạch trước đó:\n${o.lastPlan}` : ''
-  return `${o.taskPrompt}${prev}\n\n${ask}\n\n${PLAN_INSTRUCTION}`
+/** Chỉ dẫn của lượt Kế hoạch theo cách làm: "Kế hoạch trước" ép khung kế hoạch, "Chỉ kế hoạch" giữ định dạng của prompt. */
+export const planInstruction = (mode?: PlanMode) => (mode === 'only' ? ANALYSIS_INSTRUCTION : PLAN_INSTRUCTION)
+
+/** Prompt lượt Kế hoạch đầu tiên (hoặc phiên mới). */
+export const planPrompt = (taskPrompt: string, mode?: PlanMode) => `${taskPrompt}\n\n${planInstruction(mode)}`
+
+/** Prompt "Góp ý lại": resume đúng phiên chỉ cần góp ý + nhắc lại chỉ dẫn; phiên mới gửi kèm prompt gốc. */
+export function replanPrompt(o: { feedback: string; resume: boolean; taskPrompt: string; lastPlan?: string; mode?: PlanMode }) {
+  const what = o.mode === 'only' ? 'kết quả' : 'kế hoạch'
+  const ask = `Người dùng góp ý cho ${what}:\n${o.feedback}\n\nHãy làm lại ${what} theo góp ý.`
+  const rule = planInstruction(o.mode)
+  if (o.resume) return `${ask}\n\n${rule}`
+  const prev = o.lastPlan ? `\n\n${o.mode === 'only' ? 'Kết quả' : 'Kế hoạch'} trước đó:\n${o.lastPlan}` : ''
+  return `${o.taskPrompt}${prev}\n\n${ask}\n\n${rule}`
 }
 
 /**

@@ -273,7 +273,7 @@ export function startRun(task: Task, kind: RunKind, feedback?: string) {
   // - initial / retry: kèm chỉ dẫn lập kế hoạch, hoặc kèm kế hoạch đã duyệt (Chạy lại lượt Thực hiện).
   // - resume / continue trên phiên MỚI (đổi agent, mất phiên): prompt gốc theo giai đoạn để không mất chỉ dẫn / kế hoạch (AC-47).
   const scoped = withScope(task.prompt, task.writeScope)
-  const phaseBase = phasePrompt(phase, scoped, task.approvedPlan)
+  const phaseBase = phasePrompt(phase, scoped, task.approvedPlan, task.planMode)
   const phased =
     phase === 'execute' && prevRun?.phase === 'plan' && task.approvedPlan
       ? executePrompt({ approvedPlan: task.approvedPlan, resume: !!resume, taskPrompt: scoped })

@@ -63,6 +63,8 @@ export function createCodexDriver(ctx: DriverContext, o: { clientVersion: string
   let nextId = 1
   const pending = new Map<number, { resolve: (v: any) => void; reject: (e: Json) => void }>()
   const items = new Map<string, Json>()
+  /** Lúc item bắt đầu (item/started): sự kiện tool_use chỉ ghi khi item xong, FR-64 cần biết lệnh chạy trong khoảng nào. */
+  const startedAt = new Map<string, number>()
   const denials: ResultInfo['permissionDenials'] = []
   let threadId: string | undefined
   let finalText = ''
@@ -219,7 +221,7 @@ export function createCodexDriver(ctx: DriverContext, o: { clientVersion: string
         const declined = item.status === 'declined'
         const out = declined ? 'Bị từ chối, lệnh không chạy.' : String(item.aggregatedOutput ?? '')
         return emitEvents(
-          { type: 'tool_use', tool: 'Bash', input: command },
+          { type: 'tool_use', tool: 'Bash', input: command, startedAt: startedAt.get(item.id) },
           { type: 'tool_result', tool: 'Bash', output: truncate(out), isError: item.status !== 'completed' || (typeof item.exitCode === 'number' && item.exitCode !== 0) },
         )
       }
@@ -233,7 +235,7 @@ export function createCodexDriver(ctx: DriverContext, o: { clientVersion: string
       case 'mcpToolCall': {
         const tool = `mcp__${item.server}__${item.tool}`
         return emitEvents(
-          { type: 'tool_use', tool, input: truncate(JSON.stringify(item.arguments ?? {}), 500) },
+          { type: 'tool_use', tool, input: truncate(JSON.stringify(item.arguments ?? {}), 500), startedAt: startedAt.get(item.id) },
           { type: 'tool_result', tool, output: truncate(JSON.stringify(item.error ?? item.result ?? {})), isError: !!item.error },
         )
       }
@@ -285,6 +287,7 @@ export function createCodexDriver(ctx: DriverContext, o: { clientVersion: string
     const p: Json = msg.params ?? {}
     switch (msg.method) {
       case 'item/started':
+        if (p.item?.id) startedAt.set(p.item.id, Date.now())
         if (p.item?.id && (p.item.type === 'fileChange' || p.item.type === 'commandExecution')) items.set(p.item.id, p.item)
         return
       case 'item/completed':

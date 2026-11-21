@@ -297,7 +297,9 @@ Task có cách làm **Kế hoạch trước** chạy thành 2 lượt:
    - **Từ chối**: task sang Failed. Bấm Chạy lại thì agent lập kế hoạch mới.
 3. **Lượt Thực hiện** xong thì task vào Review như bình thường.
 
-Task **Chỉ kế hoạch** dừng ở bước 2: nút **Chấp nhận kế hoạch** chuyển task sang Done.
+Task **Chỉ kế hoạch** dừng ở bước 2: kết quả theo đúng định dạng prompt yêu cầu (ví dụ danh sách task, bảng tác động), nút **Chấp nhận kết quả** chuyển task sang Done. Các template phân tích có sẵn (Làm rõ yêu cầu, Phân rã thành task, Phân tích tác động, Kiểm tra theo yêu cầu) tự chọn cách làm này.
+
+**Duyệt qua Telegram:** nếu đã bật Telegram và thông báo Review, bạn nhận tin kèm kế hoạch và nút **Duyệt và thực hiện** (hoặc **Chấp nhận kết quả**). Muốn sửa kế hoạch, góp ý hay từ chối thì làm trên web.
 
 Nên dùng "Kế hoạch trước" cho việc lớn hoặc dễ hiểu sai: sai hướng được phát hiện khi agent mới đọc code, chưa tốn chi phí sửa. Đặt mặc định cho cả project ở trang Projects → **Cách làm mặc định của task mới**.
 
@@ -308,6 +310,7 @@ Khi task làm sai, hoặc bạn muốn tự hỏi đáp thêm với agent, bấm
 - Extension VS Code mở một terminal **đúng thư mục của task** và chạy `claude --resume <phiên của task>`. Agent nhớ đầy đủ những gì đã làm, bạn chat tiếp như bình thường.
 - Trong lúc đó task bị **khoá**: không chạy, duyệt hay sửa được, để không có hai tiến trình cùng làm trên một phiên.
 - Làm xong, thoát Claude Code hoặc đóng terminal: task tự về **Review**, diff có cả thay đổi bạn làm tay, lịch sử có thêm lượt "Làm tay trong Claude Code" (chi phí phần này không tính được).
+- Task khoá quá 12 giờ thì bạn được nhắc một lần (thông báo web và Telegram).
 - Mở board bằng trình duyệt ngoài VS Code: nếu sau vài giây không có cửa sổ VS Code nào mở terminal, banner hiện nút **Mở bằng VS Code** và **Sao chép lệnh** để bạn tự chạy. Khi đó, làm xong thì bấm **Đưa về Review**.
 
 Hỗ trợ task chạy bằng Claude và Codex. Project dùng **API key**: phiên tương tác dùng đăng nhập Claude Code trên máy, không dùng key của Task Board.

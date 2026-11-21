@@ -18,7 +18,7 @@ import { AgentSelect, ChainEditor, agentHint, useAgents } from '../components/Ag
 import { AGENT_NAMES } from '../lib/agent'
 import { mergeRules } from '../lib/rules'
 import { SELECTABLE_MODES, permissionModeOf } from '../lib/permissionMode'
-import { PLAN_MODES } from '../lib/planMode'
+import { PLAN_MODES, planModeOf } from '../lib/planMode'
 import type { FailoverMode, PermissionMode, PermissionPreset, PermissionSyncPlan, PermissionSyncTask, Project, RuleSuggestion, TaskStatus } from '../types'
 import { tr } from '../lib/i18n'
 
@@ -32,7 +32,7 @@ export const BLANK_PROJECT: Project = {
   allowedTools: ['Read', 'Edit', 'Write', 'Glob', 'Grep'],
   maxParallel: 1,
   budgetAction: 'warn',
-  // Mặc định: Claude ghi output thẳng vào thư mục project, thấy ngay, không cần git
+  // Chỉ là giá trị giữ chỗ: form project mới mặc định "Tự chọn" (FR-63), server quyết định theo thư mục
   deliveryMode: 'direct',
 }
 
@@ -146,9 +146,14 @@ export function ProjectModal({ project, onClose, onSaved }: { project: Project |
   const [saving, setSaving] = useState(false)
   const [presetNote, setPresetNote] = useState<string | null>(null)
   const [syncPlan, setSyncPlan] = useState<PermissionSyncPlan | null>(null)
+  // FR-63: project mới mặc định "Tự chọn" cách giao output (không gửi deliveryMode, server chọn theo thư mục)
+  const [autoDelivery, setAutoDelivery] = useState(true)
+  const auto = autoDelivery && !p.id
+  const direct = !auto && p.deliveryMode === 'direct'
   const save = async (syncTasks?: number) => {
     setSaving(true)
-    const err = await saveProject({ ...p, id: p.id || '' }, onSaved, syncTasks)
+    const payload = auto ? ({ ...p, id: '', deliveryMode: undefined } as unknown as Project) : { ...p, id: p.id || '' }
+    const err = await saveProject(payload, onSaved, syncTasks)
     setSaving(false)
     setServerError(err)
     setSyncPlan(null)
@@ -164,6 +169,7 @@ export function ProjectModal({ project, onClose, onSaved }: { project: Project |
   if (key !== lastId) {
     setLastId(key)
     if (project) setP(project)
+    setAutoDelivery(true)
     setTouched(false)
     setPresetNote(null)
     setServerError(null)
@@ -182,7 +188,7 @@ export function ProjectModal({ project, onClose, onSaved }: { project: Project |
       open={!!project && !syncPlan}
       onClose={onClose}
       title={project?.id ? tr('Sửa project {name}', { name: project.name }) : tr('Thêm project')}
-      wide
+      wide="2xl"
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>
@@ -210,39 +216,38 @@ export function ProjectModal({ project, onClose, onSaved }: { project: Project |
         </>
       }
     >
-      <div className="space-y-4">
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Field label={tr('Tên')} error={touched ? nameError : undefined}>
-            <input className={inputCls} value={p.name} onChange={(e) => setP({ ...p, name: e.target.value })} placeholder="shop-web" />
+      <div className="grid gap-x-6 gap-y-4 lg:grid-cols-2">
+        {/* Cột trái: thông tin project, cách giao output, chạy task */}
+        <div className="space-y-4">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label={tr('Tên')} error={touched ? nameError : undefined}>
+              <input className={inputCls} value={p.name} onChange={(e) => setP({ ...p, name: e.target.value })} placeholder="shop-web" />
+            </Field>
+            <Field label={tr('Nhánh chính')}>
+              <input className={inputCls} value={p.mainBranch} onChange={(e) => setP({ ...p, mainBranch: e.target.value })} />
+            </Field>
+          </div>
+          <Field
+            label={tr('Thư mục project')}
+            error={touched ? pathError : undefined}
+            hint={
+              direct || auto
+                ? tr('Thư mục trên máy bạn, nơi Claude ghi output, ví dụ {example}', { example: 'D:\\Projects\\my-repo' })
+                : tr('Thư mục gốc chứa .git, ví dụ {example}', { example: 'D:\\Projects\\my-repo' })
+            }
+          >
+            <input className={`${inputCls} font-mono`} value={p.repoPath} onChange={(e) => {
+                setP({ ...p, repoPath: e.target.value })
+                setServerError(null)
+              }} placeholder="D:\Projects\my-repo" />
           </Field>
-          <Field label={tr('Nhánh chính')}>
-            <input className={inputCls} value={p.mainBranch} onChange={(e) => setP({ ...p, mainBranch: e.target.value })} />
-          </Field>
-        </div>
-        <Field
-          label={tr('Thư mục project')}
-          error={touched ? pathError : undefined}
-          hint={
-            p.deliveryMode === 'direct'
-              ? tr('Thư mục trên máy bạn, nơi Claude ghi output, ví dụ {example}', { example: 'D:\\Projects\\my-repo' })
-              : tr('Thư mục gốc chứa .git, ví dụ {example}', { example: 'D:\\Projects\\my-repo' })
-          }
-        >
-          <input className={`${inputCls} font-mono`} value={p.repoPath} onChange={(e) => {
-              setP({ ...p, repoPath: e.target.value })
-              setServerError(null)
-            }} placeholder="D:\Projects\my-repo" />
-        </Field>
-        <fieldset className="space-y-1">
-          <legend className="text-sm font-medium text-slate-700 dark:text-slate-200">{tr('Nơi lưu output')}</legend>
-          <div className="grid gap-2 sm:grid-cols-2">
-            {DELIVERY_MODES.map((m) => {
-              const active = p.deliveryMode === m.value
-              return (
+          <fieldset className="space-y-1">
+            <legend className="text-sm font-medium text-slate-700 dark:text-slate-200">{tr('Nơi lưu output')}</legend>
+            <div className="grid gap-2 sm:grid-cols-2">
+              {!p.id && (
                 <label
-                  key={m.value}
-                  className={`flex cursor-pointer items-start gap-2 rounded-lg border p-2.5 text-sm transition ${
-                    active
+                  className={`flex cursor-pointer items-start gap-2 rounded-lg border p-2.5 text-sm transition sm:col-span-2 ${
+                    auto
                       ? 'border-indigo-500 bg-indigo-50 dark:border-indigo-400 dark:bg-indigo-950/40'
                       : 'border-slate-200 hover:border-slate-300 dark:border-slate-700 dark:hover:border-slate-600'
                   }`}
@@ -251,222 +256,260 @@ export function ProjectModal({ project, onClose, onSaved }: { project: Project |
                     type="radio"
                     name="deliveryMode"
                     className="mt-1"
-                    checked={active}
+                    checked={auto}
                     onChange={() => {
-                      setP({ ...p, deliveryMode: m.value })
+                      setAutoDelivery(true)
                       setServerError(null)
                     }}
                   />
                   <span>
-                    <span className="block font-medium">{m.label}</span>
-                    <span className="block text-xs text-slate-500 dark:text-slate-400">{m.desc}</span>
+                    <span className="block font-medium">{tr('Tự chọn (khuyên dùng)')}</span>
+                    <span className="block text-xs text-slate-500 dark:text-slate-400">
+                      {tr('Thư mục là git repo có commit: dùng Nhánh git riêng. Thư mục không có git: Ghi thẳng vào thư mục.')}
+                    </span>
                   </span>
                 </label>
-              )
-            })}
-          </div>
-          <span className="block text-xs text-slate-500 dark:text-slate-400">
-            {tr('Duyệt task chỉ là chấp nhận output; Task Board không tự merge. Đổi lựa chọn chỉ áp dụng cho task chưa chạy.')}
-          </span>
-        </fieldset>
-        <fieldset className="space-y-1">
-          <legend className="text-sm font-medium text-slate-700 dark:text-slate-200">{tr('Mức quyền mặc định')}</legend>
-          <div className="grid gap-2 sm:grid-cols-2">
-            {SELECTABLE_MODES.map((m) => {
-              const active = p.permissionMode === m.value
-              return (
-                <label
-                  key={m.value}
-                  className={`flex cursor-pointer items-start gap-2 rounded-lg border p-2.5 text-sm transition ${
-                    active
-                      ? 'border-indigo-500 bg-indigo-50 dark:border-indigo-400 dark:bg-indigo-950/40'
-                      : 'border-slate-200 hover:border-slate-300 dark:border-slate-700 dark:hover:border-slate-600'
-                  }`}
-                >
-                  <input
-                    type="radio"
-                    name="permissionMode"
-                    className="mt-0.5"
-                    checked={active}
-                    onChange={() => setP({ ...p, permissionMode: m.value as PermissionMode })}
-                  />
-                  <span>
-                    <span className="block font-medium text-slate-800 dark:text-slate-100">{m.label}</span>
-                    <span className="block text-xs text-slate-500 dark:text-slate-400">{m.description}</span>
-                  </span>
-                </label>
-              )
-            })}
-          </div>
-          <span className="block text-xs text-slate-500 dark:text-slate-400">{tr('Task mới của project sẽ dùng mức quyền này (có thể đổi riêng từng task). Khi đổi mức quyền, bạn sẽ được hỏi có áp dụng cho các task chưa chạy không.')}</span>
-        </fieldset>
-        <fieldset className="space-y-1">
-          {/* SPEC-PLAN-HANDOFF FR-100: cách làm mặc định cho task mới (form, import, lịch) */}
-          <legend className="text-sm font-medium text-slate-700 dark:text-slate-200">{tr('Cách làm mặc định của task mới')}</legend>
-          <div className="grid gap-2 sm:grid-cols-3">
-            {PLAN_MODES.map((m) => {
-              const active = (p.defaultPlanMode ?? 'none') === m.value
-              return (
-                <label
-                  key={m.value}
-                  className={`flex cursor-pointer items-start gap-2 rounded-lg border p-2.5 text-sm transition ${
-                    active
-                      ? 'border-indigo-500 bg-indigo-50 dark:border-indigo-400 dark:bg-indigo-950/40'
-                      : 'border-slate-200 hover:border-slate-300 dark:border-slate-700 dark:hover:border-slate-600'
-                  }`}
-                >
-                  <input type="radio" name="defaultPlanMode" className="mt-0.5" checked={active} onChange={() => setP({ ...p, defaultPlanMode: m.value })} />
-                  <span>
-                    <span className="block font-medium text-slate-800 dark:text-slate-100">{tr(m.label)}</span>
-                    <span className="block text-xs text-slate-500 dark:text-slate-400">{tr(m.description)}</span>
-                  </span>
-                </label>
-              )
-            })}
-          </div>
-        </fieldset>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Field label={tr('Số task song song tối đa')} hint={p.deliveryMode === 'direct' ? tr('Ghi thẳng vào thư mục: luôn chạy 1 task mỗi lúc') : undefined}>
-            <input
-              type="number"
-              min={1}
-              max={5}
-              disabled={p.deliveryMode === 'direct'}
-              className={inputCls}
-              value={p.deliveryMode === 'direct' ? 1 : p.maxParallel}
-              onChange={(e) => setP({ ...p, maxParallel: Number(e.target.value) || 1 })}
-            />
-          </Field>
-          <Field
-            label={tr('Model mặc định')}
-            hint={
-              p.defaultModel
-                ? tr('Áp dụng cho task của project không chọn model riêng.')
-                : tr('Kế thừa hệ thống: {model}', { model: modelLabel(systemModel) || tr('mặc định của Claude CLI') })
-            }
-          >
-            <select className={inputCls} value={p.defaultModel ?? ''} onChange={(e) => setP({ ...p, defaultModel: e.target.value || undefined })}>
-              <option value="">{tr('Kế thừa hệ thống')}</option>
-              {MODEL_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-              {p.defaultModel && !MODEL_OPTIONS.some((o) => o.value === p.defaultModel) && <option value={p.defaultModel}>{p.defaultModel}</option>}
-            </select>
-          </Field>
-          <Field
-            label={tr('Agent mặc định')}
-            hint={
-              p.defaultAgent
-                ? `${tr('Áp dụng cho task của project không chọn agent riêng.')} ${agentHint(agents, p.defaultAgent, p.permissionMode)}`
-                : tr('Kế thừa hệ thống: {agent}', { agent: agentHint(agents, systemAgent, p.permissionMode) })
-            }
-          >
-            <AgentSelect
-              value={p.defaultAgent ?? ''}
-              onChange={(v) => setP({ ...p, defaultAgent: v || undefined })}
-              inherit={systemAgent}
-              mode={p.permissionMode}
-            />
-          </Field>
-          <Field
-            label={tr('Khi agent hết hạn mức')}
-            hint={
-              (p.failoverMode ?? 'inherit') === 'inherit'
-                ? systemFailover.enabled
-                  ? tr('Theo hệ thống: chuyển theo chuỗi {chain}', { chain: systemFailover.chain.map((id) => AGENT_NAMES[id]).join(' → ') })
-                  : tr('Theo hệ thống: đang tắt, task chờ giờ reset')
-                : p.failoverMode === 'off'
-                  ? tr('Task chờ giờ reset, không chuyển agent (ví dụ project có dữ liệu không được gửi cho nhà cung cấp khác).')
-                  : tr('Chuyển theo chuỗi riêng của project.')
-            }
-          >
-            <select
-              className={inputCls}
-              value={p.failoverMode ?? 'inherit'}
-              onChange={(e) => {
-                const mode = e.target.value as FailoverMode
-                setP({ ...p, failoverMode: mode, failoverChain: mode === 'custom' && !p.failoverChain?.length ? [...systemFailover.chain] : p.failoverChain })
-              }}
-            >
-              <option value="inherit">{tr('Dùng chuỗi của hệ thống')}</option>
-              <option value="custom">{tr('Tuỳ chỉnh')}</option>
-              <option value="off">{tr('Tắt tự chuyển agent')}</option>
-            </select>
-            {p.failoverMode === 'custom' && (
-              <div className="mt-2">
-                <ChainEditor value={p.failoverChain ?? []} onChange={(chain) => setP({ ...p, failoverChain: chain })} />
-              </div>
-            )}
-          </Field>
-        </div>
-        <Field
-          label={tr('Lệnh test (tuỳ chọn)')}
-          hint={tr('Chạy trong thư mục của task khi bấm “Chạy test” trên trang Review. Không hỗ trợ &&, |, >: hãy dùng script, ví dụ npm run test:ci hoặc npm it (cài rồi test).')}
-        >
-          <input
-            className={`${inputCls} font-mono`}
-            value={p.testCommand ?? ''}
-            onChange={(e) => {
-              setP({ ...p, testCommand: e.target.value })
-              setServerError(null)
-            }}
-            placeholder="npm test"
-          />
-        </Field>
-        <div>
-          <span className="text-sm font-medium">{tr('Tool được tự động cho phép (whitelist)')}</span>
-          <p className="mb-2 text-xs text-slate-500">
-            {tr('Ví dụ:')} <span className="font-mono">Bash(npm test:*)</span> {tr('cho phép mọi lệnh bắt đầu bằng')} <span className="font-mono">npm test</span>.{' '}
-            {tr('Lệnh ngoài danh sách sẽ chuyển task sang Needs Input.')}
-          </p>
-          <div className="mb-2 flex flex-wrap gap-1">
-            {p.allowedTools.map((t) => (
-              <span key={t} className="inline-flex items-center gap-1 rounded bg-slate-100 py-0.5 pl-1.5 pr-1 font-mono text-xs dark:bg-slate-800">
-                {t}
-                <button onClick={() => setP({ ...p, allowedTools: p.allowedTools.filter((x) => x !== t) })} className="text-slate-400 hover:text-rose-600" aria-label={tr('Bỏ {rule}', { rule: t })}>
-                  <X size={12} />
-                </button>
+              )}
+              {DELIVERY_MODES.map((m) => {
+                const active = !auto && p.deliveryMode === m.value
+                return (
+                  <label
+                    key={m.value}
+                    className={`flex cursor-pointer items-start gap-2 rounded-lg border p-2.5 text-sm transition ${
+                      active
+                        ? 'border-indigo-500 bg-indigo-50 dark:border-indigo-400 dark:bg-indigo-950/40'
+                        : 'border-slate-200 hover:border-slate-300 dark:border-slate-700 dark:hover:border-slate-600'
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="deliveryMode"
+                      className="mt-1"
+                      checked={active}
+                      onChange={() => {
+                        setP({ ...p, deliveryMode: m.value })
+                        setAutoDelivery(false)
+                        setServerError(null)
+                      }}
+                    />
+                    <span>
+                      <span className="block font-medium">{m.label}</span>
+                      <span className="block text-xs text-slate-500 dark:text-slate-400">{m.desc}</span>
+                    </span>
+                  </label>
+                )
+              })}
+            </div>
+            <span className="block text-xs text-slate-500 dark:text-slate-400">
+              {tr('Duyệt task chỉ là chấp nhận output; Task Board không tự merge. Đổi lựa chọn chỉ áp dụng cho task chưa chạy.')}
+            </span>
+            {direct && (
+              <span className="block text-xs text-amber-700 dark:text-amber-400">
+                {tr('Có session Claude Code khác, công cụ khác hoặc bạn cùng sửa thư mục này? Nên dùng Nhánh git riêng để thay đổi của từng task tách hẳn.')}
               </span>
-            ))}
+            )}
+          </fieldset>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label={tr('Số task song song tối đa')} hint={direct ? tr('Ghi thẳng vào thư mục: luôn chạy 1 task mỗi lúc') : undefined}>
+              <input
+                type="number"
+                min={1}
+                max={5}
+                disabled={direct}
+                className={inputCls}
+                value={direct ? 1 : p.maxParallel}
+                onChange={(e) => setP({ ...p, maxParallel: Number(e.target.value) || 1 })}
+              />
+            </Field>
+            <Field
+              label={tr('Model mặc định')}
+              hint={
+                p.defaultModel
+                  ? tr('Áp dụng cho task của project không chọn model riêng.')
+                  : tr('Kế thừa hệ thống: {model}', { model: modelLabel(systemModel) || tr('mặc định của Claude CLI') })
+              }
+            >
+              <select className={inputCls} value={p.defaultModel ?? ''} onChange={(e) => setP({ ...p, defaultModel: e.target.value || undefined })}>
+                <option value="">{tr('Kế thừa hệ thống')}</option>
+                {MODEL_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+                {p.defaultModel && !MODEL_OPTIONS.some((o) => o.value === p.defaultModel) && <option value={p.defaultModel}>{p.defaultModel}</option>}
+              </select>
+            </Field>
           </div>
-          <div className="flex gap-2">
-            <input
-              className={`${inputCls} font-mono`}
-              value={tool}
-              onChange={(e) => setTool(e.target.value)}
-              placeholder="Bash(git diff:*)"
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && tool.trim()) {
+        </div>
+        {/* Cột phải: quyền và cách làm của task */}
+        <div className="space-y-4">
+          <fieldset className="space-y-1">
+            <legend className="text-sm font-medium text-slate-700 dark:text-slate-200">{tr('Mức quyền mặc định')}</legend>
+            <div className="grid gap-2 sm:grid-cols-3">
+              {SELECTABLE_MODES.map((m) => {
+                const active = p.permissionMode === m.value
+                return (
+                  <label
+                    key={m.value}
+                    title={m.description}
+                    className={`flex cursor-pointer items-center gap-2 rounded-lg border px-2.5 py-2 text-sm transition ${
+                      active
+                        ? 'border-indigo-500 bg-indigo-50 dark:border-indigo-400 dark:bg-indigo-950/40'
+                        : 'border-slate-200 hover:border-slate-300 dark:border-slate-700 dark:hover:border-slate-600'
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="permissionMode"
+                      checked={active}
+                      onChange={() => setP({ ...p, permissionMode: m.value as PermissionMode })}
+                    />
+                    <span className="font-medium text-slate-800 dark:text-slate-100">{m.label}</span>
+                  </label>
+                )
+              })}
+            </div>
+            <span className="block text-xs text-slate-600 dark:text-slate-300">{permissionModeOf(p.permissionMode).description}</span>
+            <span className="block text-xs text-slate-500 dark:text-slate-400">{tr('Task mới của project sẽ dùng mức quyền này (có thể đổi riêng từng task). Khi đổi mức quyền, bạn sẽ được hỏi có áp dụng cho các task chưa chạy không.')}</span>
+          </fieldset>
+          <fieldset className="space-y-1">
+            {/* SPEC-PLAN-HANDOFF FR-100: cách làm mặc định cho task mới (form, import, lịch) */}
+            <legend className="text-sm font-medium text-slate-700 dark:text-slate-200">{tr('Cách làm mặc định của task mới')}</legend>
+            <div className="grid gap-2 sm:grid-cols-3">
+              {PLAN_MODES.map((m) => {
+                const active = (p.defaultPlanMode ?? 'none') === m.value
+                return (
+                  <label
+                    key={m.value}
+                    title={tr(m.description)}
+                    className={`flex cursor-pointer items-center gap-2 rounded-lg border px-2.5 py-2 text-sm transition ${
+                      active
+                        ? 'border-indigo-500 bg-indigo-50 dark:border-indigo-400 dark:bg-indigo-950/40'
+                        : 'border-slate-200 hover:border-slate-300 dark:border-slate-700 dark:hover:border-slate-600'
+                    }`}
+                  >
+                    <input type="radio" name="defaultPlanMode" checked={active} onChange={() => setP({ ...p, defaultPlanMode: m.value })} />
+                    <span className="font-medium text-slate-800 dark:text-slate-100">{tr(m.label)}</span>
+                  </label>
+                )
+              })}
+            </div>
+            <span className="block text-xs text-slate-600 dark:text-slate-300">{tr(planModeOf(p.defaultPlanMode).description)}</span>
+          </fieldset>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field
+              label={tr('Agent mặc định')}
+              hint={
+                p.defaultAgent
+                  ? `${tr('Áp dụng cho task của project không chọn agent riêng.')} ${agentHint(agents, p.defaultAgent, p.permissionMode)}`
+                  : tr('Kế thừa hệ thống: {agent}', { agent: agentHint(agents, systemAgent, p.permissionMode) })
+              }
+            >
+              <AgentSelect
+                value={p.defaultAgent ?? ''}
+                onChange={(v) => setP({ ...p, defaultAgent: v || undefined })}
+                inherit={systemAgent}
+                mode={p.permissionMode}
+              />
+            </Field>
+            <Field
+              label={tr('Khi agent hết hạn mức')}
+              hint={
+                (p.failoverMode ?? 'inherit') === 'inherit'
+                  ? systemFailover.enabled
+                    ? tr('Theo hệ thống: chuyển theo chuỗi {chain}', { chain: systemFailover.chain.map((id) => AGENT_NAMES[id]).join(' → ') })
+                    : tr('Theo hệ thống: đang tắt, task chờ giờ reset')
+                  : p.failoverMode === 'off'
+                    ? tr('Task chờ giờ reset, không chuyển agent (ví dụ project có dữ liệu không được gửi cho nhà cung cấp khác).')
+                    : tr('Chuyển theo chuỗi riêng của project.')
+              }
+            >
+              <select
+                className={inputCls}
+                value={p.failoverMode ?? 'inherit'}
+                onChange={(e) => {
+                  const mode = e.target.value as FailoverMode
+                  setP({ ...p, failoverMode: mode, failoverChain: mode === 'custom' && !p.failoverChain?.length ? [...systemFailover.chain] : p.failoverChain })
+                }}
+              >
+                <option value="inherit">{tr('Dùng chuỗi của hệ thống')}</option>
+                <option value="custom">{tr('Tuỳ chỉnh')}</option>
+                <option value="off">{tr('Tắt tự chuyển agent')}</option>
+              </select>
+              {p.failoverMode === 'custom' && (
+                <div className="mt-2">
+                  <ChainEditor value={p.failoverChain ?? []} onChange={(chain) => setP({ ...p, failoverChain: chain })} />
+                </div>
+              )}
+            </Field>
+          </div>
+          <div>
+            <span className="text-sm font-medium">{tr('Tool được tự động cho phép (whitelist)')}</span>
+            <p className="mb-2 text-xs text-slate-500">
+              {tr('Ví dụ:')} <span className="font-mono">Bash(npm test:*)</span> {tr('cho phép mọi lệnh bắt đầu bằng')} <span className="font-mono">npm test</span>.{' '}
+              {tr('Lệnh ngoài danh sách sẽ chuyển task sang Needs Input.')}
+            </p>
+            <div className="mb-2 flex flex-wrap gap-1">
+              {p.allowedTools.map((t) => (
+                <span key={t} className="inline-flex items-center gap-1 rounded bg-slate-100 py-0.5 pl-1.5 pr-1 font-mono text-xs dark:bg-slate-800">
+                  {t}
+                  <button onClick={() => setP({ ...p, allowedTools: p.allowedTools.filter((x) => x !== t) })} className="text-slate-400 hover:text-rose-600" aria-label={tr('Bỏ {rule}', { rule: t })}>
+                    <X size={12} />
+                  </button>
+                </span>
+              ))}
+            </div>
+            <div className="flex gap-2">
+              <input
+                className={`${inputCls} font-mono`}
+                value={tool}
+                onChange={(e) => setTool(e.target.value)}
+                placeholder="Bash(git diff:*)"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && tool.trim()) {
+                    setP({ ...p, allowedTools: [...new Set([...p.allowedTools, tool.trim()])] })
+                    setTool('')
+                  }
+                }}
+              />
+              <Button
+                onClick={() => {
+                  if (!tool.trim()) return
                   setP({ ...p, allowedTools: [...new Set([...p.allowedTools, tool.trim()])] })
                   setTool('')
-                }
-              }}
-            />
-            <Button
-              onClick={() => {
-                if (!tool.trim()) return
-                setP({ ...p, allowedTools: [...new Set([...p.allowedTools, tool.trim()])] })
-                setTool('')
-              }}
-            >
-              {tr('Thêm')}
-            </Button>
-            <PresetMenu
-              onPick={(preset) => {
-                const merged = mergeRules(p.allowedTools, preset.rules)
-                const added = merged.length - mergeRules(p.allowedTools, []).length
-                setP({ ...p, allowedTools: merged })
-                setPresetNote(
-                  added > 0
-                    ? tr('Đã thêm {n} rule mới từ “{name}”. Bấm Lưu để áp dụng.', { n: added, name: preset.name })
-                    : tr('Mọi rule của “{name}” đã có trong danh sách.', { name: preset.name }),
-                )
-              }}
-            />
+                }}
+              >
+                {tr('Thêm')}
+              </Button>
+              <PresetMenu
+                onPick={(preset) => {
+                  const merged = mergeRules(p.allowedTools, preset.rules)
+                  const added = merged.length - mergeRules(p.allowedTools, []).length
+                  setP({ ...p, allowedTools: merged })
+                  setPresetNote(
+                    added > 0
+                      ? tr('Đã thêm {n} rule mới từ “{name}”. Bấm Lưu để áp dụng.', { n: added, name: preset.name })
+                      : tr('Mọi rule của “{name}” đã có trong danh sách.', { name: preset.name }),
+                  )
+                }}
+              />
+            </div>
+            {presetNote && <p className="mt-1.5 text-xs text-emerald-600 dark:text-emerald-400">{presetNote}</p>}
           </div>
-          {presetNote && <p className="mt-1.5 text-xs text-emerald-600 dark:text-emerald-400">{presetNote}</p>}
+          <Field
+            label={tr('Lệnh test (tuỳ chọn)')}
+            hint={tr('Chạy trong thư mục của task khi bấm “Chạy test” trên trang Review. Không hỗ trợ &&, |, >: hãy dùng script, ví dụ npm run test:ci hoặc npm it (cài rồi test).')}
+          >
+            <input
+              className={`${inputCls} font-mono`}
+              value={p.testCommand ?? ''}
+              onChange={(e) => {
+                setP({ ...p, testCommand: e.target.value })
+                setServerError(null)
+              }}
+              placeholder="npm test"
+            />
+          </Field>
         </div>
       </div>
     </Modal>

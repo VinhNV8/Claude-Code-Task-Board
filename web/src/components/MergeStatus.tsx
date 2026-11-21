@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { CircleCheck, Info, Loader2, RotateCcw, TriangleAlert } from 'lucide-react'
 import type { MergeCheck } from '../types'
 import { fetchMergeCheck } from '../store/store'
+import { tr } from '../lib/i18n'
 
 /**
  * Trạng thái repo chính trước khi Merge (tuỳ chọn) (G3). Tự kiểm tra khi mở, khi diff đổi và khi quay lại tab
@@ -50,14 +51,14 @@ function FileList({ title, files, tone }: { title: string; files: string[]; tone
 export function MergeStatus({ check, loading, onRefresh }: { check: MergeCheck | null; loading: boolean; onRefresh: () => void }) {
   const refreshBtn = (
     <button onClick={onRefresh} disabled={loading} className="inline-flex shrink-0 items-center gap-1 text-xs text-indigo-600 hover:underline disabled:opacity-60 dark:text-indigo-400">
-      {loading ? <Loader2 size={12} className="animate-spin" /> : <RotateCcw size={12} />} Kiểm tra lại
+      {loading ? <Loader2 size={12} className="animate-spin" /> : <RotateCcw size={12} />} {tr('Kiểm tra lại')}
     </button>
   )
   if (!check)
     return (
       <div className="flex items-center gap-2 text-xs text-slate-500">
         {loading ? <Loader2 size={14} className="animate-spin" /> : <Info size={14} />}
-        <span className="mr-auto">{loading ? 'Đang kiểm tra repo chính…' : 'Chưa kiểm tra được repo chính.'}</span>
+        <span className="mr-auto">{loading ? tr('Đang kiểm tra repo chính…') : tr('Chưa kiểm tra được repo chính.')}</span>
         {!loading && refreshBtn}
       </div>
     )
@@ -69,7 +70,7 @@ export function MergeStatus({ check, loading, onRefresh }: { check: MergeCheck |
       <div className="flex items-center gap-2 text-xs text-emerald-700 dark:text-emerald-400">
         <CircleCheck size={14} />
         <span className="mr-auto">
-          Repo chính sạch, sẵn sàng merge vào <span className="font-mono">{check.mainBranch}</span>.
+          {tr('Repo chính sạch, sẵn sàng merge vào')} <span className="font-mono">{check.mainBranch}</span>.
         </span>
         {refreshBtn}
       </div>
@@ -80,12 +81,13 @@ export function MergeStatus({ check, loading, onRefresh }: { check: MergeCheck |
         <summary className="flex cursor-pointer list-none items-center gap-2">
           <Info size={14} className="shrink-0" />
           <span className="mr-auto">
-            Repo chính có {check.dirty.length} file chưa commit nhưng <b>không trùng</b> với file task sửa. Merge vẫn an toàn, các file đó giữ nguyên. <u>Xem file</u>
+            {tr('Repo chính có {n} file chưa commit nhưng không trùng với file task sửa. Merge vẫn an toàn, các file đó giữ nguyên.', { n: check.dirty.length })}{' '}
+            <u>{tr('Xem file')}</u>
           </span>
           {refreshBtn}
         </summary>
         <div className="mt-1 pl-6">
-          <FileList title="File chưa commit (không liên quan)" files={check.dirty} tone="muted" />
+          <FileList title={tr('File chưa commit (không liên quan)')} files={check.dirty} tone="muted" />
         </div>
       </details>
     )
@@ -93,15 +95,15 @@ export function MergeStatus({ check, loading, onRefresh }: { check: MergeCheck |
     <div className="space-y-1 rounded-md border border-rose-200 bg-rose-50 p-2 text-xs text-rose-800 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-300">
       <div className="flex items-start gap-2">
         <TriangleAlert size={14} className="mt-0.5 shrink-0" />
-        <span className="mr-auto">{check.warning ?? 'Repo chính chưa sẵn sàng để merge.'}</span>
+        <span className="mr-auto">{check.warning ?? tr('Repo chính chưa sẵn sàng để merge.')}</span>
         {refreshBtn}
       </div>
       <div className="grid gap-2 pl-6 sm:grid-cols-2">
-        <FileList title="Trùng với file task sửa (cần commit hoặc bỏ thay đổi)" files={check.overlap} tone="danger" />
-        <FileList title="Đã stage nhưng chưa commit" files={check.staged} tone="danger" />
-        <FileList title="Chưa commit, không liên quan (không chặn)" files={others} tone="muted" />
+        <FileList title={tr('Trùng với file task sửa (cần commit hoặc bỏ thay đổi)')} files={check.overlap} tone="danger" />
+        <FileList title={tr('Đã stage nhưng chưa commit')} files={check.staged} tone="danger" />
+        <FileList title={tr('Chưa commit, không liên quan (không chặn)')} files={others} tone="muted" />
       </div>
-      <p className="pl-6 text-slate-600 dark:text-slate-400">Sau khi commit xong, quay lại trang này: trạng thái tự kiểm tra lại.</p>
+      <p className="pl-6 text-slate-600 dark:text-slate-400">{tr('Sau khi commit xong, quay lại trang này: trạng thái tự kiểm tra lại.')}</p>
     </div>
   )
 }

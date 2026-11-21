@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { ExternalLink, Loader2, Monitor, RotateCw, ShieldCheck, Smartphone, Tablet } from 'lucide-react'
 import type { FileDiff } from '../types'
+import { tr } from '../lib/i18n'
 
 const VIEWPORTS = [
   { id: 'desktop', label: 'Desktop', width: 1280, icon: Monitor },
@@ -52,7 +53,7 @@ export function HtmlPreview({ file, getUrl }: { file: FileDiff; getUrl: (path: s
       .then((u) => alive && setUrl(u))
       .catch((e: Error) => {
         if (!alive) return
-        setError(e.message || 'Không tạo được link xem trước')
+        setError(e.message || tr('Không tạo được link xem trước'))
         setLoading(false)
       })
     return () => {
@@ -83,7 +84,7 @@ export function HtmlPreview({ file, getUrl }: { file: FileDiff; getUrl: (path: s
   return (
     <div className="flex flex-col">
       <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 px-3 py-1.5 dark:border-slate-800">
-        <div className="flex overflow-hidden rounded-md ring-1 ring-slate-200 dark:ring-slate-700" role="group" aria-label="Khổ màn hình">
+        <div className="flex overflow-hidden rounded-md ring-1 ring-slate-200 dark:ring-slate-700" role="group" aria-label={tr('Khổ màn hình')}>
           {VIEWPORTS.map((v) => (
             <button key={v.id} onClick={() => chooseVp(v.id)} className={segCls(vp === v.id)} title={`${v.label} · ${v.width}px`}>
               <v.icon size={13} /> <span className="hidden sm:inline">{v.label}</span>
@@ -91,25 +92,25 @@ export function HtmlPreview({ file, getUrl }: { file: FileDiff; getUrl: (path: s
           ))}
         </div>
         {sides.length > 1 && (
-          <div className="flex overflow-hidden rounded-md ring-1 ring-slate-200 dark:ring-slate-700" role="group" aria-label="Phiên bản">
-            <button onClick={() => setSide('old')} className={segCls(side === 'old')} title="Bản trên nhánh chính">
-              Trước
+          <div className="flex overflow-hidden rounded-md ring-1 ring-slate-200 dark:ring-slate-700" role="group" aria-label={tr('Phiên bản')}>
+            <button onClick={() => setSide('old')} className={segCls(side === 'old')} title={tr('Bản trước khi giao task')}>
+              {tr('Trước')}
             </button>
-            <button onClick={() => setSide('new')} className={segCls(side === 'new')} title="Bản của task">
-              Sau
+            <button onClick={() => setSide('new')} className={segCls(side === 'new')} title={tr('Bản của task')}>
+              {tr('Sau')}
             </button>
           </div>
         )}
         <span className="text-xs tabular-nums text-slate-400">
-          {viewport.width}px{scale < 1 ? ` · thu nhỏ ${Math.round(scale * 100)}%` : ''}
+          {viewport.width}px{scale < 1 ? ` · ${tr('thu nhỏ {pct}%', { pct: Math.round(scale * 100) })}` : ''}
         </span>
         <div className="ml-auto flex items-center gap-1">
           <button
             onClick={() => setReload((n) => n + 1)}
             className="inline-flex items-center gap-1 rounded px-1.5 py-1 text-xs text-slate-500 hover:bg-slate-100 hover:text-slate-800 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200"
-            title="Tải lại trang (lấy link mới)"
+            title={tr('Tải lại trang (lấy link mới)')}
           >
-            <RotateCw size={13} /> Tải lại
+            <RotateCw size={13} /> {tr('Tải lại')}
           </button>
           {url && (
             <a
@@ -117,9 +118,9 @@ export function HtmlPreview({ file, getUrl }: { file: FileDiff; getUrl: (path: s
               target="_blank"
               rel="noreferrer noopener"
               className="inline-flex items-center gap-1 rounded px-1.5 py-1 text-xs text-slate-500 hover:bg-slate-100 hover:text-slate-800 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200"
-              title="Mở trang ở tab mới (link hết hạn sau 30 phút)"
+              title={tr('Mở trang ở tab mới (link hết hạn sau 30 phút)')}
             >
-              <ExternalLink size={13} /> Mở tab mới
+              <ExternalLink size={13} /> {tr('Mở tab mới')}
             </a>
           )}
         </div>
@@ -137,7 +138,7 @@ export function HtmlPreview({ file, getUrl }: { file: FileDiff; getUrl: (path: s
             <iframe
               key={`${url}:${reload}`}
               src={url}
-              title={`Xem trước ${file.path}`}
+              title={tr('Xem trước {path}', { path: file.path })}
               // Không có allow-same-origin: trang chạy với origin rỗng, không đọc được cookie/dữ liệu của Task Board
               sandbox="allow-scripts allow-forms allow-modals allow-popups"
               referrerPolicy="no-referrer"
@@ -150,7 +151,7 @@ export function HtmlPreview({ file, getUrl }: { file: FileDiff; getUrl: (path: s
       </div>
       <p className="flex items-center gap-1.5 border-t border-slate-200 px-3 py-1.5 text-[11px] text-slate-500 dark:border-slate-800 dark:text-slate-400">
         <ShieldCheck size={12} className="shrink-0" />
-        Trang chạy trong vùng cách ly: không truy cập được Task Board, không dùng cookie/localStorage. Đường dẫn tương đối (CSS, JS, ảnh) lấy từ cùng thư mục của task.
+        {tr('Trang chạy trong vùng cách ly: không truy cập được Task Board, không dùng cookie/localStorage. Đường dẫn tương đối (CSS, JS, ảnh) lấy từ cùng thư mục của task.')}
       </p>
     </div>
   )

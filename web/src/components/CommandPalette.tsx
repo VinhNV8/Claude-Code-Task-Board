@@ -5,6 +5,7 @@ import { useStore } from '../store/store'
 import { StatusGlyph } from './ui'
 import { fold } from '../lib/taskFilter'
 import { VIEW_STORAGE_KEY, searchTasks, withParams, type WorkView } from '../lib/workView'
+import { tr } from '../lib/i18n'
 
 interface Item {
   id: string
@@ -55,14 +56,14 @@ export function CommandPalette({
 
   const items = useMemo<Item[]>(() => {
     const actions: Item[] = [
-      { id: 'new', label: 'Giao việc mới', hint: 'N', icon: <Plus size={16} />, run: onNewTask },
-      ...(onImport ? [{ id: 'import', label: 'Import task từ CSV / Excel', icon: <FileUp size={16} />, run: onImport }] : []),
-      { id: 'v-board', label: 'Xem dạng Bảng', hint: '1', icon: <KanbanSquare size={16} />, run: () => goWork({ view: 'board' }) },
-      { id: 'v-ops', label: 'Xem Điều phối · Cần bạn', hint: '2', icon: <Radar size={16} />, run: () => goWork({ view: 'ops' }) },
-      { id: 'v-triage', label: 'Xem Phân luồng', hint: '3', icon: <Rows3 size={16} />, run: () => goWork({ view: 'triage' }) },
-      { id: 'projects', label: 'Mở Projects', icon: <FolderGit2 size={16} />, run: () => navigate('/projects') },
-      { id: 'stats', label: 'Mở Thống kê', icon: <ChartColumn size={16} />, run: () => navigate('/stats') },
-      { id: 'settings', label: 'Mở Cài đặt', icon: <SettingsIcon size={16} />, run: () => navigate('/settings') },
+      { id: 'new', label: tr('Giao việc mới'), hint: 'N', icon: <Plus size={16} />, run: onNewTask },
+      ...(onImport ? [{ id: 'import', label: tr('Import task từ CSV / Excel'), icon: <FileUp size={16} />, run: onImport }] : []),
+      { id: 'v-board', label: tr('Xem dạng Bảng'), hint: '1', icon: <KanbanSquare size={16} />, run: () => goWork({ view: 'board' }) },
+      { id: 'v-ops', label: tr('Xem Điều phối · Cần bạn'), hint: '2', icon: <Radar size={16} />, run: () => goWork({ view: 'ops' }) },
+      { id: 'v-triage', label: tr('Xem Phân luồng'), hint: '3', icon: <Rows3 size={16} />, run: () => goWork({ view: 'triage' }) },
+      { id: 'projects', label: tr('Mở Projects'), icon: <FolderGit2 size={16} />, run: () => navigate('/projects') },
+      { id: 'stats', label: tr('Mở Thống kê'), icon: <ChartColumn size={16} />, run: () => navigate('/stats') },
+      { id: 'settings', label: tr('Mở Cài đặt'), icon: <SettingsIcon size={16} />, run: () => navigate('/settings') },
     ]
     const needle = fold(q.trim()).toLowerCase()
     const shownActions = needle ? actions.filter((a) => fold(a.label).toLowerCase().includes(needle)) : actions.slice(0, 4)
@@ -91,7 +92,7 @@ export function CommandPalette({
       <div
         role="dialog"
         aria-modal="true"
-        aria-label="Bảng lệnh"
+        aria-label={tr('Bảng lệnh')}
         className="w-full max-w-xl overflow-hidden rounded-xl bg-white shadow-2xl ring-1 ring-slate-200 dark:bg-slate-900 dark:ring-slate-700"
         onMouseDown={(e) => e.stopPropagation()}
       >
@@ -116,14 +117,14 @@ export function CommandPalette({
                 onClose()
               }
             }}
-            placeholder="Tìm task theo tên hoặc #id, hoặc gõ lệnh…"
-            aria-label="Tìm task hoặc lệnh"
+            placeholder={tr('Tìm task theo tên hoặc #id, hoặc gõ lệnh…')}
+            aria-label={tr('Tìm task hoặc lệnh')}
             className="w-full bg-transparent py-3.5 text-sm outline-none"
           />
           <kbd className="rounded border border-slate-300 px-1.5 font-mono text-[10px] text-slate-400 dark:border-slate-600">Esc</kbd>
         </div>
         <ul className="max-h-[50vh] overflow-y-auto py-1.5" role="listbox">
-          {items.length === 0 && <li className="px-4 py-6 text-center text-sm text-slate-400">Không tìm thấy task hay lệnh nào</li>}
+          {items.length === 0 && <li className="px-4 py-6 text-center text-sm text-slate-400">{tr('Không tìm thấy task hay lệnh nào')}</li>}
           {items.map((it, i) => (
             <li key={it.id} role="option" aria-selected={i === hi}>
               <button

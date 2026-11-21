@@ -19,6 +19,7 @@ import {
 import type { LogEvent } from '../types'
 import { clock } from '../lib/format'
 import { Markdown } from './Markdown'
+import { tr } from '../lib/i18n'
 
 type ToolUse = Extract<LogEvent, { type: 'tool_use' }>
 type ToolResultEv = Extract<LogEvent, { type: 'tool_result' }>
@@ -53,7 +54,7 @@ function ToolCall({ e }: { e: ToolUse }) {
         type="button"
         disabled={!long}
         onClick={() => setOpen(!open)}
-        title={long ? (open ? 'Thu gọn' : 'Xem đầy đủ') : undefined}
+        title={long ? (open ? tr('Thu gọn') : tr('Xem đầy đủ')) : undefined}
         className="flex w-full min-w-0 items-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-left font-mono text-[12px] text-slate-700 enabled:hover:border-slate-300 dark:border-slate-700/70 dark:bg-slate-800/60 dark:text-slate-200"
       >
         <Icon size={13} className="shrink-0 text-slate-500" />
@@ -78,7 +79,7 @@ function ToolResult({ e }: { e: ToolResultEv }) {
   const [open, setOpen] = useState(e.isError ?? false)
   const tone = e.isError ? 'text-rose-600 dark:text-rose-400' : 'text-slate-500 dark:text-slate-400'
 
-  if (!text) return <p className={`pl-2 text-xs ${tone}`}>↳ {e.isError ? 'Lỗi (không có nội dung)' : 'Xong (không có output)'}</p>
+  if (!text) return <p className={`pl-2 text-xs ${tone}`}>↳ {e.isError ? tr('Lỗi (không có nội dung)') : tr('Xong (không có output)')}</p>
 
   if (!expandable) return <p className={`break-words pl-2 font-mono text-[12px] ${tone}`}>↳ {text}</p>
 
@@ -87,8 +88,8 @@ function ToolResult({ e }: { e: ToolResultEv }) {
       <button type="button" onClick={() => setOpen(!open)} className={`flex w-full min-w-0 items-center gap-1 text-left text-xs ${tone} hover:text-slate-700 dark:hover:text-slate-200`}>
         <ChevronRight size={12} className={`shrink-0 transition ${open ? 'rotate-90' : ''}`} />
         <span className="shrink-0">
-          ↳ {e.isError ? 'Lỗi' : 'Kết quả'}
-          {lines.length > 1 && ` · ${lines.length} dòng`}
+          ↳ {e.isError ? tr('Lỗi') : tr('Kết quả')}
+          {lines.length > 1 && ` · ${tr('{n} dòng', { n: lines.length })}`}
         </span>
         {!open && <span className="min-w-0 truncate font-mono text-[12px] opacity-70">— {lines[0]}</span>}
       </button>
@@ -148,11 +149,11 @@ export function LogView({ events, live }: { events: LogEvent[]; live: boolean })
       {events.length > 0 && (
         <div className="mb-2 flex items-center gap-3 text-xs text-slate-500 dark:text-slate-400">
           <span>
-            {events.filter((e) => e.type === 'assistant').length} tin nhắn · {toolCount} lần gọi tool
+            {tr('{messages} tin nhắn · {tools} lần gọi tool', { messages: events.filter((e) => e.type === 'assistant').length, tools: toolCount })}
           </span>
           <label className="ml-auto inline-flex cursor-pointer items-center gap-1.5">
             <input type="checkbox" checked={onlyMessages} onChange={(ev) => setOnlyMessages(ev.target.checked)} className="accent-indigo-600" />
-            Chỉ hiện tin nhắn của Claude
+            {tr('Chỉ hiện tin nhắn của Claude')}
           </label>
         </div>
       )}
@@ -164,7 +165,7 @@ export function LogView({ events, live }: { events: LogEvent[]; live: boolean })
         }}
         className="max-h-[65vh] min-h-[200px] overflow-y-auto rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900"
       >
-        {events.length === 0 && <p className="py-8 text-center text-sm text-slate-400">Chưa có log. Task sẽ hiển thị log khi bắt đầu chạy.</p>}
+        {events.length === 0 && <p className="py-8 text-center text-sm text-slate-400">{tr('Chưa có log. Task sẽ hiển thị log khi bắt đầu chạy.')}</p>}
         <ol className="space-y-3">
           {rows.map(({ key, ts, ev: e, result }) => (
             <li key={key} className="flex gap-3">
@@ -215,7 +216,7 @@ export function LogView({ events, live }: { events: LogEvent[]; live: boolean })
               <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-indigo-500 [animation-delay:-0.15s]" />
               <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-indigo-500" />
             </span>
-            Claude đang làm việc…
+            {tr('Claude đang làm việc…')}
           </div>
         )}
         <div ref={bottom} />
@@ -229,7 +230,7 @@ export function LogView({ events, live }: { events: LogEvent[]; live: boolean })
           }}
           className="absolute bottom-3 right-4 inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs text-slate-600 shadow-sm hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
         >
-          <ArrowDown size={12} /> Mới nhất
+          <ArrowDown size={12} /> {tr('Mới nhất')}
         </button>
       )}
     </div>

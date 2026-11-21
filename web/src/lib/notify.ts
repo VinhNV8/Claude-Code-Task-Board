@@ -1,15 +1,16 @@
 // Thông báo khi task cần người dùng (PLAN 3.7–3.9). Phần logic thuần (không đụng DOM) được test ở
 // server/src/notifyUi.test.ts; các hàm chạm tới Notification/document đều kiểm tra môi trường trước.
 import type { PermissionRequest, Settings, Task, TaskStatus, Toast } from '../types.ts'
+import { tr } from './i18n.ts'
 
 export type Notice = Omit<Toast, 'id'>
 
 /** Thông báo khi task chuyển trạng thái; null nếu không đổi trạng thái hoặc loại đó bị tắt trong `notifyOn`. */
 export function transitionNotice(prev: TaskStatus | undefined, task: Pick<Task, 'id' | 'title' | 'status' | 'failReason'>, notifyOn: Settings['notifyOn']): Notice | null {
   if (!prev || prev === task.status) return null
-  if (task.status === 'review' && notifyOn.review) return { kind: 'info', title: `Cần review: #${task.id}`, body: task.title, taskId: task.id }
-  if (task.status === 'needs_input' && notifyOn.needsInput) return { kind: 'warning', title: `Claude cần bạn: #${task.id}`, body: task.title, taskId: task.id }
-  if (task.status === 'failed' && notifyOn.failed) return { kind: 'error', title: `Task lỗi: #${task.id}`, body: task.failReason || task.title, taskId: task.id }
+  if (task.status === 'review' && notifyOn.review) return { kind: 'info', title: tr('Cần review: #{id}', { id: task.id }), body: task.title, taskId: task.id }
+  if (task.status === 'needs_input' && notifyOn.needsInput) return { kind: 'warning', title: tr('Claude cần bạn: #{id}', { id: task.id }), body: task.title, taskId: task.id }
+  if (task.status === 'failed' && notifyOn.failed) return { kind: 'error', title: tr('Task lỗi: #{id}', { id: task.id }), body: task.failReason || task.title, taskId: task.id }
   return null
 }
 
@@ -23,7 +24,7 @@ export function shouldAskPermission(permission: NotificationPermission | 'unsupp
 
 /** Dòng lệnh hiển thị trên thẻ xin quyền: lệnh shell có dấu `$`, tool khác hiện nguyên mô tả input. */
 export function permissionDisplay(req: Pick<PermissionRequest, 'tool' | 'input'>): string {
-  const text = req.input.trim() || '(không có tham số)'
+  const text = req.input.trim() || tr('(không có tham số)')
   return /^(Bash|PowerShell)$/.test(req.tool) ? `$ ${text}` : text
 }
 

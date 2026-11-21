@@ -203,6 +203,11 @@ export interface Task {
   maxCostUsd?: number
   /** Phạm vi ghi (FR-49): mẫu đường dẫn task được phép sửa, ví dụ `docs/**`. Không có: không giới hạn. */
   writeScope?: string[]
+  /**
+   * Mode Ghi thẳng (FR-64): file thay đổi trong thư mục lúc task chạy nhưng không phải do task (session/công cụ khác),
+   * chốt lúc lần chạy kết thúc. Diff ở Review không gồm các file này.
+   */
+  foreignFiles?: string[]
   /** FR-100: làm luôn / kế hoạch trước / chỉ kế hoạch. Không có: `none`. */
   planMode?: PlanMode
   /** Giai đoạn hiện tại (task planMode khác none). Không có: chưa chạy, hoặc task làm luôn. */
@@ -270,7 +275,8 @@ export interface ModelUsage {
 export type LogEvent =
   | { id: string; runId: string; ts: number; type: 'system'; text: string }
   | { id: string; runId: string; ts: number; type: 'assistant'; text: string }
-  | { id: string; runId: string; ts: number; type: 'tool_use'; tool: string; input: string }
+  /** startedAt: lúc tool bắt đầu chạy, khi sự kiện chỉ được ghi lúc tool xong (Codex, Antigravity). FR-64 dùng để biết lệnh chạy trong khoảng nào. */
+  | { id: string; runId: string; ts: number; type: 'tool_use'; tool: string; input: string; startedAt?: number }
   | { id: string; runId: string; ts: number; type: 'tool_result'; tool: string; output: string; isError?: boolean }
   | { id: string; runId: string; ts: number; type: 'result'; text: string; isError?: boolean }
 
@@ -384,6 +390,8 @@ export interface PromptTemplate {
   projectId?: string
   /** Agent gợi ý khi dùng template. Không có: theo project/hệ thống */
   agent?: AgentId
+  /** Cách làm gợi ý khi dùng template (SPEC-PLAN-HANDOFF P9-08). Không có: theo project */
+  planMode?: PlanMode
 }
 
 /** Lịch tạo task tự động theo cron (PLAN 4.6). Đến giờ, backend tạo task mới ở Queued từ mẫu này. */

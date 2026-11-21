@@ -121,6 +121,8 @@ export function TaskFormModal({
     if (!tags.length && t.tags.length) setTags(normalizeTags(t.tags))
     // Template gợi ý agent: điền khi task chưa chọn agent riêng
     if (t.agent && !agent) setAgent(t.agent)
+    // P9-08: template phân tích / lập kế hoạch gợi ý cách làm (ví dụ "Chỉ kế hoạch")
+    if (t.planMode) setPlanMode(t.planMode)
   }
 
   async function submit(run: boolean) {

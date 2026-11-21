@@ -1,5 +1,6 @@
 // Gói Claude hết lượt (5 giờ / tuần): trạng thái dùng chung cho server (ghi nhận từ run) và web (banner trên mọi trang).
 // File thuần, không phụ thuộc DOM/React/Node để test được bằng node:test.
+import { tr } from './i18n.ts'
 
 export type ClaudeLimitKind = 'five_hour' | 'weekly' | 'weekly_opus' | 'unknown'
 
@@ -33,22 +34,22 @@ export function limitKind(o: { rateLimitType?: string; text?: string }): ClaudeL
 export const isLimitActive = (l: ClaudeLimit | null | undefined, now = Date.now()): l is ClaudeLimit => !!l && l.until > now
 
 const KIND_LABEL: Record<ClaudeLimitKind, string> = {
-  five_hour: 'trong khung 5 giờ',
-  weekly: 'của tuần này',
-  weekly_opus: 'dành cho Opus trong tuần này',
-  unknown: 'hiện tại',
+  five_hour: tr('trong khung 5 giờ'),
+  weekly: tr('của tuần này'),
+  weekly_opus: tr('dành cho Opus trong tuần này'),
+  unknown: tr('hiện tại'),
 }
 
 /** "1 giờ 20 phút", "15 phút", "2 ngày 3 giờ", "chưa đầy 1 phút". */
 export function formatRemaining(ms: number): string {
-  if (ms < 60_000) return 'chưa đầy 1 phút'
+  if (ms < 60_000) return tr('chưa đầy 1 phút')
   const totalMin = Math.ceil(ms / 60_000)
   const d = Math.floor(totalMin / 1440)
   const h = Math.floor((totalMin % 1440) / 60)
   const m = totalMin % 60
-  if (d) return h ? `${d} ngày ${h} giờ` : `${d} ngày`
-  if (h) return m ? `${h} giờ ${m} phút` : `${h} giờ`
-  return `${m} phút`
+  if (d) return h ? tr('{d} ngày {h} giờ', { d, h }) : tr('{d} ngày', { d })
+  if (h) return m ? tr('{h} giờ {m} phút', { h, m }) : tr('{h} giờ', { h })
+  return tr('{m} phút', { m })
 }
 
 const pad = (n: number) => String(n).padStart(2, '0')
@@ -61,19 +62,19 @@ export function formatResetAt(ts: number, now = Date.now()): string {
   if (d.toDateString() === n.toDateString()) return hm
   const tomorrow = new Date(now)
   tomorrow.setDate(n.getDate() + 1)
-  if (d.toDateString() === tomorrow.toDateString()) return `${hm} ngày mai`
-  const dow = ['Chủ nhật', 'thứ Hai', 'thứ Ba', 'thứ Tư', 'thứ Năm', 'thứ Sáu', 'thứ Bảy'][d.getDay()]
+  if (d.toDateString() === tomorrow.toDateString()) return tr('{time} ngày mai', { time: hm })
+  const dow = [tr('Chủ nhật'), tr('thứ Hai'), tr('thứ Ba'), tr('thứ Tư'), tr('thứ Năm'), tr('thứ Sáu'), tr('thứ Bảy')][d.getDay()]
   return `${hm} ${dow} ${pad(d.getDate())}/${pad(d.getMonth() + 1)}`
 }
 
 /** Nội dung banner, giọng thân thiện. `queued`: số task đang chờ chạy tiếp. */
 export function limitNotice(l: ClaudeLimit, now = Date.now(), queued = 0): { title: string; body: string } {
-  const title = `Claude tạm nghỉ một chút: gói đã dùng hết lượt ${KIND_LABEL[l.kind]}`
+  const title = tr('Claude tạm nghỉ một chút: gói đã dùng hết lượt {kind}', { kind: KIND_LABEL[l.kind] })
   const when = l.resetAt
-    ? `Lượt mới có lại lúc ${formatResetAt(l.resetAt, now)} (khoảng ${formatRemaining(l.resetAt - now)} nữa).`
-    : `Chưa rõ giờ có lượt lại, hệ thống sẽ tự thử lại sau khoảng ${formatRemaining(l.until - now)}.`
+    ? tr('Lượt mới có lại lúc {time} (khoảng {left} nữa).', { time: formatResetAt(l.resetAt, now), left: formatRemaining(l.resetAt - now) })
+    : tr('Chưa rõ giờ có lượt lại, hệ thống sẽ tự thử lại sau khoảng {left}.', { left: formatRemaining(l.until - now) })
   const after = queued
-    ? `${queued} task đang xếp hàng sẽ tự chạy tiếp khi có lượt, bạn không cần làm gì thêm.`
-    : 'Task giao lúc này sẽ được xếp hàng và tự chạy khi có lượt.'
+    ? tr('{n} task đang xếp hàng sẽ tự chạy tiếp khi có lượt, bạn không cần làm gì thêm.', { n: queued })
+    : tr('Task giao lúc này sẽ được xếp hàng và tự chạy khi có lượt.')
   return { title, body: `${when} ${after}` }
 }

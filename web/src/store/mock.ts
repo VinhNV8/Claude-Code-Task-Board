@@ -936,8 +936,11 @@ export async function previewPermissionSync(p: Pick<Project, 'id' | 'permissionM
   return mockSyncPlan(p)
 }
 
-export async function saveProject(p: Project, onSaved?: (saved: Project) => void, syncTasks?: number): Promise<string | null> {
-  if (/tmp|temp|notgit/i.test(p.repoPath)) return "Thư mục này không phải git repo (không tìm thấy .git)"
+export async function saveProject(input: Project, onSaved?: (saved: Project) => void, syncTasks?: number): Promise<string | null> {
+  const notGit = /tmp|temp|notgit/i.test(input.repoPath)
+  // FR-63 (giả lập): không gửi deliveryMode → thư mục "có git" dùng Nhánh git riêng, ngược lại Ghi thẳng
+  const p: Project = input.deliveryMode ? input : { ...input, deliveryMode: notGit ? 'direct' : 'worktree' }
+  if (notGit && p.deliveryMode === 'worktree') return "Thư mục này không phải git repo (không tìm thấy .git)"
   const sync = syncTasks ? new Set(mockSyncPlan(p).apply.map((t) => t.id)) : new Set<number>()
   set((s) => {
     const exists = s.projects.some((x) => x.id === p.id)

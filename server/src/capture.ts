@@ -1,6 +1,8 @@
 // Review flow (PLAN 2.1, 2.2): chuẩn bị worktree trước khi chạy và chụp thay đổi sau khi run thành công.
 import { existsSync } from 'node:fs'
-import { commitAll, commitsAhead, createWorktree, snapshotTree } from './git.ts'
+import { commitAll, commitsAhead, createWorktree, snapshotDiff, snapshotTree } from './git.ts'
+import { attributeDiff } from './attribution.ts'
+import { tasks } from './db.ts'
 import type { Project, Task } from './types.ts'
 
 type WtProject = Pick<Project, 'id' | 'repoPath' | 'mainBranch'> & { deliveryMode?: Project['deliveryMode'] }
@@ -71,7 +73,11 @@ export async function captureChanges(
   // Mode direct: không commit gì vào repo của người dùng; chụp snapshot "sau" để review.
   if (task.baseRef) {
     const headRef = await snapshotTree(project)
-    return { hasChanges: headRef !== task.baseRef, headRef }
+    // FR-64: chốt danh sách file không phải của task ngay lúc lần chạy kết thúc (mtime còn đúng lúc này).
+    const files = headRef === task.baseRef ? [] : await snapshotDiff(project, task.baseRef, headRef)
+    const { own, foreign } = attributeDiff(task.id, task.worktreePath, files)
+    tasks.patch(task.id, { foreignFiles: foreign })
+    return { hasChanges: own.length > 0, headRef }
   }
   const committed = await commitAll(task.worktreePath, commitMessage(task, runNo))
   return { hasChanges: committed || (await commitsAhead(task.worktreePath, project.mainBranch)) > 0 }

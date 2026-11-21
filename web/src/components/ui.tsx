@@ -2,6 +2,7 @@ import { useEffect, useState, type ButtonHTMLAttributes, type ReactNode } from '
 import { X } from 'lucide-react'
 import { STATUS_META } from '../lib/format'
 import type { TaskStatus } from '../types'
+import { tr } from '../lib/i18n'
 
 type Variant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'success'
 
@@ -138,7 +139,7 @@ export function Modal({
   children: ReactNode
   footer?: ReactNode
   /** true: 2xl; 'xl': 4xl (form nhiều trường, tránh quá cao phải cuộn) */
-  wide?: boolean | 'xl'
+  wide?: boolean | 'xl' | '2xl'
 }) {
   useEffect(() => {
     if (!open) return
@@ -150,14 +151,14 @@ export function Modal({
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/50 p-4 pt-[8vh]" onMouseDown={onClose}>
       <div
-        className={`w-full ${wide === 'xl' ? 'max-w-4xl' : wide ? 'max-w-2xl' : 'max-w-md'} rounded-xl bg-white shadow-xl dark:bg-slate-900 dark:ring-1 dark:ring-slate-800`}
+        className={`w-full ${wide === '2xl' ? 'max-w-6xl' : wide === 'xl' ? 'max-w-4xl' : wide ? 'max-w-2xl' : 'max-w-md'} rounded-xl bg-white shadow-xl dark:bg-slate-900 dark:ring-1 dark:ring-slate-800`}
         onMouseDown={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
       >
         <div className="flex items-center justify-between border-b border-slate-200 px-5 py-3 dark:border-slate-800">
           <h2 className="text-base font-semibold">{title}</h2>
-          <button onClick={onClose} className="rounded p-1 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800" aria-label="Đóng">
+          <button onClick={onClose} className="rounded p-1 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800" aria-label={tr('Đóng')}>
             <X size={18} />
           </button>
         </div>
@@ -172,7 +173,7 @@ export function ConfirmDialog({
   open,
   title,
   message,
-  confirmLabel = 'Xác nhận',
+  confirmLabel = tr('Xác nhận'),
   danger,
   onConfirm,
   onClose,
@@ -193,7 +194,7 @@ export function ConfirmDialog({
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>
-            Huỷ
+            {tr('Huỷ')}
           </Button>
           <Button
             variant={danger ? 'danger' : 'primary'}

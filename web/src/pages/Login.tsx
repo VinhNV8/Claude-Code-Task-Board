@@ -4,6 +4,7 @@ import { Button, Field, inputCls } from '../components/ui'
 import { login } from '../lib/auth'
 import { Logo } from '../components/Logo'
 import { APP_NAME, pageTitle } from '../lib/brand'
+import { tr } from '../lib/i18n'
 
 /** Màn hình đăng nhập bằng token khi truy cập từ xa (PLAN 4.7). */
 export function Login({ onSuccess }: { onSuccess: () => void }) {
@@ -21,12 +22,12 @@ export function Login({ onSuccess }: { onSuccess: () => void }) {
       /* bỏ qua */
     }
     document.documentElement.classList.toggle('dark', dark)
-    document.title = pageTitle({ page: 'Đăng nhập' })
+    document.title = pageTitle({ page: tr('Đăng nhập') })
   }, [])
 
   const submit = async (e: FormEvent) => {
     e.preventDefault()
-    if (!token.trim()) return setError('Nhập token đăng nhập')
+    if (!token.trim()) return setError(tr('Nhập token đăng nhập'))
     setBusy(true)
     const err = await login(token.trim())
     setBusy(false)
@@ -45,7 +46,8 @@ export function Login({ onSuccess }: { onSuccess: () => void }) {
           {APP_NAME}
         </div>
         <p className="text-sm text-slate-500 dark:text-slate-400">
-          Truy cập từ xa cần đăng nhập. Nhập token đã đặt trong biến <span className="font-mono">TASKBOARD_AUTH_TOKEN</span> trên máy chạy backend.
+          {tr('Truy cập từ xa cần đăng nhập. Nhập token đã đặt trong biến')} <span className="font-mono">TASKBOARD_AUTH_TOKEN</span>{' '}
+          {tr('trên máy chạy backend.')}
         </p>
         <Field label="Token" error={error}>
           <input
@@ -61,7 +63,7 @@ export function Login({ onSuccess }: { onSuccess: () => void }) {
           />
         </Field>
         <Button type="submit" variant="primary" className="w-full" disabled={busy}>
-          <KeyRound size={16} /> {busy ? 'Đang đăng nhập…' : 'Đăng nhập'}
+          <KeyRound size={16} /> {busy ? tr('Đang đăng nhập…') : tr('Đăng nhập')}
         </Button>
       </form>
     </div>

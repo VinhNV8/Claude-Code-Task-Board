@@ -342,7 +342,7 @@ export async function requestChanges(
 
     const review = recordReview({ taskId, action: 'request_changes', feedback, comments })
     // FR-103 "Góp ý": lập lại kế hoạch, vẫn ở mode plan (AC-46).
-    if (awaitingPlanApproval(task)) prompt = replanPrompt({ feedback: prompt, resume: true, taskPrompt: task.prompt })
+    if (awaitingPlanApproval(task)) prompt = replanPrompt({ feedback: prompt, resume: true, taskPrompt: task.prompt, mode: task.planMode })
     const queued = !deps.hasSlot(project)
     if (queued) {
       if (isTesting(taskId)) await stopTests(taskId, 'Đã dừng vì task được yêu cầu sửa.')

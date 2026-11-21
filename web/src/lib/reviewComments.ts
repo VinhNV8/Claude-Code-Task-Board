@@ -1,5 +1,6 @@
 // Nhận xét theo file/dòng khi review (G3): logic thuần, dùng chung cho server và giao diện.
 import type { FileDiff, ReviewComment } from '../types.ts'
+import { tr } from './i18n.ts'
 
 export const MAX_COMMENTS = 200
 export const MAX_COMMENT_LEN = 4000
@@ -9,8 +10,8 @@ export const isMarkdownPath = (path: string) => /\.(md|markdown|mdx)$/i.test(pat
 
 /** Vị trí của nhận xét để hiển thị: `src/a.ts:12`, `src/a.ts:12 (bản cũ)` hoặc `src/a.ts (cả file)`. */
 export function commentLocation(c: Pick<ReviewComment, 'path' | 'line' | 'side'>) {
-  if (c.line === undefined) return `${c.path} (cả file)`
-  return `${c.path}:${c.line}${c.side === 'old' ? ' (bản cũ, dòng đã xoá)' : ''}`
+  if (c.line === undefined) return `${c.path} ${tr('(cả file)')}`
+  return `${c.path}:${c.line}${c.side === 'old' ? ` ${tr('(bản cũ, dòng đã xoá)')}` : ''}`
 }
 
 /** Sắp theo file rồi theo dòng; nhận xét cả file đứng đầu mỗi file. */

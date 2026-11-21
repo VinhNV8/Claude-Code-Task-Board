@@ -50,7 +50,13 @@ async function runOnce(taskId: number, work: () => void) {
   const t = db.tasks.get(taskId)!
   const ws = await c.ensureWorktree(t, project)
   if (ws.created) db.tasks.patch(taskId, { branch: ws.branch, worktreePath: ws.path, baseRef: ws.baseRef ?? null })
+  // Như một lần chạy thật: agent ghi file trong lúc chạy lệnh shell, log có tool_use/tool_result (FR-64 dựa vào đó)
+  const runId = `run-${taskId}-${Date.now()}`
+  db.runs.create({ id: runId, taskId, kind: 'initial', sessionId: 's', startedAt: Date.now() })
+  db.events.add(runId, { type: 'tool_use', tool: 'Bash', input: 'agent ghi file' })
   work()
+  db.events.add(runId, { type: 'tool_result', tool: 'Bash', output: 'ok' })
+  db.runs.finish(runId, { endedAt: Date.now(), exitCode: 0 })
   const cur = db.tasks.get(taskId)!
   const { headRef } = await c.captureChanges({ ...cur, worktreePath: cur.worktreePath! }, project, 1)
   return db.tasks.patch(taskId, { status: 'review', headRef: headRef ?? null })!

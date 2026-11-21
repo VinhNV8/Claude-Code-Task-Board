@@ -2,7 +2,7 @@
 
 | Mục | Giá trị |
 |---|---|
-| Phiên bản | 0.6.1 |
+| Phiên bản | 0.6.2 |
 | Ngày | 2026-11-20 |
 | Trạng thái | ✅ Đã duyệt đến v0.5 (2026-11-18), gồm phần mới của v0.3/v0.3.1 (FR-08/09, FR-43..47, FR-70..76, FR-80..83) và v0.5 (FR-01a/01b) |
 | Thay đổi 0.2 | Cập nhật theo [P0-SPIKE.md](P0-SPIKE.md): dò file `claude.exe` của extension VSCode; mode `default` đổi thành `manual`; prompt truyền qua stdin; P3 dùng `--permission-prompt-tool` (đã kiểm chứng); SQLite dùng `node:sqlite` có sẵn trong Node 24 |
@@ -13,6 +13,7 @@
 | Thay đổi 0.5.1 | 2026-11-19: **FR-48 Đổi mức quyền project áp dụng cho task chưa chạy**: khi đổi mức quyền của project, hỏi người dùng có đổi theo cho các task Backlog, Queued, Failed hay không. **FR-49 Phạm vi ghi của task**: mẫu đường dẫn task được phép sửa, gắn vào prompt và cảnh báo ở Review khi sửa file ngoài phạm vi. Cập nhật FR-47, FR-61, 8 (AC-61..63), [SPEC-IMPORT.md](SPEC-IMPORT.md) |
 | Thay đổi 0.6 | 2026-11-19: **Duyệt kế hoạch trước khi làm** (FR-100..106) và **Mở task trong Claude Code** (FR-110..116), chi tiết ở [SPEC-PLAN-HANDOFF.md](SPEC-PLAN-HANDOFF.md). Mức quyền `plan` của task/project chuyển thành thuộc tính riêng **Cách làm** (`planMode`: Làm luôn / Kế hoạch trước / Chỉ kế hoạch). Cập nhật FR-01, FR-47, FR-61 |
 | Thay đổi 0.6.1 | 2026-11-20: **FR-49 chặn cứng phạm vi ghi**: lệnh ghi file ngoài phạm vi bị từ chối ngay ở cả Claude lẫn Codex/Antigravity. Cập nhật FR-49, 8 (AC-64) |
+| Thay đổi 0.6.2 | 2026-11-20: **FR-63** mặc định Nhánh git riêng cho project mới có git; **FR-64** mode Ghi thẳng chỉ ghi nhận thay đổi của chính task. Cập nhật FR-62, 8 (AC-65..67) |
 | Thư mục dự án | `d:\Projects\AI Project\AI-Interface` |
 
 ---
@@ -150,7 +151,9 @@ Backlog ─► Queued ─► Running ─┬─► Review ─┬─► Done (Appr
 |---|---|---|
 | FR-60 | Khai báo một hoặc nhiều project (thư mục project; nhánh chính khi dùng mode Nhánh git riêng). Git chỉ bắt buộc ở mode Nhánh git riêng | Must |
 | FR-61 | Cấu hình mặc định theo từng project: cách làm của task mới (FR-100), mức quyền (Manual / Edit automatically / Auto, xem FR-47; đổi mức quyền thì hỏi có áp dụng cho task chưa chạy, xem FR-48), allowedTools, số task chạy song song | Should |
-| FR-62 | **Cách giao output** theo project (v0.4): ① **Ghi thẳng vào thư mục project** (mặc định cho project mới): Claude làm trực tiếp trong thư mục, không cần git, **mỗi lúc chỉ chạy 1 task** của project để các task không ghi đè nhau; diff tính theo snapshot trước/sau lần chạy. ② **Nhánh git riêng cho từng task**: worktree + nhánh `claude/task-<id>`, chạy song song theo `max_parallel`. Project đã có trước v0.4 giữ mode cũ | Must |
+| FR-62 | **Cách giao output** theo project (v0.4): ① **Ghi thẳng vào thư mục project** (mặc định cho project mới không phải git repo, xem FR-63): Claude làm trực tiếp trong thư mục, không cần git, **mỗi lúc chỉ chạy 1 task** của project để các task không ghi đè nhau; diff tính theo snapshot trước/sau lần chạy. ② **Nhánh git riêng cho từng task**: worktree + nhánh `claude/task-<id>`, chạy song song theo `max_parallel`. Project đã có trước v0.4 giữ mode cũ | Must |
+| FR-63 | **Mặc định Nhánh git riêng** (v0.6.2). Project mới không chọn cách giao output thì hệ thống tự chọn: thư mục là git repo đã có ít nhất một commit → **Nhánh git riêng**; ngược lại → Ghi thẳng. Form "Thêm project" có lựa chọn **Tự chọn (khuyên dùng)** làm mặc định; extension VS Code thêm project theo cùng quy tắc. Project đã có giữ nguyên lựa chọn. Khi chọn Ghi thẳng, form nhắc: nếu có người hoặc công cụ khác cùng sửa thư mục này thì nên dùng Nhánh git riêng | Should |
+| FR-64 | **Chỉ ghi nhận thay đổi của chính task** ở mode Ghi thẳng (v0.6.2). Diff ở Review chỉ gồm file do task tác động; thay đổi khác trong thư mục trong lúc task chạy (session hoặc công cụ khác, người dùng sửa tay) gom vào mục thu gọn "Thay đổi khác trong thư mục, không phải của task này" (chỉ liệt kê đường dẫn). File được tính cho task khi: (a) agent ghi bằng tool ghi file (Edit, Write, MultiEdit, NotebookEdit, sửa/tạo file của Codex và Antigravity); (b) file thêm/sửa có thời điểm sửa (mtime) nằm trong lúc agent đang chạy một lệnh shell (± 2 giây); (c) file bị xoá mà lệnh shell của task có nhắc tới tên file; (d) lần chạy làm tay trong Claude Code (SPEC-PLAN-HANDOFF): mọi file sửa trong khoảng thời gian của lần chạy đó. Danh sách file không thuộc task được chốt lúc mỗi lần chạy kết thúc (không đổi khi file bị sửa sau đó); trong lúc chạy tính trực tiếp. Giới hạn: task và người khác cùng sửa **một file** thì diff của file đó vẫn lẫn cả hai (chỉ Nhánh git riêng tách được); tiến trình nền do agent khởi động ghi file sau khi lệnh kết thúc không được tính cho task | Should |
 
 ### 3.8 Chọn model
 Bối cảnh: người dùng thường không tự chọn model, nên mặc định là **Tự động**. Hệ thống chọn model, giải thích lý do, và người dùng chỉ đổi khi muốn.
@@ -315,6 +318,9 @@ Cấu hình trong `.claude/settings.json` của worktree hoặc project:
 - **AC-61** (v0.5.1): Project đang Edit automatically có task A (Backlog), B (Failed), C (Queued, mode Plan), D (Running). Đổi project sang Auto và chọn **Đổi project + 2 task**: A và B thành Auto, C giữ Plan, D giữ Edit automatically; hộp thoại ghi rõ C bị bỏ qua. Chọn **Chỉ đổi project** thì A, B giữ nguyên, task tạo sau là Auto.
 - **AC-62** (v0.5.1): Đổi mức quyền project khi không có task Backlog/Queued/Failed nào có mức khác thì lưu ngay, không hiện hộp xác nhận; lưu bị lỗi kiểm tra thì cả project lẫn task đều không đổi.
 - **AC-63** (v0.5.1): Task có phạm vi ghi `docs/**`: prompt gửi cho agent có đoạn ràng buộc phạm vi; nếu diff có `src/app.ts` thì tab Review hiện cảnh báo liệt kê `src/app.ts`; diff chỉ có file trong `docs/` thì không cảnh báo. Phạm vi `../x` hoặc `/etc` bị từ chối khi lưu task và báo lỗi ở dòng khi import.
+- **AC-65** (v0.6.2): Thêm project trỏ tới git repo có commit mà không chọn cách giao output (form để Tự chọn, hoặc extension VS Code) thì project dùng Nhánh git riêng; thư mục không phải git repo thì dùng Ghi thẳng.
+- **AC-66** (v0.6.2): Project Ghi thẳng, task chỉ ghi `docs/a.md`; trong lúc task chạy một session khác sửa `src/x.ts`. Tab Review của task chỉ có `docs/a.md`; `src/x.ts` nằm trong mục "Thay đổi khác trong thư mục". Sửa `src/x.ts` lần nữa sau khi task xong cũng không làm nó hiện vào diff của task.
+- **AC-67** (v0.6.2): Task chạy lệnh shell tạo `build/out.txt` (không qua tool ghi file) thì `build/out.txt` vẫn được tính cho task.
 - **AC-64** (v0.6.1): Task mức Auto có phạm vi ghi `docs/**`: agent gọi Edit `src/app.ts` thì bị từ chối ngay (task không vào Needs Input, log ghi lý do), Edit `docs/guide.md` thì được cho phép tự động; với Codex, một lần sửa gồm `docs/a.md` và `src/b.ts` bị từ chối cả lần. Task không có phạm vi ghi thì hành vi không đổi.
 - **AC-13** (v0.4): Task (kể cả mode Auto) mà Claude gọi `AskUserQuestion` thì chuyển Needs Input, thẻ hiện câu hỏi và lựa chọn; trả lời trên web thì Claude dùng đúng đáp án và chạy tiếp **trong cùng lần chạy** (không có run resume). Bỏ qua hoặc hết thời gian thì Claude tự quyết và nêu giả định trong kết quả.
 

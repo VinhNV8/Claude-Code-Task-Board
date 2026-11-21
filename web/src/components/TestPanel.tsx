@@ -5,22 +5,23 @@ import { IS_MOCK, ensureTestOutput, runTests, stopTests, useStore } from '../sto
 import { Button } from './ui'
 import { duration, timeAgo } from '../lib/format'
 import type { Project, Task, TestStatus } from '../types'
+import { tr } from '../lib/i18n'
 
 const STATUS: Record<TestStatus, { label: string; cls: string; icon: JSX.Element }> = {
   running: {
-    label: 'Đang chạy',
+    label: tr('Đang chạy'),
     cls: 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300',
     icon: <Loader2 size={13} className="animate-spin" />,
   },
   passed: {
-    label: 'Đạt',
+    label: tr('Đạt'),
     cls: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300',
     icon: <CircleCheck size={13} />,
   },
-  failed: { label: 'Lỗi', cls: 'bg-rose-50 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300', icon: <CircleAlert size={13} /> },
-  stopped: { label: 'Đã dừng', cls: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300', icon: <CircleSlash size={13} /> },
+  failed: { label: tr('Lỗi'), cls: 'bg-rose-50 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300', icon: <CircleAlert size={13} /> },
+  stopped: { label: tr('Đã dừng'), cls: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300', icon: <CircleSlash size={13} /> },
   error: {
-    label: 'Không chạy được',
+    label: tr('Không chạy được'),
     cls: 'bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300',
     icon: <CircleAlert size={13} />,
   },
@@ -52,15 +53,15 @@ export function TestPanel({ task, project, now }: { task: Task; project?: Projec
   const command = project?.testCommand
   const claudeBusy = task.status === 'running' || task.status === 'needs_input' || task.status === 'queued'
   const blocked = !command
-    ? 'Project chưa cấu hình lệnh test'
+    ? tr('Project chưa cấu hình lệnh test')
     : !task.worktreePath && !IS_MOCK
-      ? 'Task chưa có worktree' : claudeBusy ? 'Claude đang làm việc trong worktree' : undefined
+      ? tr('Task chưa có thư mục làm việc') : claudeBusy ? tr('Claude đang làm việc trong thư mục của task') : undefined
 
   if (!command && !run)
     return (
       <div className="flex items-center gap-2 rounded-lg border border-dashed border-slate-300 px-3 py-2 text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
         <FlaskConical size={15} className="shrink-0" />
-        Chưa cấu hình lệnh test cho project này. Thêm trong trang Projects (ví dụ <span className="font-mono">npm test</span>) để chạy test ngay tại đây.
+        {tr('Chưa cấu hình lệnh test cho project này. Thêm trong trang Projects (ví dụ')} <span className="font-mono">npm test</span>{tr(') để chạy test ngay tại đây.')}
       </div>
     )
 
@@ -71,14 +72,14 @@ export function TestPanel({ task, project, now }: { task: Task; project?: Projec
     <div className="rounded-lg border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
       <div className="flex flex-wrap items-center gap-2 px-3 py-2">
         <FlaskConical size={15} className="shrink-0 text-slate-500" />
-        <span className="text-sm font-medium">Kiểm thử</span>
+        <span className="text-sm font-medium">{tr('Kiểm thử')}</span>
         <span className="min-w-0 truncate font-mono text-xs text-slate-500" title={run?.command ?? command}>
           $ {running ? run?.command : command ?? run?.command}
         </span>
         {run && meta && (
           <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${meta.cls}`}>
             {meta.icon} {meta.label}
-            {run.exitCode !== undefined && run.status === 'failed' && <span className="font-mono opacity-75">(mã {run.exitCode})</span>}
+            {run.exitCode !== undefined && run.status === 'failed' && <span className="font-mono opacity-75">{tr('(mã {code})', { code: run.exitCode })}</span>}
           </span>
         )}
         {run && (
@@ -90,7 +91,7 @@ export function TestPanel({ task, project, now }: { task: Task; project?: Projec
         <div className="ml-auto flex gap-2">
           {running ? (
             <Button size="sm" variant="danger" onClick={() => stopTests(task.id)}>
-              <Square size={12} /> Dừng
+              <Square size={12} /> {tr('Dừng')}
             </Button>
           ) : (
             <Button
@@ -104,7 +105,7 @@ export function TestPanel({ task, project, now }: { task: Task; project?: Projec
                 setBusy(false)
               }}
             >
-              {run ? <RotateCcw size={13} /> : <Play size={13} />} {run ? 'Chạy lại test' : 'Chạy test'}
+              {run ? <RotateCcw size={13} /> : <Play size={13} />} {run ? tr('Chạy lại test') : tr('Chạy test')}
             </Button>
           )}
         </div>
@@ -128,7 +129,7 @@ export function TestPanel({ task, project, now }: { task: Task; project?: Projec
               }}
               className="mx-3 mb-3 max-h-80 min-h-[3rem] overflow-auto whitespace-pre-wrap break-words rounded-md bg-slate-900 p-2.5 font-mono text-[12px] leading-relaxed text-slate-100"
             >
-              {output === undefined ? 'Đang tải…' : output.text || (running ? 'Đang chờ output…' : '(không có output)')}
+              {output === undefined ? tr('Đang tải…') : output.text || (running ? tr('Đang chờ output…') : tr('(không có output)'))}
             </pre>
           )}
         </div>

@@ -534,6 +534,23 @@ export function TaskView({
           ) : (
             <DiffView files={diffs} review={diffReview} />
           )}
+          {!!task.foreignFiles?.length && (
+            <details className="rounded-lg border border-slate-200 bg-white p-3 text-sm dark:border-slate-800 dark:bg-slate-900">
+              <summary className="cursor-pointer text-slate-600 dark:text-slate-300">
+                {tr('Thay đổi khác trong thư mục, không phải của task này ({n} file)', { n: task.foreignFiles.length })}
+              </summary>
+              <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                {tr('Các file này thay đổi trong lúc task chạy nhưng agent không ghi chúng (session Claude Code khác, công cụ khác hoặc bạn sửa tay), nên không tính vào diff của task. Muốn tách hẳn, đổi project sang Nhánh git riêng.')}
+              </p>
+              <ul className="mt-2 max-h-48 list-disc overflow-y-auto pl-5 font-mono text-xs text-slate-600 dark:text-slate-300">
+                {task.foreignFiles.map((p) => (
+                  <li key={p} className="break-all">
+                    {p}
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
 
           {task.status === 'review' && !task.handoff && (
             <div className="sticky bottom-0 -mx-1 rounded-lg border border-slate-200 bg-white/95 p-3 shadow-lg backdrop-blur dark:border-slate-800 dark:bg-slate-900/95">

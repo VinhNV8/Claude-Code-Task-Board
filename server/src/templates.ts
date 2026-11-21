@@ -1,6 +1,7 @@
 // Template prompt (FR-06, PLAN 4.1): dữ liệu mặc định và kiểm tra dữ liệu đầu vào.
 import type { PromptTemplate } from './types.ts'
 import { parseAgent } from '../../web/src/lib/agent.ts'
+import { isPlanMode, normalizePlanMode } from '../../web/src/lib/planMode.ts'
 
 export const DEFAULT_TEMPLATES: PromptTemplate[] = [
   {
@@ -59,6 +60,7 @@ export const DEFAULT_TEMPLATES: PromptTemplate[] = [
     title: 'Làm rõ yêu cầu: ',
     prompt: 'Yêu cầu thô: <dán yêu cầu / mô tả từ khách hàng>\nBối cảnh: <người dùng, mục tiêu nghiệp vụ>\n\nHãy đọc code và tài liệu hiện có, rồi:\n1. Tóm tắt lại yêu cầu theo cách hiểu của bạn.\n2. Chỉ ra điểm mơ hồ, mâu thuẫn, thiếu sót (gap) và giả định ngầm.\n3. Liệt kê câu hỏi cần hỏi stakeholder, xếp theo mức độ ưu tiên.\n\nKhông sửa code.',
     tags: ['requirement'],
+    planMode: 'only',
   },
   {
     id: 'tpl-req-story',
@@ -80,6 +82,7 @@ export const DEFAULT_TEMPLATES: PromptTemplate[] = [
     title: 'Phân rã: ',
     prompt: 'Yêu cầu / tính năng: <mô tả hoặc đường dẫn tài liệu>\n\nPhân rã thành danh sách task nhỏ, mỗi task làm xong được trong một lần chạy. Mỗi task ghi: tiêu đề, mô tả, file/module dự kiến thay đổi, tiêu chí hoàn thành, task phụ thuộc. Sắp theo thứ tự nên làm và đánh dấu task có thể chạy song song.\n\nKhông sửa code.',
     tags: ['requirement', 'plan'],
+    planMode: 'only',
   },
   {
     id: 'tpl-req-impact',
@@ -87,6 +90,7 @@ export const DEFAULT_TEMPLATES: PromptTemplate[] = [
     title: 'Tác động của thay đổi: ',
     prompt: 'Thay đổi dự kiến: <mô tả thay đổi yêu cầu>\n\nPhân tích tác động lên hệ thống hiện tại: module/file bị ảnh hưởng, thay đổi dữ liệu / API / migration, rủi ro hồi quy, test cần bổ sung hoặc sửa, ước lượng độ lớn (S/M/L) cho từng phần. Đề xuất cách triển khai ít rủi ro nhất.\n\nKhông sửa code.',
     tags: ['requirement', 'plan'],
+    planMode: 'only',
   },
   {
     id: 'tpl-req-verify',
@@ -94,6 +98,7 @@ export const DEFAULT_TEMPLATES: PromptTemplate[] = [
     title: 'Đối chiếu yêu cầu: ',
     prompt: 'Tài liệu yêu cầu: <đường dẫn SPEC / user story / danh sách tiêu chí>\n\nKiểm tra code hiện tại đã đáp ứng từng yêu cầu chưa. Lập bảng: mã yêu cầu | trạng thái (Đạt / Một phần / Chưa có / Khác yêu cầu) | bằng chứng (file:dòng, test) | ghi chú. Cuối cùng liệt kê các gap cần làm tiếp.\n\nKhông sửa code.',
     tags: ['requirement', 'review'],
+    planMode: 'only',
   },
 ]
 
@@ -107,6 +112,7 @@ export interface TemplateInput {
   tags?: unknown
   projectId?: unknown
   agent?: unknown
+  planMode?: unknown
 }
 
 const str = (v: unknown) => (typeof v === 'string' ? v : '')
@@ -127,5 +133,18 @@ export function validateTemplate(b: TemplateInput, projectExists: (id: string) =
   if (projectId && !projectExists(projectId)) throw new TemplateError('Project không hợp lệ')
   const agent = parseAgent(b.agent)
   if (agent === null) throw new TemplateError('Agent không hợp lệ')
-  return { id: str(b.id).trim() || newId(), name, title: str(b.title).trim(), prompt, tags, projectId, ...(agent ? { agent } : {}) }
+  // P9-08: '' / 'none' / không gửi = theo project (không lưu)
+  const plan = normalizePlanMode(b.planMode)
+  if (plan !== undefined && !isPlanMode(plan)) throw new TemplateError('Cách làm không hợp lệ')
+  const planMode = plan === 'first' || plan === 'only' ? plan : undefined
+  return {
+    id: str(b.id).trim() || newId(),
+    name,
+    title: str(b.title).trim(),
+    prompt,
+    tags,
+    projectId,
+    ...(agent ? { agent } : {}),
+    ...(planMode ? { planMode } : {}),
+  }
 }
