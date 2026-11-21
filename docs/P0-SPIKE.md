@@ -151,3 +151,17 @@ Phục vụ [SPEC-PLAN-HANDOFF.md](SPEC-PLAN-HANDOFF.md).
 | S2 | Phiên của lượt `-p` có resume được không, và khi chữ hoa/thường của ổ đĩa khác nhau thì sao | ✅ | Phiên lưu ở `~/.claude/projects/<cwd mã hoá>/<id>.jsonl`, chung chỗ với phiên tương tác. `spawn(claude, ['-p','--resume',id], {cwd: 'c:\\...'})` vẫn tìm thấy phiên tạo từ `C:\\...` và nhớ đúng ngữ cảnh |
 | S3 | Phiên tạo bằng API key có resume được bằng đăng nhập Pro/Max không | ⏳ | File phiên có dòng `session-owner` (`accountUuid`, `organizationUuid`), nên có thể bị từ chối. Chưa kiểm vì máy chưa cấu hình API key |
 
+
+---
+
+# Spike F1 (2026-11-21, Claude Code CLI 2.1.327): đọc file đính kèm ngoài thư mục làm việc
+
+Phục vụ F1 trong [FEATURE-PROPOSAL-2026-11.md](FEATURE-PROPOSAL-2026-11.md). Ảnh PNG 32×32 màu xanh lá đặt ở thư mục khác thư mục làm việc. Chạy `claude -p --model haiku --permission-mode acceptEdits --permission-prompts none`, prompt "đọc ảnh <đường dẫn tuyệt đối> bằng Read, trả lời một từ: màu chủ đạo".
+
+| # | Kiểm tra | Kết quả | Ghi chú |
+|---|---|---|---|
+| F1-S1 | Có `--add-dir <thư mục đính kèm>` | ✅ | Trả lời "Green", `permission_denials` rỗng, $0,0039. CLI đọc được ảnh và không hỏi quyền |
+| F1-S1 | Không có `--add-dir` | ❌ (đúng kỳ vọng) | Read bị từ chối vì file nằm ngoài thư mục được phép (`permission_denials` có Read). Có prompt tool thì yêu cầu này sẽ thành Needs Input |
+| F1-S2 | Mode Auto | ✅ theo thiết kế | Mode Auto của Task Board chạy CLI ở `acceptEdits` + prompt tool. Đọc trong thư mục `--add-dir` được CLI tự cho phép; đọc ngoài thư mục làm việc và thư mục đính kèm vẫn đi qua prompt tool, backend xét như mọi yêu cầu khác (A5) |
+
+**Kết luận:** runner thêm `--add-dir data/attachments/<taskId>` (chỉ đúng thư mục của task, chỉ khi task có file) và liệt kê đường dẫn tuyệt đối trong prompt. Chưa kiểm PDF bằng CLI thật; Read của Claude Code hỗ trợ PDF nên cùng cơ chế.

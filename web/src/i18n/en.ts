@@ -1034,4 +1034,26 @@ export const EN: Record<string, string> = {
   'Lần chạy trong khoảng thời gian. Input gồm cả token đọc/ghi cache. Chi phí ước tính theo giá niêm yết.':
     'Runs in this period. Input includes cache read/write tokens. Cost estimated at list price.',
   'Không rõ': 'Unknown',
+  // F1 / F2: tệp đính kèm, nhân bản task
+  'Kéo thả file vào đây, hoặc': 'Drop files here, or',
+  'Chọn file': 'Choose files',
+  'Ảnh, PDF, md, txt, csv, json, log · tối đa {n} MB/file': 'Images, PDF, md, txt, csv, json, log · up to {n} MB per file',
+  'Mở file': 'Open file',
+  'Xoá file': 'Delete file',
+  'Tệp đính kèm': 'Attachments',
+  'Agent đọc các file này khi chạy (đường dẫn được thêm vào prompt). File chỉ là tài liệu tham khảo: đừng đính kèm thông tin nhạy cảm.':
+    'The agent reads these files when it runs (their paths are added to the prompt). Files are reference material only: do not attach sensitive information.',
+  '{n} file đính kèm': '{n} attachments',
+  'Tệp đính kèm (tuỳ chọn)': 'Attachments (optional)',
+  'Mockup, ảnh chụp màn hình, log lỗi, tài liệu… Agent đọc khi chạy.': 'Mockups, screenshots, error logs, documents… The agent reads them when it runs.',
+  'Tạo bản sao để sửa prompt rồi chạy; task này và lịch sử của nó giữ nguyên': 'Create a copy to edit the prompt and run it; this task and its history stay as they are',
+  'Chạy lại với prompt mới': 'Rerun with a new prompt',
+  'Tạo bản sao ở Backlog (giữ prompt, model, mức quyền, tag, file đính kèm)': 'Create a copy in Backlog (keeps prompt, model, permission level, tags, attachments)',
+  'Nhân bản': 'Duplicate',
+  'Không nhân bản được task': 'Could not duplicate the task',
+  'Đã nhân bản #{id} thành #{copy} và đưa vào hàng đợi': 'Duplicated #{id} as #{copy} and queued it',
+  'Đã nhân bản #{id} thành #{copy}': 'Duplicated #{id} as #{copy}',
+  'Bản sao không chờ task nào. Chọn lại task cần chờ nếu cần.': 'The copy does not wait for any task. Pick the tasks to wait for again if needed.',
+  'Không tải lên được {name}': 'Could not upload {name}',
+  'Không xoá được file': 'Could not delete the file',
 }

@@ -2,7 +2,7 @@
 
 | Mục | Giá trị |
 |---|---|
-| Phiên bản | 0.6.2 |
+| Phiên bản | 0.6.3 |
 | Ngày | 2026-11-20 |
 | Trạng thái | ✅ Đã duyệt đến v0.5 (2026-11-18), gồm phần mới của v0.3/v0.3.1 (FR-08/09, FR-43..47, FR-70..76, FR-80..83) và v0.5 (FR-01a/01b) |
 | Thay đổi 0.2 | Cập nhật theo [P0-SPIKE.md](P0-SPIKE.md): dò file `claude.exe` của extension VSCode; mode `default` đổi thành `manual`; prompt truyền qua stdin; P3 dùng `--permission-prompt-tool` (đã kiểm chứng); SQLite dùng `node:sqlite` có sẵn trong Node 24 |
@@ -13,6 +13,7 @@
 | Thay đổi 0.5.1 | 2026-11-19: **FR-48 Đổi mức quyền project áp dụng cho task chưa chạy**: khi đổi mức quyền của project, hỏi người dùng có đổi theo cho các task Backlog, Queued, Failed hay không. **FR-49 Phạm vi ghi của task**: mẫu đường dẫn task được phép sửa, gắn vào prompt và cảnh báo ở Review khi sửa file ngoài phạm vi. Cập nhật FR-47, FR-61, 8 (AC-61..63), [SPEC-IMPORT.md](SPEC-IMPORT.md) |
 | Thay đổi 0.6 | 2026-11-19: **Duyệt kế hoạch trước khi làm** (FR-100..106) và **Mở task trong Claude Code** (FR-110..116), chi tiết ở [SPEC-PLAN-HANDOFF.md](SPEC-PLAN-HANDOFF.md). Mức quyền `plan` của task/project chuyển thành thuộc tính riêng **Cách làm** (`planMode`: Làm luôn / Kế hoạch trước / Chỉ kế hoạch). Cập nhật FR-01, FR-47, FR-61 |
 | Thay đổi 0.6.1 | 2026-11-20: **FR-49 chặn cứng phạm vi ghi**: lệnh ghi file ngoài phạm vi bị từ chối ngay ở cả Claude lẫn Codex/Antigravity. Cập nhật FR-49, 8 (AC-64) |
+| Thay đổi 0.6.3 | 2026-11-21: **FR-65** tệp đính kèm, **FR-66** nhân bản task (F1, F2 trong FEATURE-PROPOSAL-2026-11). AC-68..71. FR-83: chi phí run resume là của riêng run |
 | Thay đổi 0.6.2 | 2026-11-20: **FR-63** mặc định Nhánh git riêng cho project mới có git; **FR-64** mode Ghi thẳng chỉ ghi nhận thay đổi của chính task. Cập nhật FR-62, 8 (AC-65..67) |
 | Thư mục dự án | `d:\Projects\AI Project\AI-Interface` |
 
@@ -154,6 +155,8 @@ Backlog ─► Queued ─► Running ─┬─► Review ─┬─► Done (Appr
 | FR-62 | **Cách giao output** theo project (v0.4): ① **Ghi thẳng vào thư mục project** (mặc định cho project mới không phải git repo, xem FR-63): Claude làm trực tiếp trong thư mục, không cần git, **mỗi lúc chỉ chạy 1 task** của project để các task không ghi đè nhau; diff tính theo snapshot trước/sau lần chạy. ② **Nhánh git riêng cho từng task**: worktree + nhánh `claude/task-<id>`, chạy song song theo `max_parallel`. Project đã có trước v0.4 giữ mode cũ | Must |
 | FR-63 | **Mặc định Nhánh git riêng** (v0.6.2). Project mới không chọn cách giao output thì hệ thống tự chọn: thư mục là git repo đã có ít nhất một commit → **Nhánh git riêng**; ngược lại → Ghi thẳng. Form "Thêm project" có lựa chọn **Tự chọn (khuyên dùng)** làm mặc định; extension VS Code thêm project theo cùng quy tắc. Project đã có giữ nguyên lựa chọn. Khi chọn Ghi thẳng, form nhắc: nếu có người hoặc công cụ khác cùng sửa thư mục này thì nên dùng Nhánh git riêng | Should |
 | FR-64 | **Chỉ ghi nhận thay đổi của chính task** ở mode Ghi thẳng (v0.6.2). Diff ở Review chỉ gồm file do task tác động; thay đổi khác trong thư mục trong lúc task chạy (session hoặc công cụ khác, người dùng sửa tay) gom vào mục thu gọn "Thay đổi khác trong thư mục, không phải của task này" (chỉ liệt kê đường dẫn). File được tính cho task khi: (a) agent ghi bằng tool ghi file (Edit, Write, MultiEdit, NotebookEdit, sửa/tạo file của Codex và Antigravity); (b) file thêm/sửa có thời điểm sửa (mtime) nằm trong lúc agent đang chạy một lệnh shell (± 2 giây); (c) file bị xoá mà lệnh shell của task có nhắc tới tên file; (d) lần chạy làm tay trong Claude Code (SPEC-PLAN-HANDOFF): mọi file sửa trong khoảng thời gian của lần chạy đó. Danh sách file không thuộc task được chốt lúc mỗi lần chạy kết thúc (không đổi khi file bị sửa sau đó); trong lúc chạy tính trực tiếp. Giới hạn: task và người khác cùng sửa **một file** thì diff của file đó vẫn lẫn cả hai (chỉ Nhánh git riêng tách được); tiến trình nền do agent khởi động ghi file sau khi lệnh kết thúc không được tính cho task | Should |
+| FR-65 | **Tệp đính kèm** (v0.6.3). Task có danh sách file đính kèm (`png`, `jpg`, `webp`, `gif`, `pdf`, `md`, `txt`, `csv`, `json`, `log`; ≤ 10 MB/file, ≤ 20 file và ≤ 50 MB/task), thêm ở form tạo/sửa task và tab Yêu cầu, xoá được khi task không chạy. File lưu ở `data/attachments/<taskId>/` (tên làm sạch, không thoát khỏi thư mục), xoá theo task. Mỗi lần chạy, prompt có khối liệt kê đường dẫn tuyệt đối kèm lời dặn "chỉ là tài liệu tham khảo"; Claude chạy với `--add-dir` đúng thư mục đó (spike F1-S1, P0-SPIKE.md). Log không chứa nội dung file | Should |
+| FR-66 | **Nhân bản task** (v0.6.3). Bản sao ở Backlog (hoặc Queued khi "Chạy lại với prompt mới"), tiêu đề thêm "(bản sao)", giữ prompt, project, ưu tiên, mức quyền, cách làm, tag, model, agent, giới hạn chi phí, phạm vi ghi và file đính kèm; không giữ run, kết quả, diff, phiên, kế hoạch đã duyệt, phụ thuộc. Task gốc không đổi. API `POST /api/tasks/:id/duplicate {run?}` | Should |
 
 ### 3.8 Chọn model
 Bối cảnh: người dùng thường không tự chọn model, nên mặc định là **Tự động**. Hệ thống chọn model, giải thích lý do, và người dùng chỉ đổi khi muốn.
@@ -174,7 +177,7 @@ Bối cảnh: người dùng thường không tự chọn model, nên mặc đ�
 | FR-80 | Budget tháng (USD, tuỳ chọn) cho từng project; tính chi tiêu tháng hiện tại (giờ địa phương) từ chi phí các run | Should |
 | FR-81 | Cảnh báo khi đạt 80% và 100% budget, mỗi mức một lần mỗi tháng, qua thông báo web và Telegram (nếu bật) | Should |
 | FR-82 | Chế độ "Tạm dừng khi vượt budget": không khởi chạy task mới của project (task đang chạy được chạy xong), tự chạy lại khi sang tháng; khi project đã ≥ 80% budget thì không tự nâng model quá Sonnet | Should |
-| FR-83 | Trang Projects hiện thanh chi tiêu / budget; trang Thống kê hiện chi phí theo model và dự báo cuối tháng. Mọi số tiền ghi rõ là **ước tính theo giá niêm yết** (gói subscription không trừ tiền theo con số này) | Should |
+| FR-83 | Trang Projects hiện thanh chi tiêu / budget; trang Thống kê hiện chi phí theo model và dự báo cuối tháng. Mọi số tiền ghi rõ là **ước tính theo giá niêm yết** (gói subscription không trừ tiền theo con số này). Chi phí của run chạy tiếp phiên cũ (`--resume`) là của riêng run: số cộng dồn CLI báo trừ đi số cộng dồn của run trước cùng phiên (v0.6.3) | Should |
 
 ---
 
@@ -321,6 +324,10 @@ Cấu hình trong `.claude/settings.json` của worktree hoặc project:
 - **AC-65** (v0.6.2): Thêm project trỏ tới git repo có commit mà không chọn cách giao output (form để Tự chọn, hoặc extension VS Code) thì project dùng Nhánh git riêng; thư mục không phải git repo thì dùng Ghi thẳng.
 - **AC-66** (v0.6.2): Project Ghi thẳng, task chỉ ghi `docs/a.md`; trong lúc task chạy một session khác sửa `src/x.ts`. Tab Review của task chỉ có `docs/a.md`; `src/x.ts` nằm trong mục "Thay đổi khác trong thư mục". Sửa `src/x.ts` lần nữa sau khi task xong cũng không làm nó hiện vào diff của task.
 - **AC-67** (v0.6.2): Task chạy lệnh shell tạo `build/out.txt` (không qua tool ghi file) thì `build/out.txt` vẫn được tính cho task.
+- **AC-68** (v0.6.3): Tải lên `png` và `pdf` hợp lệ thì file hiện trong danh sách, tải lại trang vẫn còn; file `.exe` hoặc > 10 MB bị từ chối kèm lý do; tên `../a.png` được lưu thành `a.png` trong thư mục của task.
+- **AC-69** (v0.6.3): Task có ảnh đính kèm chạy bằng Claude: prompt có đường dẫn ảnh, Claude đọc được ảnh mà không phát sinh yêu cầu quyền (đã chạy thật 2026-11-21, Haiku trả lời đúng màu ảnh).
+- **AC-70** (v0.6.3): Xoá task thì thư mục đính kèm bị xoá; xoá một file thì lần chạy sau không còn file đó trong prompt.
+- **AC-71** (v0.6.3): Nhân bản task Done có model opus, mode auto, tag backend: bản sao giữ ba thuộc tính đó, ở Backlog, không có run, không có phụ thuộc; task gốc không đổi.
 - **AC-64** (v0.6.1): Task mức Auto có phạm vi ghi `docs/**`: agent gọi Edit `src/app.ts` thì bị từ chối ngay (task không vào Needs Input, log ghi lý do), Edit `docs/guide.md` thì được cho phép tự động; với Codex, một lần sửa gồm `docs/a.md` và `src/b.ts` bị từ chối cả lần. Task không có phạm vi ghi thì hành vi không đổi.
 - **AC-13** (v0.4): Task (kể cả mode Auto) mà Claude gọi `AskUserQuestion` thì chuyển Needs Input, thẻ hiện câu hỏi và lựa chọn; trả lời trên web thì Claude dùng đúng đáp án và chạy tiếp **trong cùng lần chạy** (không có run resume). Bỏ qua hoặc hết thời gian thì Claude tự quyết và nêu giả định trong kết quả.
 

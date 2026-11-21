@@ -208,6 +208,8 @@ export interface Task {
    * chốt lúc lần chạy kết thúc. Diff ở Review không gồm các file này.
    */
   foreignFiles?: string[]
+  /** F1: tệp đính kèm (ảnh, PDF, văn bản). Runner đưa đường dẫn vào prompt. */
+  attachments?: Attachment[]
   /** FR-100: làm luôn / kế hoạch trước / chỉ kế hoạch. Không có: `none`. */
   planMode?: PlanMode
   /** Giai đoạn hiện tại (task planMode khác none). Không có: chưa chạy, hoặc task làm luôn. */
@@ -227,6 +229,16 @@ export interface Task {
  * manual: người dùng làm tay trong Claude Code (FR-115, không có tiến trình của Task Board, chi phí không rõ)
  */
 export type RunKind = 'initial' | 'resume' | 'retry' | 'continue' | 'manual'
+
+/** F1: tệp đính kèm của task. File nằm ở thư mục dữ liệu của server, không trong project. */
+export interface Attachment {
+  /** Tên file đã làm sạch, duy nhất trong task */
+  name: string
+  size: number
+  /** MIME type theo phần mở rộng */
+  type: string
+  addedAt: number
+}
 
 export interface Run {
   id: string

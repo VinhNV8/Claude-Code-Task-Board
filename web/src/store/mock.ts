@@ -529,6 +529,62 @@ export async function createTask(input: NewTask): Promise<number> {
   return id
 }
 
+/** F2, bản giả lập: nhân bản task (không giữ lịch sử, phụ thuộc). */
+export async function duplicateTask(id: number, run = false): Promise<Task | undefined> {
+  const src = state.tasks.find((t) => t.id === id)
+  if (!src) return undefined
+  const copyId = state.nextTaskId
+  const title = src.title.endsWith('(bản sao)') ? src.title : `${src.title} (bản sao)`
+  const copy: Task = {
+    id: copyId,
+    title,
+    prompt: src.prompt,
+    projectId: src.projectId,
+    priority: src.priority,
+    permissionMode: src.permissionMode,
+    tags: [...src.tags],
+    model: src.model,
+    agent: src.agent,
+    writeScope: src.writeScope,
+    planMode: src.planMode,
+    attachments: src.attachments?.map((a) => ({ ...a })),
+    status: run ? 'queued' : 'backlog',
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+  }
+  for (const a of src.attachments ?? []) mockAttachments.set(`${copyId}/${a.name}`, mockAttachments.get(`${id}/${a.name}`) ?? '')
+  set((s) => ({ tasks: [...s.tasks, copy], nextTaskId: s.nextTaskId + 1 }))
+  toast({ kind: 'success', title: `Đã nhân bản #${id} thành #${copyId}`, body: src.dependsOn?.length ? 'Bản sao không chờ task nào. Chọn lại task cần chờ nếu cần.' : undefined })
+  return copy
+}
+
+/** F1, bản giả lập: file giữ trong bộ nhớ trình duyệt (object URL), mất khi tải lại trang. */
+const mockAttachments = new Map<string, string>()
+export const attachmentUrl = (taskId: number, name: string) => mockAttachments.get(`${taskId}/${name}`) ?? '#'
+const MOCK_TYPES: Record<string, string> = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', gif: 'image/gif', pdf: 'application/pdf', md: 'text/markdown', txt: 'text/plain', csv: 'text/csv', json: 'application/json', log: 'text/plain' }
+export async function uploadAttachments(taskId: number, files: File[]) {
+  let ok = 0
+  for (const f of files) {
+    const type = MOCK_TYPES[f.name.split('.').pop()?.toLowerCase() ?? '']
+    if (!type || f.size > 10 * 1024 * 1024) {
+      toast({ kind: 'error', title: `Không tải lên được ${f.name}`, body: !type ? 'Không nhận loại file này' : 'File vượt 10 MB' })
+      continue
+    }
+    mockAttachments.set(`${taskId}/${f.name}`, URL.createObjectURL(f))
+    set((s) => ({
+      tasks: s.tasks.map((t) =>
+        t.id === taskId ? { ...t, attachments: [...(t.attachments ?? []).filter((a) => a.name !== f.name), { name: f.name, size: f.size, type, addedAt: Date.now() }] } : t,
+      ),
+    }))
+    ok++
+  }
+  return ok
+}
+export async function deleteAttachment(taskId: number, name: string) {
+  mockAttachments.delete(`${taskId}/${name}`)
+  set((s) => ({ tasks: s.tasks.map((t) => (t.id === taskId ? { ...t, attachments: t.attachments?.filter((a) => a.name !== name) } : t)) }))
+}
+
 /**
  * FR-01a, bản giả lập: kiểm tra rút gọn (tiêu đề, mô tả, project, ưu tiên, mức quyền, trùng tiêu đề, mã phụ thuộc trong file).
  * Quy tắc đầy đủ ở server/src/taskImport.ts.

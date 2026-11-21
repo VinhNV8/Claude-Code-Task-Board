@@ -3,7 +3,7 @@
 | Mục | Giá trị |
 |---|---|
 | Ngày | 2026-11-19 |
-| Trạng thái | 📝 **Bản đề xuất để duyệt.** Chưa viết code, chưa gộp vào SPEC |
+| Trạng thái | ✅ **F1, F2 đã triển khai** (2026-11-21, SPEC FR-65, FR-66; spike F1-S1/S2 ở P0-SPIKE.md). F3–F7 vẫn là đề xuất chờ duyệt |
 | Phạm vi | Các tính năng **chưa có** trong code và chưa có spec. Các hạng mục đã có spec được liệt kê ở mục 2 để tránh trùng |
 | Liên quan | [SPEC.md](SPEC.md), [PLAN.md](PLAN.md), [BACKLOG.md](BACKLOG.md), [SPEC-PLAN-HANDOFF.md](SPEC-PLAN-HANDOFF.md), [SPEC-SCHEDULED-PUBLISH.md](SPEC-SCHEDULED-PUBLISH.md), [SPEC-MULTI-AGENT.md](SPEC-MULTI-AGENT.md), [SPEC-IMPORT.md](SPEC-IMPORT.md) |
 

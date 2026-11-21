@@ -24,11 +24,14 @@ import {
   X,
   XCircle,
 } from 'lucide-react'
+import { CopyPlus, Repeat2 } from 'lucide-react'
 import { Markdown, stripMarkdown } from './Markdown'
+import { AttachmentList } from './Attachments'
 import {
   approveTask,
   mergeTask,
   deleteTask,
+  duplicateTask,
   ensureDiff,
   ensureEvents,
   createPreviewLink,
@@ -117,6 +120,13 @@ export function TaskView({
 
   const [runId, setRunId] = useState<string | undefined>()
   const [edit, setEdit] = useState(false)
+  /** F2: bản sao vừa tạo, mở form sửa ngay; `run`: nút chính là Lưu & Chạy */
+  const [copy, setCopy] = useState<{ task: Task; run: boolean } | null>(null)
+  const openCopy = async (run: boolean) => {
+    if (!task) return
+    const c = await duplicateTask(task.id)
+    if (c) setCopy({ task: c, run })
+  }
   const [confirm, setConfirm] = useState<null | 'delete' | 'reject' | 'stop' | 'retry' | 'approve' | 'merge'>(null)
   const [feedbackOpen, setFeedbackOpen] = useState(false)
   const [feedback, setFeedback] = useState('')
@@ -353,6 +363,14 @@ export function TaskView({
               </Button>
             </>
           )}
+          {(task.status === 'done' || task.status === 'failed') && (
+            <Button onClick={() => openCopy(true)} title={tr('Tạo bản sao để sửa prompt rồi chạy; task này và lịch sử của nó giữ nguyên')}>
+              <Repeat2 size={16} /> {tr('Chạy lại với prompt mới')}
+            </Button>
+          )}
+          <Button variant="ghost" onClick={() => openCopy(false)} title={tr('Tạo bản sao ở Backlog (giữ prompt, model, mức quyền, tag, file đính kèm)')}>
+            <CopyPlus size={16} /> {tr('Nhân bản')}
+          </Button>
           {canDeleteTask(task.status) && (
             <Button variant="ghost" onClick={() => setConfirm('delete')} className="text-rose-600">
               <Trash2 size={16} /> {tr('Xoá')}
@@ -784,6 +802,7 @@ export function TaskView({
       {tab === 'prompt' && (
         <div className="space-y-3">
           <pre className="whitespace-pre-wrap rounded-lg border border-slate-200 bg-white p-4 font-sans text-sm dark:border-slate-800 dark:bg-slate-900">{task.prompt}</pre>
+          <AttachmentList task={task} editable={task.status !== 'running' && task.status !== 'needs_input'} />
           <div className="grid gap-2 text-sm sm:grid-cols-2">
             <p>
               <span className="text-slate-500">{tr('Mức quyền:')}</span> <span>{permissionModeOf(task.permissionMode).label}</span>
@@ -815,6 +834,7 @@ export function TaskView({
       )}
 
       <TaskFormModal open={edit} onClose={() => setEdit(false)} editing={task} />
+      <TaskFormModal open={!!copy} onClose={() => setCopy(null)} editing={copy?.task} runOnSave={copy?.run} />
       <ConfirmDialog
         open={confirm === 'delete'}
         onClose={() => setConfirm(null)}

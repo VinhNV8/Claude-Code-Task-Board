@@ -500,6 +500,49 @@ export async function createTask(input: NewTask): Promise<number> {
   return t.id
 }
 
+/** F2: nhân bản task. `run`: đưa bản sao vào hàng đợi luôn. Trả về bản sao (lỗi: undefined, đã toast). */
+export async function duplicateTask(id: number, run = false): Promise<Task | undefined> {
+  const r = await act(() => api<{ task: Task; droppedDeps: number }>('POST', `/tasks/${id}/duplicate`, { run }), tr('Không nhân bản được task'))
+  if (!r) return undefined
+  set((s) => ({ tasks: upsert(s.tasks, r.task) }))
+  toast({
+    kind: 'success',
+    title: run ? tr('Đã nhân bản #{id} thành #{copy} và đưa vào hàng đợi', { id, copy: r.task.id }) : tr('Đã nhân bản #{id} thành #{copy}', { id, copy: r.task.id }),
+    body: r.droppedDeps ? tr('Bản sao không chờ task nào. Chọn lại task cần chờ nếu cần.') : undefined,
+  })
+  return r.task
+}
+
+/** F1: đường dẫn mở / tải file đính kèm. */
+export const attachmentUrl = (taskId: number, name: string) => `/api/tasks/${taskId}/attachments/${encodeURIComponent(name)}`
+
+/** F1: tải lần lượt các file lên task. File lỗi (sai loại, quá lớn…) hiện toast, file khác vẫn tải tiếp. */
+export async function uploadAttachments(taskId: number, files: File[]) {
+  let ok = 0
+  for (const f of files) {
+    try {
+      const res = await fetch(`/api/tasks/${taskId}/attachments?name=${encodeURIComponent(f.name)}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/octet-stream' },
+        body: f,
+      })
+      const data = (await res.json().catch(() => ({}))) as { error?: string; task?: Task }
+      if (res.status === 401) onUnauthorized()
+      if (!res.ok) throw new ApiError(data.error ?? tr('Lỗi {status}', { status: res.status }))
+      if (data.task) set((s) => ({ tasks: upsert(s.tasks, data.task!) }))
+      ok++
+    } catch (e) {
+      toast({ kind: 'error', title: tr('Không tải lên được {name}', { name: f.name }), body: (e as Error).message })
+    }
+  }
+  return ok
+}
+
+export async function deleteAttachment(taskId: number, name: string) {
+  const t = await act(() => api<Task>('DELETE', `/tasks/${taskId}/attachments/${encodeURIComponent(name)}`), tr('Không xoá được file'))
+  if (t) set((s) => ({ tasks: upsert(s.tasks, t) }))
+}
+
 /** FR-01a: kiểm tra (dryRun) hoặc tạo task hàng loạt. Lỗi ném ApiError (kèm `code`), modal tự hiển thị. */
 export async function importTasks(req: ImportRequest): Promise<ImportResult & { tasks: Task[] }> {
   const r = await api<ImportResult & { tasks: Task[] }>('POST', '/tasks/import', req)

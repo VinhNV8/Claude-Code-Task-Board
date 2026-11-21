@@ -25,6 +25,7 @@ import { budgetWakeAt, isProjectBlocked, refreshBudgets } from './budgetService.
 import { decideBlocked, pendingDeps } from './taskDeps.ts'
 import { prepareRetry } from './retry.ts'
 import { perRunUsage, sessionBaseline } from './runCost.ts'
+import { attachmentPrompt } from './attachments.ts'
 import { withLock } from './review.ts'
 import { agentProblem, chooseFallback, getAdapter, type AgentAdapter } from './agents/index.ts'
 import { agentLimitedUntil } from './agents/limits.ts'
@@ -392,7 +393,10 @@ function spawnAgent(
   const run = { id: o.runId }
 
   // FR-49: phạm vi ghi gắn vào prompt gốc; resume đúng phiên thì agent đã có ràng buộc trong ngữ cảnh.
-  const prompt = o.prompt ?? resumePrompt({ kind, resume, feedback, taskPrompt: withScope(task.prompt, task.writeScope) })
+  // F1: mỗi lần chạy đều kèm danh sách file đính kèm hiện tại (người dùng có thể thêm/bớt giữa các lần chạy).
+  const prompt =
+    (o.prompt ?? resumePrompt({ kind, resume, feedback, taskPrompt: withScope(task.prompt, task.writeScope) })) +
+    attachmentPrompt(task.id, tasks.get(task.id)?.attachments ?? task.attachments)
   // Adapter dựng tham số, môi trường, file cấu hình tạm (xác thực, budget, MCP xin quyền, hooks…).
   const prepared = adapter.prepare({ ...o, prompt, runLogDir: RUN_LOG_DIR })
   if (!prepared.ok) {

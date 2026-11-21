@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Link2, Play, Plus, Save, X } from 'lucide-react'
-import { createTask, fetchDepSuggestions, fetchModelSuggest, updateTask, useStore, type DepSuggestion, type ModelSuggestResult } from '../store/store'
+import { createTask, fetchDepSuggestions, fetchModelSuggest, queueTask, updateTask, uploadAttachments, useStore, type DepSuggestion, type ModelSuggestResult } from '../store/store'
 import { collectTags, normalizeTags } from '../lib/taskFilter'
 import { MODEL_OPTIONS, inheritedModelHint, modelLabel } from '../lib/model'
 import type { AgentId, PermissionMode, PlanMode, Priority, PromptTemplate, Task } from '../types'
@@ -10,6 +10,7 @@ import { resolveAgent } from '../lib/agent'
 import { SELECTABLE_MODES, permissionModeOf } from '../lib/permissionMode'
 import { PLAN_MODES, planModeOf } from '../lib/planMode'
 import { TagInput } from './TagInput'
+import { AttachmentList, PendingFiles } from './Attachments'
 import { Button, Field, Modal, inputCls } from './ui'
 import { tr } from '../lib/i18n'
 import { normalizeScope, scopeProblem } from '../lib/writeScope'
@@ -20,11 +21,14 @@ export function TaskFormModal({
   onClose,
   editing,
   defaultProjectId,
+  runOnSave = false,
 }: {
   open: boolean
   onClose: () => void
   editing?: Task
   defaultProjectId?: string
+  /** F2 "Chạy lại với prompt mới": sửa bản sao rồi đưa vào hàng đợi */
+  runOnSave?: boolean
 }) {
   const { projects, templates, tasks, settings } = useStore()
   const navigate = useNavigate()
@@ -45,6 +49,8 @@ export function TaskFormModal({
   const [deps, setDeps] = useState<number[]>([])
   const [depHints, setDepHints] = useState<DepSuggestion[]>([])
   const [touched, setTouched] = useState(false)
+  /** F1: file chọn ở form, tải lên sau khi lưu task (task mới chưa có id) */
+  const [files, setFiles] = useState<File[]>([])
   /** P5-05: model hệ thống sẽ chọn khi model hiệu lực là Tự động */
   const [suggest, setSuggest] = useState<ModelSuggestResult | null>(null)
   const [saving, setSaving] = useState(false)
@@ -52,6 +58,7 @@ export function TaskFormModal({
   useEffect(() => {
     if (!open) return
     setTouched(false)
+    setFiles([])
     if (editing) {
       setTitle(editing.title)
       setPrompt(editing.prompt)
@@ -157,7 +164,7 @@ export function TaskFormModal({
     setSaving(true)
     try {
       if (editing) {
-        await updateTask(editing.id, {
+        const saved = await updateTask(editing.id, {
           title,
           prompt,
           projectId,
@@ -170,9 +177,16 @@ export function TaskFormModal({
           writeScope: normalizeScope(scope),
           planMode,
         })
+        // Lưu lỗi (đã hiện toast): giữ form để sửa
+        if (saved === undefined) return
+        if (files.length) await uploadAttachments(editing.id, files)
+        if (run) await queueTask(editing.id)
         onClose()
+        if (run) navigate(`/tasks/${editing.id}`)
         return
       }
+      // F1: có file thì tạo ở Backlog, tải file lên rồi mới đưa vào hàng đợi, để lần chạy đầu đã thấy file.
+      const queueAfterUpload = run && files.length > 0
       const id = await createTask({
         title,
         prompt,
@@ -185,8 +199,10 @@ export function TaskFormModal({
         dependsOn: deps,
         writeScope: normalizeScope(scope),
         planMode,
-        run,
+        run: run && !queueAfterUpload,
       })
+      if (files.length) await uploadAttachments(id, files)
+      if (queueAfterUpload) await queueTask(id)
       onClose()
       if (run) navigate(`/tasks/${id}`)
     } catch {
@@ -208,9 +224,15 @@ export function TaskFormModal({
             <Button variant="ghost" onClick={onClose}>
               {tr('Huỷ')}
             </Button>
-            <Button variant="primary" disabled={saving} onClick={() => submit(false)}>
-              <Save size={16} /> {tr('Lưu thay đổi')}
-            </Button>
+            {runOnSave ? (
+              <Button variant="primary" disabled={saving} onClick={() => submit(true)}>
+                <Play size={16} /> {tr('Lưu & Chạy')}
+              </Button>
+            ) : (
+              <Button variant="primary" disabled={saving} onClick={() => submit(false)}>
+                <Save size={16} /> {tr('Lưu thay đổi')}
+              </Button>
+            )}
           </>
         ) : (
           <>
@@ -345,6 +367,14 @@ export function TaskFormModal({
           <Field label="Agent" hint={agentHint(agents, agent || inheritedAgent, mode)}>
             <AgentSelect value={agent} onChange={setAgent} inherit={inheritedAgent} mode={mode} />
           </Field>
+          <div className="sm:col-span-2 lg:col-span-3">
+            {editing && (editing.attachments?.length ?? 0) > 0 ? (
+              <AttachmentList task={tasks.find((t) => t.id === editing.id) ?? editing} editable />
+            ) : null}
+            <Field label={tr('Tệp đính kèm (tuỳ chọn)')} hint={tr('Mockup, ảnh chụp màn hình, log lỗi, tài liệu… Agent đọc khi chạy.')}>
+              <PendingFiles files={files} onChange={setFiles} />
+            </Field>
+          </div>
           <div className="sm:col-span-2 lg:col-span-3">
             <Field label={tr('Chờ task')} hint={tr('Task chỉ chạy khi các task này Done (đã chấp nhận output). Để trống nếu task chạy độc lập.')}>
               <div className="flex flex-wrap items-center gap-1.5">

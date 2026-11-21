@@ -122,6 +122,8 @@ export interface ClaudeArgsOptions {
   appendSystemPrompt?: string
   /** Task có phạm vi ghi (FR-49): mọi lệnh ghi file phải qua prompt tool để backend kiểm tra phạm vi. */
   writeScoped?: boolean
+  /** F1: thư mục được đọc thêm ngoài thư mục làm việc (`--add-dir`), ví dụ thư mục file đính kèm của task. */
+  addDirs?: string[]
 }
 
 /**
@@ -147,6 +149,8 @@ export function buildClaudeArgs(o: ClaudeArgsOptions) {
     ...(o.resume ? ['--resume', o.sessionId] : ['--session-id', o.sessionId]),
     '--permission-mode', effectivePermissionMode(o.permissionMode, promptTool, o.writeScoped),
   ]
+  // F1: `--add-dir` nhận nhiều giá trị; flag kế tiếp (--mcp-config / --permission-prompts) luôn có nên danh sách được đóng.
+  if (o.addDirs?.length) args.push('--add-dir', ...o.addDirs)
   if (o.mcpConfigPath) {
     // P3: lệnh ngoài whitelist được hỏi qua MCP tool, task chuyển Needs Input chờ duyệt trên web.
     // `--mcp-config` nhận nhiều giá trị: flag ngay sau nó kết thúc danh sách.

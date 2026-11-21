@@ -1,6 +1,6 @@
 import type { DragEvent } from 'react'
 import { Link, type To } from 'react-router-dom'
-import { AlertTriangle, Clock, GitBranch, Hand, Hourglass, Link2, Loader2, Pause, Play, RotateCcw, StepForward } from 'lucide-react'
+import { AlertTriangle, Clock, GitBranch, Hand, Hourglass, Link2, Loader2, Paperclip, Pause, Play, RotateCcw, StepForward } from 'lucide-react'
 import type { Project, Task } from '../types'
 import { PRIORITY_META, duration, hhmm, timeAgo } from '../lib/format'
 import { isFailed } from '../lib/board'
@@ -190,6 +190,11 @@ export function TaskCard({
           >
             <StepForward size={12} /> {tr('Tiếp tục ngay')}
           </button>
+        )}
+        {(task.attachments?.length ?? 0) > 0 && (
+          <span className="inline-flex items-center gap-0.5" title={tr('{n} file đính kèm', { n: task.attachments!.length })}>
+            <Paperclip size={12} /> {task.attachments!.length}
+          </span>
         )}
         {!waitingUntil && ['backlog', 'queued', 'done'].includes(task.status) && (
           <span className="inline-flex items-center gap-1">

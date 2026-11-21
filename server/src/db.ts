@@ -4,6 +4,7 @@ import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import type {
+  Attachment,
   AgentId,
   LogEvent,
   LogEventInput,
@@ -225,6 +226,8 @@ if (!taskCols.some((c) => c.name === 'max_cost_usd')) db.exec('ALTER TABLE tasks
 if (!taskCols.some((c) => c.name === 'write_scope')) db.exec('ALTER TABLE tasks ADD COLUMN write_scope TEXT')
 // FR-64: file không phải của task trong diff mode Ghi thẳng (JSON mảng đường dẫn), NULL = không có
 if (!taskCols.some((c) => c.name === 'foreign_files')) db.exec('ALTER TABLE tasks ADD COLUMN foreign_files TEXT')
+// F1: tệp đính kèm của task (JSON mảng {name, size, type, addedAt}); file nằm ở data/attachments/<taskId>/
+if (!taskCols.some((c) => c.name === 'attachments')) db.exec('ALTER TABLE tasks ADD COLUMN attachments TEXT')
 // SPEC-PLAN-HANDOFF FR-100: duyệt kế hoạch trước khi làm. plan_mode 'none' | 'first' | 'only'; plan_phase 'plan' | 'execute'.
 if (!taskCols.some((c) => c.name === 'plan_mode')) db.exec("ALTER TABLE tasks ADD COLUMN plan_mode TEXT NOT NULL DEFAULT 'none'")
 if (!taskCols.some((c) => c.name === 'plan_phase')) db.exec('ALTER TABLE tasks ADD COLUMN plan_phase TEXT')
@@ -355,6 +358,7 @@ const toTask = (r: Row): Task => ({
   maxCostUsd: (r.max_cost_usd as number | null) ?? undefined,
   writeScope: optList(r.write_scope ? (JSON.parse(r.write_scope as string) as string[]) : []),
   foreignFiles: optList(r.foreign_files ? (JSON.parse(r.foreign_files as string) as string[]) : []),
+  attachments: optList(r.attachments ? (JSON.parse(r.attachments as string) as Attachment[]) : []),
   planMode: planModeOf(r.plan_mode),
   planPhase: planPhaseOf(r.plan_phase),
   approvedPlan: opt(r.approved_plan),
@@ -506,6 +510,7 @@ const TASK_COLS: Record<string, string> = {
   maxCostUsd: 'max_cost_usd',
   writeScope: 'write_scope',
   foreignFiles: 'foreign_files',
+  attachments: 'attachments',
   planMode: 'plan_mode',
   planPhase: 'plan_phase',
   approvedPlan: 'approved_plan',
@@ -560,7 +565,7 @@ export const tasks = {
       if (!col) continue
       sets.push(`${col} = ?`)
       if (FLAG_COLS.has(k)) vals.push(v ? 1 : 0)
-      else if (k === 'writeScope' || k === 'foreignFiles') vals.push(Array.isArray(v) && v.length ? JSON.stringify(v) : null)
+      else if (k === 'writeScope' || k === 'foreignFiles' || k === 'attachments') vals.push(Array.isArray(v) && v.length ? JSON.stringify(v) : null)
       else if (k === 'planMode') vals.push(v === 'first' || v === 'only' ? v : 'none') // cột NOT NULL
       else vals.push(k === 'tags' ? JSON.stringify(v) : v === undefined ? null : (v as string | number | null))
     }

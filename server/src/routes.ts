@@ -42,6 +42,9 @@ import { planPermissionSync } from './permissionSync.ts'
 import { agentProblem, listAgents } from './agents/index.ts'
 import { parseAgent, parseChain, resolveAgent } from '../../web/src/lib/agent.ts'
 import { importTasks } from './taskImport.ts'
+import { duplicateFields } from './taskDuplicate.ts'
+import { MAX_FILE_BYTES, addAttachment, attachmentPath, copyAttachments, removeAllAttachments, removeAttachment } from './attachments.ts'
+import { createReadStream } from 'node:fs'
 import type { ImportRequest } from '../../web/src/lib/taskImport.ts'
 import type { AgentId, FailoverMode, FailoverSettings, FileDiff, PermissionMode, Project, PromptTemplate, Schedule, Settings, TelegramSettingsInput, ClaudeAuthInput } from './types.ts'
 
@@ -346,6 +349,7 @@ export async function routes(app: FastifyInstance) {
     if (busy) throw new HttpError(409, 'Project đang có task chạy, hãy dừng trước khi xoá')
     for (const t of tasks.all().filter((t) => t.projectId === req.params.id)) {
       if (isTesting(t.id)) await stopTests(t.id, 'Project đã bị xoá.')
+      removeAllAttachments(t.id)
       broadcast({ type: 'task_deleted', id: t.id })
     }
     // Template riêng của project bị xoá theo (ON DELETE CASCADE)
@@ -442,6 +446,54 @@ export async function routes(app: FastifyInstance) {
     return updated
   })
 
+  // F2: nhân bản task (bản sao ở Backlog, hoặc Queued khi `run`). Task gốc không đổi; phụ thuộc không sao chép.
+  app.post<{ Params: { id: string }; Body: { run?: boolean } }>('/api/tasks/:id/duplicate', async (req) => {
+    const src = getTask(req.params.id)
+    const project = projects.get(src.projectId)
+    if (!project) throw new HttpError(409, 'Project của task không còn, không nhân bản được')
+    const run = !!req.body?.run
+    checkTaskAgent(src.agent, project, src.permissionMode)
+    const created = tasks.create(duplicateFields(src, run))
+    copyAttachments(src.id, created.id)
+    const t = tasks.get(created.id)!
+    broadcast({ type: 'task', task: t })
+    if (run) pump()
+    return { task: t, droppedDeps: src.dependsOn?.length ?? 0 }
+  })
+
+  // F1: tệp đính kèm. Tải lên bằng body nhị phân (application/octet-stream), tên file ở query `name`.
+  app.addContentTypeParser('application/octet-stream', { parseAs: 'buffer', bodyLimit: MAX_FILE_BYTES + 1024 }, (_req, body, done) =>
+    done(null, body),
+  )
+  app.post<{ Params: { id: string }; Querystring: { name?: string }; Body: Buffer }>(
+    '/api/tasks/:id/attachments',
+    { bodyLimit: MAX_FILE_BYTES + 1024 },
+    async (req) => {
+      const t = getTask(req.params.id)
+      if (!Buffer.isBuffer(req.body)) throw new HttpError(415, 'Gửi file dạng application/octet-stream')
+      const a = addAttachment(t, String(req.query.name ?? ''), req.body)
+      const updated = tasks.get(t.id)!
+      broadcast({ type: 'task', task: updated })
+      return { attachment: a, task: updated }
+    },
+  )
+  app.get<{ Params: { id: string; name: string } }>('/api/tasks/:id/attachments/:name', async (req, reply) => {
+    const { path, attachment } = attachmentPath(getTask(req.params.id), req.params.name)
+    return reply
+      .type(attachment.type)
+      .header('content-disposition', `inline; filename*=UTF-8''${encodeURIComponent(attachment.name)}`)
+      .header('x-content-type-options', 'nosniff')
+      .header('cache-control', 'private, no-store')
+      .send(createReadStream(path))
+  })
+  app.delete<{ Params: { id: string; name: string } }>('/api/tasks/:id/attachments/:name', async (req) => {
+    const t = getTask(req.params.id)
+    removeAttachment(t, req.params.name)
+    const updated = tasks.get(t.id)!
+    broadcast({ type: 'task', task: updated })
+    return updated
+  })
+
   // FR-01a: import task hàng loạt (docs/SPEC-IMPORT.md). 200 dòng × ô tới 32k ký tự vượt bodyLimit mặc định 1 MB.
   app.post<{ Body: Partial<ImportRequest> }>('/api/tasks/import', { bodyLimit: 12 * 1024 * 1024 }, async (req) => {
     const { tasks: created, ...result } = importTasks(req.body)
@@ -479,6 +531,7 @@ export async function routes(app: FastifyInstance) {
     }
     const hadCost = runs.byTask(t.id).some((r) => r.costUsd)
     tasks.remove(t.id)
+    removeAllAttachments(t.id) // F1 (A4): xoá task thì xoá cả file đính kèm
     broadcast({ type: 'task_deleted', id: t.id })
     // Run của task bị xoá theo (ON DELETE CASCADE) nên chi tiêu tháng có thể giảm.
     if (hadCost) refreshBudgets()

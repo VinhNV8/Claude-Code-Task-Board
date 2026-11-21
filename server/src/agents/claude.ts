@@ -1,4 +1,5 @@
 // Adapter Claude Code CLI: chuyển nguyên phần riêng của Claude từ runner sang (SPEC-MULTI-AGENT M1, không đổi hành vi).
+import { attachmentDir } from '../attachments.ts'
 import { claudeEnv, findClaudeBin } from '../claude.ts'
 import { nodeCommand } from '../runtime.ts'
 import { issueKeyToken } from '../apiKeyBroker.ts'
@@ -81,6 +82,7 @@ function prepare(o: RunInput): PreparedRun {
     maxBudgetUsd,
     appendSystemPrompt: BLOCKED_BY_INSTRUCTION,
     writeScoped: !!task.writeScope?.length,
+    addDirs: task.attachments?.length ? [attachmentDir(task.id)] : undefined,
   })
   return {
     ok: true,

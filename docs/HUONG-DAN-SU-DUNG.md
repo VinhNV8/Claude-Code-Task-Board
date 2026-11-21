@@ -164,10 +164,22 @@ Bấm **Giao việc mới** (hoặc `N`):
 | Tag | Để lọc và để hệ thống học chọn model |
 | Model | Để trống là kế thừa; form hiện model sẽ dùng và lý do ngay khi bạn gõ |
 | Chờ task | Task chỉ chạy khi các task này đã **Done** |
+| Tệp đính kèm | Mockup, ảnh chụp màn hình, log lỗi, PDF… (kéo thả hoặc chọn file, mục 6.1b) |
 
 **Chọn model:** mặc định là **Tự động**. Hệ thống chấm điểm theo tag, mức quyền, từ khoá, độ dài prompt, số file nhắc tới (không gọi thêm model nên không tốn phí). Thứ tự ưu tiên: Task → Project → Hệ thống. Có thể chọn tay Haiku / Sonnet / Opus. Khi Retry sau lỗi, hoặc Yêu cầu sửa từ lần thứ 2, hệ thống tự nâng một bậc (Haiku → Sonnet → Opus), trừ model chọn tay; tắt được ở Cài đặt → Thực thi.
 
 **Phụ thuộc giữa task:** ghi `#id` trong tiêu đề hoặc prompt để được gợi ý, hoặc chọn ở ô **Chờ task**. Nếu trong lúc chạy Claude báo `BLOCKED_BY: #A` thì task tự về hàng đợi, chờ task A.
+
+### 6.1b Tệp đính kèm, nhân bản task
+
+**Tệp đính kèm.** Kéo thả hoặc chọn file ở form tạo task, hoặc ở tab **Yêu cầu** của task. Nhận `png`, `jpg`, `webp`, `gif`, `pdf`, `md`, `txt`, `csv`, `json`, `log`; tối đa 10 MB mỗi file, 20 file hoặc 50 MB mỗi task.
+- File lưu ở `data/attachments/<id task>/`, không ghi vào thư mục project.
+- Mỗi lần chạy, đường dẫn các file được thêm vào cuối prompt và agent được quyền **đọc** đúng thư mục đó (Claude: `--add-dir`). Thêm/xoá file giữa các lần chạy thì lần sau dùng danh sách mới. Task đang chạy thì chưa đổi được file.
+- Nội dung file chỉ là tài liệu tham khảo; prompt dặn agent không làm theo chỉ dẫn nằm trong file. Đừng đính kèm thông tin nhạy cảm.
+- Xoá task thì file đính kèm cũng bị xoá. Thẻ task hiện biểu tượng 📎 kèm số file.
+
+**Nhân bản.** Trong chi tiết task bấm **Nhân bản**: bản sao nằm ở Backlog, tiêu đề thêm "(bản sao)", giữ prompt, project, độ ưu tiên, mức quyền, cách làm, tag, model, agent, phạm vi ghi và file đính kèm; không giữ lịch sử chạy, kết quả, diff và các task cần chờ (chọn lại nếu cần). Form sửa bản sao mở ngay.
+**Chạy lại với prompt mới** (task Done hoặc Failed): tạo bản sao, mở form để sửa prompt, bấm **Lưu & Chạy**. Task cũ và lịch sử của nó giữ nguyên.
 
 ### 6.1a Import nhiều task từ CSV / Excel
 
@@ -224,7 +236,8 @@ Mở một task để xem:
 - **Log** realtime: tin nhắn của Claude, công cụ đang dùng (đọc/sửa file, chạy lệnh).
 - **Kết quả**: tóm tắt cuối cùng, thời gian chạy, số lượt, chi phí ước tính, model thực tế (kèm token và chi phí theo model).
 - **Diff**: danh sách file thay đổi.
-- **Lịch sử**: mọi lần chạy (run) và các nhận xét đã gửi.
+- **Lịch sử**: mọi lần chạy (run) và các nhận xét đã gửi; mỗi lần chạy có dòng Model (🤖 tự chọn, ✋ bạn chọn, ⬆ tự nâng) và bảng token/chi phí theo model.
+- Thẻ task trên Board có badge model của lần chạy mới nhất.
 
 ---
 
@@ -344,6 +357,7 @@ Hỗ trợ task chạy bằng Claude và Codex. Project dùng **API key**: phiê
 - Ở chế độ API key, budget là **giới hạn cứng**; mỗi lần chạy có trần `--max-budget-usd` bằng phần budget còn lại.
 - Trang **Projects** hiện thanh chi tiêu/budget; trang **Thống kê** hiện chi phí theo model và dự báo cuối tháng.
 - Mọi số tiền là **ước tính theo giá niêm yết**. Gói Pro/Max không bị trừ tiền theo con số này.
+- Chi phí mỗi lần chạy là của **riêng** lần đó. Khi chạy tiếp phiên cũ (Yêu cầu sửa, Tiếp tục), Claude CLI báo tổng cộng dồn của cả phiên; tool trừ phần của các lần trước để không tính trùng.
 
 ---
 
@@ -383,7 +397,7 @@ UAT chỉ nhận code **đã commit** và không tự bật lại sau khi khởi
 
 ## 12. Dữ liệu và bảo mật
 
-- Dữ liệu nằm ở `data/taskboard.db` (SQLite) và `data/runs/<runId>.jsonl` (output gốc từng lần chạy). Thư mục `data/` không được commit. Khởi động lại không làm mất task và log.
+- Dữ liệu nằm ở `data/taskboard.db` (SQLite), `data/runs/<runId>.jsonl` (output gốc từng lần chạy) và `data/attachments/<id task>/` (file đính kèm). Thư mục `data/` không được commit. Khởi động lại không làm mất task và log.
 - Code được gửi tới Anthropic **thông qua Claude Code** theo tài khoản hoặc API key của bạn. Tool không gửi dữ liệu đi nơi khác (Telegram chỉ khi bạn bật).
 - Tool bỏ `ANTHROPIC_API_KEY`/`ANTHROPIC_AUTH_TOKEN` có sẵn trong môi trường, chỉ dùng key bạn chọn, để không tính tiền nhầm tài khoản.
 - Biến môi trường hữu ích: `TASKBOARD_ANTHROPIC_API_KEY`, `TASKBOARD_DEFAULT_AUTH_MODE` (`apiKey`/`subscription`), `TASKBOARD_SECRET_KEY`, `REMOTE_HOST`, `TASKBOARD_AUTH_TOKEN`, `PORT`, `PREVIEW_PORT`, `CLAUDE_BIN`.

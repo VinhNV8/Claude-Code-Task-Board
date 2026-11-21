@@ -54,6 +54,7 @@ const TRANSLATED = [
   'components/PlanReview.tsx',
   'components/Handoff.tsx',
   'components/ModelInfo.tsx',
+  'components/Attachments.tsx',
 ]
 
 test('normalizeLang / resolveLang: lựa chọn đã lưu → URL → trình duyệt', () => {
