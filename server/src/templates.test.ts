@@ -98,3 +98,13 @@ test('template: cách làm gợi ý (P9-08), nhận tên tiếng Việt, lưu DB
   // Template viết tài liệu phải ghi file: không thể là "Chỉ kế hoạch" (lượt Kế hoạch chặn mọi thao tác ghi)
   assert.equal(DEFAULT_TEMPLATES.find((t) => t.id === 'tpl-req-spec')?.planMode, undefined)
 })
+
+test('validateTemplate (P5-05): model hợp lệ được chuẩn hoá, rỗng là theo project, sai thì báo lỗi; lưu và đọc lại từ DB', () => {
+  const base = { name: 'Fix typo', prompt: 'Sửa lỗi chính tả trong README' }
+  assert.equal(validateTemplate({ ...base, model: 'Haiku' }, has(), newId).model, 'haiku')
+  assert.equal(validateTemplate({ ...base, model: '' }, has(), newId).model, undefined)
+  assert.throws(() => validateTemplate({ ...base, model: 'gpt-9' }, has(), newId), (e: unknown) => e instanceof TemplateError && /Model không hợp lệ/.test(e.message))
+  const saved = templates.upsert(validateTemplate({ ...base, id: 'tpl-typo-model', model: 'haiku' }, has(), newId))
+  assert.equal(saved.model, 'haiku')
+  assert.equal(templates.upsert({ ...saved, model: undefined }).model, undefined)
+})

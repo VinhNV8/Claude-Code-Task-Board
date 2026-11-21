@@ -1,7 +1,7 @@
 // Thống kê (PLAN 4.4): tổng hợp task và lần chạy theo ngày và theo project.
 // Hàm thuần, không đụng DB, để dễ kiểm thử.
 import { computeModelStats, tagModelRows } from './modelHistory.ts'
-import type { Project, ReviewAction, Run, RunTotals, Stats, StatsDay, StatsRange, Task, TaskStatus } from './types.ts'
+import type { Project, ReviewAction, Run, RunTotals, Stats, StatsDay, StatsModel, StatsRange, Task, TaskStatus } from './types.ts'
 
 export const STATS_RANGES: StatsRange[] = [7, 30, 90]
 const DAY = 86_400_000
@@ -119,9 +119,11 @@ export function computeStats(
     }
   }
 
+  const perModel = new Map<string, StatsModel>()
   for (const r of data.runs) {
     const t = taskById.get(r.taskId)
     if (!t || !inRange(r.startedAt)) continue
+    addModelUsage(perModel, r)
     addRun(totals, r)
     addRun(proj(t.projectId), r)
     const d = byDay.get(dayKey(r.startedAt, tzOffsetMin))
@@ -131,5 +133,40 @@ export function computeStats(
   const projects = [...perProject.values()].sort((a, b) => b.costUsd - a.costUsd || b.tasks - a.tasks || a.name.localeCompare(b.name))
   // P5-07: hiệu quả theo tag × model — mẫu có kết quả trong khoảng thời gian, của project đang lọc.
   const byTagModel = tagModelRows(computeModelStats(allTasks, data.historyRuns ?? data.runs, data.reviews ?? [], now, from))
-  return { days, from, to: now, projectId, totals, daily, projects, byTagModel }
+  const byModel = [...perModel.values()].sort((a, b) => b.costUsd - a.costUsd || b.runs - a.runs || a.model.localeCompare(b.model))
+  return { days, from, to: now, projectId, totals, daily, projects, byTagModel, byModel }
+}
+
+/** Model của run không có `modelUsage` (run cũ, agent không báo theo model). */
+export const UNKNOWN_MODEL = 'unknown'
+
+/**
+ * P5-02 (FR-83): cộng chi phí và token của run theo từng model trong `modelUsage`.
+ * Run không có `modelUsage` thì cộng `costUsd` vào model của run, không biết thì "unknown".
+ * Phần chênh giữa `costUsd` và tổng `modelUsage` (nếu có) cộng vào model chính, để tổng bảng = tổng trang.
+ */
+export function addModelUsage(acc: Map<string, StatsModel>, r: Run) {
+  const row = (model: string) => {
+    let m = acc.get(model)
+    if (!m) acc.set(model, (m = { model, runs: 0, costUsd: 0, inputTokens: 0, outputTokens: 0 }))
+    return m
+  }
+  const usage = Object.entries(r.modelUsage ?? {})
+  if (!usage.length) {
+    const m = row(r.model ?? UNKNOWN_MODEL)
+    m.runs++
+    m.costUsd += r.costUsd ?? 0
+    return
+  }
+  let sum = 0
+  for (const [model, u] of usage) {
+    const m = row(model)
+    m.runs++
+    m.costUsd += u.costUsd
+    m.inputTokens += u.inputTokens + u.cacheReadInputTokens + u.cacheCreationInputTokens
+    m.outputTokens += u.outputTokens
+    sum += u.costUsd
+  }
+  const rest = (r.costUsd ?? sum) - sum
+  if (Math.abs(rest) > 1e-9) row(r.model && r.modelUsage?.[r.model] ? r.model : usage[0][0]).costUsd += rest
 }

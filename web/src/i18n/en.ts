@@ -1021,4 +1021,17 @@ export const EN: Record<string, string> = {
   'Thay đổi khác trong thư mục, không phải của task này ({n} file)': 'Other changes in the folder, not made by this task ({n} files)',
   'Các file này thay đổi trong lúc task chạy nhưng agent không ghi chúng (session Claude Code khác, công cụ khác hoặc bạn sửa tay), nên không tính vào diff của task. Muốn tách hẳn, đổi project sang Nhánh git riêng.':
     'These files changed while the task was running, but the agent did not write them (another Claude Code session, another tool or your own edits), so they are left out of the task diff. To keep them fully apart, switch the project to a separate git branch.',
+  // P5-02 / P5-05: model của run, chi phí theo model, gợi ý model
+  'Hệ thống tự chọn': 'Chosen automatically',
+  'Bạn chọn': 'Chosen by you',
+  'Tự nâng model sau lần lỗi / yêu cầu sửa': 'Model raised after a failure / change request',
+  'Cache đọc': 'Cache read',
+  'Cache ghi': 'Cache write',
+  'Chi phí ước tính theo giá niêm yết': 'Estimated cost at list price',
+  '🤖 Tự động · {model}': '🤖 Auto · {model}',
+  'Điền sẵn model cho task khi dùng template': 'Pre-fill the task model when using the template',
+  'Chi phí theo model': 'Cost by model',
+  'Lần chạy trong khoảng thời gian. Input gồm cả token đọc/ghi cache. Chi phí ước tính theo giá niêm yết.':
+    'Runs in this period. Input includes cache read/write tokens. Cost estimated at list price.',
+  'Không rõ': 'Unknown',
 }

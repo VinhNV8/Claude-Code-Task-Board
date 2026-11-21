@@ -340,26 +340,31 @@ export function buildSeed() {
     {
       id: 'r-101-1', taskId: 101, kind: 'initial', startedAt: now - 30 * MIN, endedAt: now - 22 * MIN,
       exitCode: 0, numTurns: 14, costUsd: 0.42,
+      model: 'claude-sonnet-5-5', requestedModel: 'sonnet', modelSource: 'auto', modelReason: 'Task tính năng thông thường (tag feature)',
+      modelUsage: { 'claude-sonnet-5-5': { inputTokens: 1820, outputTokens: 6400, cacheReadInputTokens: 182300, cacheCreationInputTokens: 41200, costUsd: 0.39 }, 'claude-haiku-5-5': { inputTokens: 900, outputTokens: 310, cacheReadInputTokens: 12000, cacheCreationInputTokens: 3000, costUsd: 0.03 } },
       summary: 'Đã thêm state error/loading cho LoginForm, hiển thị thông báo lỗi và vô hiệu hoá nút khi gửi. Đã viết 2 test, tất cả đều pass.',
     },
     {
       id: 'r-101-2', taskId: 101, kind: 'resume', feedback: 'Thông báo lỗi cần có role="alert" cho screen reader và cách nút một chút.',
       startedAt: now - 15 * MIN, endedAt: now - 12 * MIN, exitCode: 0, numTurns: 4, costUsd: 0.08,
+      model: 'claude-sonnet-5-5', requestedModel: 'sonnet', modelSource: 'auto', modelReason: 'Giữ từ lần chạy trước (resume)',
+      modelUsage: { 'claude-sonnet-5-5': { inputTokens: 240, outputTokens: 900, cacheReadInputTokens: 64000, cacheCreationInputTokens: 900, costUsd: 0.08 } },
       summary: 'Đã thêm role="alert" và margin-top cho thông báo lỗi.',
     },
     {
       id: 'r-102-1', taskId: 102, kind: 'initial', startedAt: now - 15 * MIN, endedAt: now - 5 * MIN,
       exitCode: 0, numTurns: 11, costUsd: 0.31,
+      model: 'claude-opus-5-5', requestedModel: 'opus', modelSource: 'manual',
       summary: 'Đã thêm validate Amount > 0 và Category bắt buộc, thêm endpoint GET /expenses/{id}. `dotnet test`: 24 passed.',
     },
-    { id: 'r-103-1', taskId: 103, kind: 'initial', startedAt: now - 6 * MIN },
+    { id: 'r-103-1', taskId: 103, kind: 'initial', startedAt: now - 6 * MIN, model: 'claude-opus-5-5', requestedModel: 'opus', modelSource: 'escalated', modelReason: 'Nâng từ Sonnet sau lần chạy lỗi' },
     {
       id: 'r-108-1', taskId: 108, kind: 'initial', startedAt: now - 25 * 60 * MIN, endedAt: now - 24 * 60 * MIN,
       exitCode: 0, numTurns: 7, costUsd: 0.12, summary: 'Đã sửa sumCart bỏ qua item có qty = 0, thêm test.',
     },
     {
       id: 'r-109-1', taskId: 109, kind: 'initial', startedAt: now - 30 * 60 * MIN, endedAt: now - 29 * 60 * MIN,
-      exitCode: 0, numTurns: 5, costUsd: 0.06, summary: 'Đã chuẩn hoá tiêu đề H1 cho 12 trang.',
+      exitCode: 0, numTurns: 5, costUsd: 0.06, model: 'claude-haiku-5-5', modelSource: 'auto', modelReason: 'Việc nhỏ: chuẩn hoá tiêu đề', summary: 'Đã chuẩn hoá tiêu đề H1 cho 12 trang.',
     },
     {
       id: 'r-110-1', taskId: 110, kind: 'initial', startedAt: now - 160 * MIN, endedAt: now - 150 * MIN,

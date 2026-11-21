@@ -616,6 +616,35 @@ export function updateTask(
 
 export const closeDepsConfirm = () => set(() => ({ depsConfirm: null }))
 
+
+/** P5-05: gợi ý model khi gõ (POST /api/model-suggest). `suggestion` chỉ có khi model hiệu lực là Tự động. */
+export interface ModelSuggestInput {
+  title: string
+  prompt: string
+  tags: string[]
+  permissionMode: PermissionMode
+  projectId?: string
+  /** Model đang chọn ở form ('' = kế thừa) */
+  model?: string
+}
+export interface ModelSuggestResult {
+  effective: { value?: string; level: 'task' | 'project' | 'settings' | 'none' }
+  suggestion?: { model: 'haiku' | 'sonnet' | 'opus'; score: number; reasons: string[] }
+}
+// Mock: quy tắc rút gọn (server dùng modelPicker.ts). Đủ để thử giao diện bằng `npm run dev:mock`.
+export async function fetchModelSuggest(input: ModelSuggestInput): Promise<ModelSuggestResult> {
+  const project = state.projects.find((p) => p.id === input.projectId)
+  const value = input.model === 'auto' ? 'auto' : project?.defaultModel || state.settings.defaultModel || undefined
+  const level = project?.defaultModel ? 'project' : state.settings.defaultModel ? 'settings' : 'none'
+  if (value !== 'auto') return { effective: { value, level } }
+  const text = `${input.title} ${input.prompt} ${input.tags.join(' ')}`.toLowerCase()
+  const hard = /refactor|kiến trúc|architecture|race|bảo mật|security|migrat/.test(text)
+  const easy = /typo|chính tả|readme|rename|đổi tên/.test(text)
+  const model = hard ? 'opus' : easy && !hard ? 'haiku' : 'sonnet'
+  const reasons = hard ? ['Có từ khoá việc khó (refactor / kiến trúc)'] : easy ? ['Có từ khoá việc nhỏ (typo / README)'] : ['Mức mặc định cho task thông thường']
+  return { effective: { value, level: input.model === 'auto' ? 'task' : level }, suggestion: { model, score: hard ? 3 : easy ? -2 : 0, reasons } }
+}
+
 export async function fetchDepSuggestions(input: { projectId: string; title: string; prompt: string; taskId?: number; dependsOn: number[] }) {
   const ids = resolveRefs(parseRefs(`${input.title}
 ${input.prompt}`), state.tasks, input.projectId, input.taskId)

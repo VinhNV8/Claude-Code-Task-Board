@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { StatsError, computeStats, dayKey, parseStatsQuery, startOfLocalDay, type StatsQuery } from './stats.ts'
+import { StatsError, UNKNOWN_MODEL, computeStats, dayKey, parseStatsQuery, startOfLocalDay, type StatsQuery } from './stats.ts'
 import type { Project, Run, Task } from './types.ts'
 
 const H = 3_600_000
@@ -129,4 +129,35 @@ test('computeStats: lọc theo project và khoảng 90 ngày', () => {
   // Project đã xoá khỏi danh sách: dùng id làm tên
   const s2 = computeStats({ ...data, projects: [] }, { days: 30, tzOffsetMin: 0 }, NOW)
   assert.deepEqual(s2.projects.map((p) => p.name), ['p2'])
+})
+
+test('byModel (P5-02): cộng theo modelUsage, run không có modelUsage vào "unknown", tổng khớp tổng chi phí', () => {
+  const u = (costUsd: number, inputTokens = 0, outputTokens = 0) => ({ inputTokens, outputTokens, cacheReadInputTokens: 10, cacheCreationInputTokens: 5, costUsd })
+  const s = computeStats(
+    {
+      projects: [project('p1')],
+      tasks: [task(1, 'p1', 'review', NOW - H)],
+      runs: [
+        run('a', 1, NOW - H, { costUsd: 0.5, model: 'claude-opus-5-5', modelUsage: { 'claude-opus-5-5': u(0.4, 100, 20), 'claude-haiku-5-5': u(0.1, 50, 5) } }),
+        run('b', 1, NOW - H / 2, { costUsd: 0.2 }),
+        run('c', 1, NOW - H / 4, { costUsd: 0.3, model: 'claude-sonnet-5-5' }),
+        run('old', 1, NOW - 30 * D, { costUsd: 9, modelUsage: { x: u(9) } }),
+      ],
+    },
+    { days: 7, tzOffsetMin: VN },
+    NOW,
+  )
+  assert.deepEqual(
+    s.byModel.map((m) => [m.model, m.runs, +m.costUsd.toFixed(4)]),
+    [
+      ['claude-opus-5-5', 1, 0.4],
+      ['claude-sonnet-5-5', 1, 0.3],
+      [UNKNOWN_MODEL, 1, 0.2],
+      ['claude-haiku-5-5', 1, 0.1],
+    ],
+  )
+  assert.equal(s.byModel[0].inputTokens, 115)
+  assert.equal(s.byModel[0].outputTokens, 20)
+  const sum = s.byModel.reduce((a, m) => a + m.costUsd, 0)
+  assert.ok(Math.abs(sum - s.totals.costUsd) < 0.01)
 })

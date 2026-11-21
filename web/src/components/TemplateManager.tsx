@@ -4,6 +4,7 @@ import { Pencil, Plus, Trash2 } from 'lucide-react'
 import { deleteTemplate, saveTemplate, useStore } from '../store/store'
 import type { AgentId, PlanMode, PromptTemplate } from '../types'
 import { PLAN_MODES, planModeOf } from '../lib/planMode'
+import { MODEL_OPTIONS, modelLabel } from '../lib/model'
 import { AgentBadge, AgentSelect } from './AgentSelect'
 import { Button, ConfirmDialog, Field, Modal, inputCls } from './ui'
 import { tr } from '../lib/i18n'
@@ -17,6 +18,7 @@ function TemplateFormModal({ open, onClose, editing }: { open: boolean; onClose:
   const [projectId, setProjectId] = useState('')
   const [agent, setAgent] = useState<AgentId | ''>('')
   const [planMode, setPlanMode] = useState<PlanMode | ''>('')
+  const [model, setModel] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
 
@@ -30,6 +32,7 @@ function TemplateFormModal({ open, onClose, editing }: { open: boolean; onClose:
     setProjectId(editing?.projectId ?? '')
     setAgent(editing?.agent ?? '')
     setPlanMode(editing?.planMode ?? '')
+    setModel(editing?.model ?? '')
   }, [open, editing])
 
   async function submit() {
@@ -43,6 +46,7 @@ function TemplateFormModal({ open, onClose, editing }: { open: boolean; onClose:
       projectId: projectId || undefined,
       agent: agent || undefined,
       planMode: planMode || undefined,
+      model: model || undefined,
     })
     setSaving(false)
     if (err) setError(err)
@@ -101,6 +105,17 @@ function TemplateFormModal({ open, onClose, editing }: { open: boolean; onClose:
               ))}
             </select>
           </Field>
+          <Field label="Model" hint={tr('Điền sẵn model cho task khi dùng template')}>
+            <select className={inputCls} value={model} onChange={(e) => setModel(e.target.value)}>
+              <option value="">{tr('Theo project / hệ thống')}</option>
+              {MODEL_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+              {model && !MODEL_OPTIONS.some((o) => o.value === model) && <option value={model}>{model}</option>}
+            </select>
+          </Field>
         </div>
         <Field label={tr('Nội dung prompt')}>
           <textarea
@@ -140,6 +155,9 @@ export function TemplateManager() {
                     <span className="rounded bg-indigo-50 px-1.5 py-0.5 text-xs text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300">
                       {tr(planModeOf(t.planMode).label)}
                     </span>
+                  )}
+                  {t.model && (
+                    <span className="rounded bg-sky-50 px-1.5 py-0.5 text-xs text-sky-700 dark:bg-sky-950/50 dark:text-sky-300">{modelLabel(t.model)}</span>
                   )}
                   {t.tags.map((tag) => (
                     <span key={tag} className="rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-600 dark:bg-slate-800 dark:text-slate-300">

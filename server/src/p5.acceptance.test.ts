@@ -8,8 +8,7 @@
 //   (2) Request changes lần 1 → run resume giữ model + phiên cũ, kể cả khi mặc định project đã đổi (D3)
 //   (3) Run lỗi → Retry nâng một bậc (D6 trường hợp A)
 //   (4) Request changes lần 2 → nâng một bậc (D6 trường hợp B)
-// (3)(4) đánh dấu `todo`: P5-06 mới có hàm thuần escalation.ts, runner chưa gọi decideEscalation
-// (xem PLAN "Kết quả kiểm thử P5" > Vấn đề còn lại). Khi nối xong, bỏ `todo` để test thành bắt buộc.
+// (3)(4): P5-06 tự nâng model khi Retry / Request changes lần 2 (runner gọi applyEscalation).
 import { test, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
@@ -176,7 +175,6 @@ test('(2) Request changes lần 1 → resume giữ model và phiên cũ, kể c�
 
 test(
   '(3) Run lỗi → Retry nâng một bậc haiku → sonnet (D6 A)',
-  { todo: 'P5-06: runner.startRun chưa gọi decideEscalation; chưa có runs.fail_kind' },
   async () => {
     const id = ids.typo
     assert.equal(lastRun(id).requestedModel, 'haiku')
@@ -193,7 +191,6 @@ test(
 
 test(
   '(4) Request changes lần 2 → nâng một bậc sonnet → opus, vẫn resume khi ngữ cảnh < 80k (D6 B)',
-  { todo: 'P5-06: runner.startRun chưa gọi decideEscalation' },
   async () => {
     const id = ids.feature
     const before = lastRun(id)
@@ -208,3 +205,17 @@ test(
     assert.match(r.modelReason!, /yêu cầu sửa lần 2/)
   },
 )
+
+test('P5-05: task chọn riêng "Tự động" vẫn được gợi ý dù project đặt model cụ thể', async () => {
+  projects.upsert({ ...projects.get('p5')!, defaultModel: 'opus' })
+  try {
+    const body = { title: 'Sửa typo trong README', prompt: 'Sửa lỗi chính tả trong README.md', tags: [], projectId: 'p5' }
+    const inherit = await api<{ effective: { value: string; level: string }; suggestion?: { model: string } }>('POST', '/api/model-suggest', body)
+    assert.deepEqual(inherit.effective, { value: 'opus', level: 'project' })
+    assert.equal(inherit.suggestion, undefined)
+    const auto = await api<{ suggestion?: { model: string } }>('POST', '/api/model-suggest', { ...body, model: 'auto' })
+    assert.equal(auto.suggestion?.model, 'haiku')
+  } finally {
+    projects.upsert({ ...projects.get('p5')!, defaultModel: undefined })
+  }
+})

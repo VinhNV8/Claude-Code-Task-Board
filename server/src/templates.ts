@@ -2,6 +2,7 @@
 import type { PromptTemplate } from './types.ts'
 import { parseAgent } from '../../web/src/lib/agent.ts'
 import { isPlanMode, normalizePlanMode } from '../../web/src/lib/planMode.ts'
+import { normalizeModel } from './model.ts'
 
 export const DEFAULT_TEMPLATES: PromptTemplate[] = [
   {
@@ -113,6 +114,7 @@ export interface TemplateInput {
   projectId?: unknown
   agent?: unknown
   planMode?: unknown
+  model?: unknown
 }
 
 const str = (v: unknown) => (typeof v === 'string' ? v : '')
@@ -137,6 +139,13 @@ export function validateTemplate(b: TemplateInput, projectExists: (id: string) =
   const plan = normalizePlanMode(b.planMode)
   if (plan !== undefined && !isPlanMode(plan)) throw new TemplateError('Cách làm không hợp lệ')
   const planMode = plan === 'first' || plan === 'only' ? plan : undefined
+  // P5-05: model gợi ý ('' / không gửi = theo project/hệ thống)
+  let model: string
+  try {
+    model = normalizeModel(b.model)
+  } catch (e) {
+    throw new TemplateError((e as Error).message)
+  }
   return {
     id: str(b.id).trim() || newId(),
     name,
@@ -146,5 +155,6 @@ export function validateTemplate(b: TemplateInput, projectExists: (id: string) =
     projectId,
     ...(agent ? { agent } : {}),
     ...(planMode ? { planMode } : {}),
+    ...(model ? { model } : {}),
   }
 }

@@ -256,6 +256,9 @@ export interface Run {
   failKind?: RunFailKind
   /** FR-105: giai đoạn của lượt chạy (task có lập kế hoạch). */
   phase?: PlanPhase
+  /** Số cộng dồn cả phiên CLI báo (resume cộng dồn); `costUsd`/`modelUsage` là của riêng run này. */
+  sessionCostUsd?: number
+  sessionModelUsage?: Record<string, ModelUsage>
 }
 
 /** Run lỗi do Claude / bị người dùng dừng / gặp giới hạn sử dụng / lỗi hạ tầng (không phải lỗi của model). */
@@ -392,6 +395,8 @@ export interface PromptTemplate {
   agent?: AgentId
   /** Cách làm gợi ý khi dùng template (SPEC-PLAN-HANDOFF P9-08). Không có: theo project */
   planMode?: PlanMode
+  /** Model gợi ý khi dùng template (P5-05): auto, haiku, sonnet, opus hoặc ID. Không có: theo project/hệ thống */
+  model?: string
 }
 
 /** Lịch tạo task tự động theo cron (PLAN 4.6). Đến giờ, backend tạo task mới ở Queued từ mẫu này. */
@@ -487,6 +492,19 @@ export interface Stats {
   projects: StatsProject[]
   /** P5-07 (FR-76): hiệu quả theo loại task (tag) × model của run đầu tiên. */
   byTagModel: StatsTagModel[]
+  /** P5-02 (FR-83): chi phí và token theo model (từ `modelUsage` của run), chi phí giảm dần. */
+  byModel: StatsModel[]
+}
+
+export interface StatsModel {
+  /** ID model ("unknown" khi run không báo model) */
+  model: string
+  /** Số run có dùng model này */
+  runs: number
+  costUsd: number
+  /** Input gồm cả token đọc/ghi cache */
+  inputTokens: number
+  outputTokens: number
 }
 
 /** Một dòng bảng tag × model: mẫu là task đã approve/reject hoặc Failed có kết quả trong khoảng thời gian. */

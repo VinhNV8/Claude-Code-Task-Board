@@ -547,6 +547,23 @@ export interface DepSuggestion {
 }
 
 /** FR-08 nguồn ③: task được nhắc tới (#id / mã) trong tiêu đề + prompt, chưa Done, chưa nằm trong danh sách chờ. */
+
+/** P5-05: gợi ý model khi gõ (POST /api/model-suggest). `suggestion` chỉ có khi model hiệu lực là Tự động. */
+export interface ModelSuggestInput {
+  title: string
+  prompt: string
+  tags: string[]
+  permissionMode: PermissionMode
+  projectId?: string
+  /** Model đang chọn ở form ('' = kế thừa) */
+  model?: string
+}
+export interface ModelSuggestResult {
+  effective: { value?: string; level: 'task' | 'project' | 'settings' | 'none' }
+  suggestion?: { model: 'haiku' | 'sonnet' | 'opus'; score: number; reasons: string[] }
+}
+export const fetchModelSuggest = (input: ModelSuggestInput) => api<ModelSuggestResult>('POST', '/model-suggest', input)
+
 export const fetchDepSuggestions = (input: { projectId: string; title: string; prompt: string; taskId?: number; dependsOn: number[] }) =>
   api<DepSuggestion[]>('POST', '/tasks/dep-suggest', input)
 

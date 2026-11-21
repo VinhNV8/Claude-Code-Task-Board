@@ -8,6 +8,7 @@ import { STOP_REASON, canResume } from '../lib/resume'
 import { queueTask, resumeTask, retryTask, useStore } from '../store/store'
 import { unmetDeps } from '../lib/deps'
 import { useNow } from './ui'
+import { ModelBadge, latestRun } from './ModelInfo'
 import { LOCALE, tr } from '../lib/i18n'
 
 export function TaskCard({
@@ -43,7 +44,9 @@ export function TaskCard({
   const resumable = failed && canResume(task, now)
   const paused = failed && task.failReason === STOP_REASON
   // FR-08 (R4): task trong Backlog/Queued còn chờ task chưa Done. Task được chờ đang lỗi thì nhãn đỏ.
-  const all = useStore().tasks
+  const { tasks: all, runs } = useStore()
+  // P5-02: model của run mới nhất (cập nhật realtime khi nhận event init qua WS)
+  const lastRun = latestRun(runs, task.id)
   const statusOf = (id: number) => all.find((t) => t.id === id)?.status
   const waitingOn = task.status === 'backlog' || task.status === 'queued' ? unmetDeps(task, statusOf) : []
   const depFailed = waitingOn.some((id) => statusOf(id) === 'failed')
@@ -87,6 +90,7 @@ export function TaskCard({
           </span>
         )}
         <span className="truncate">{project?.name}</span>
+        <ModelBadge run={lastRun} />
         {task.priority !== 'normal' && <span className={`ml-auto shrink-0 font-medium ${pr.cls}`}>{pr.label}</span>}
       </div>
       <p className="line-clamp-2 text-sm font-medium text-slate-800 dark:text-slate-100">{task.title}</p>

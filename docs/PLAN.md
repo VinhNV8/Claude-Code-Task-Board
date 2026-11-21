@@ -16,9 +16,12 @@
 | P1 | ✅ Hoàn thành, **đã qua điểm duyệt #1** (2026-11-18) | Xem “Kết quả kiểm thử P1” bên dưới |
 | P2 | ✅ Hoàn thành, **đã qua điểm duyệt #2** (2026-11-18) | Worktree, diff, Approve/Request changes/Reject, Retry có unit test (`git`, `capture`, `diff`, `review`, `retry`) |
 | P3 | ✅ Hoàn thành, **đã qua điểm duyệt #3** (2026-11-18) | Xem “Kết quả kiểm thử P3” bên dưới. Phần cần Claude thật: chạy tay theo hướng dẫn |
-| P5 | 🟡 Đang làm, **P5-08 bị chặn** | P5-01, 03, 04, 07 đạt. P5-02, 05 chưa làm; P5-06 mới có hàm thuần, runner chưa gọi. Xem “Kết quả kiểm thử P5” |
-| P6 | ⏳ Đã lập kế hoạch, task ở Backlog | Budget theo project (P6-01..02) |
-| P7 | ⏳ Đã lập kế hoạch, task ở Backlog | Cải tiến duyệt quyền (P7-01..05) |
+| P4 | ✅ Hoàn thành | Template, tag/lọc, chạy test ở Review, Stats, Telegram, lịch cron, truy cập từ xa (token, Tailscale) |
+| P5 | ✅ Hoàn thành (2026-11-21) | P5-01..07 đạt; sửa lỗi chi phí cộng dồn khi resume. Xem “Kết quả kiểm thử P5” |
+| P6 | ✅ Hoàn thành | Budget tháng theo project, cảnh báo 80%/100%, tạm dừng hàng đợi (`budget.ts`, `budgetService.ts`) |
+| P7 | ✅ Hoàn thành | Preset allowlist, gợi ý rule, duyệt qua Telegram, phân loại rủi ro, từ chối kèm lý do và duyệt hàng loạt |
+| P9 | ✅ Bản 1 (2026-11-20) | Duyệt kế hoạch, Mở trong Claude Code. Còn Spike S3 (P9-09). Xem [SPEC-PLAN-HANDOFF.md](SPEC-PLAN-HANDOFF.md) |
+| P10 | ✅ F1, F2 (2026-11-21) | Đính kèm tài liệu/ảnh, nhân bản task. Xem [FEATURE-PROPOSAL-2026-11.md](FEATURE-PROPOSAL-2026-11.md) |
 | C-02 | ✅ Hoàn thành (làm trực tiếp), chờ deploy UAT | Phụ thuộc giữa task, SPEC FR-08 bản 1. Xem mục C-02 |
 
 ### Kết quả kiểm thử P1 (qua API, Claude chạy thật)
@@ -86,7 +89,9 @@
 
 ### Kết quả kiểm thử P5 (2026-11-12, P5-08)
 
-**Kết luận: P5 chưa đủ điều kiện nghiệm thu.** P5-08 phụ thuộc P5-01..07, nhưng khi kiểm tra code thì P5-02, P5-05, P5-07 chưa làm và P5-06 mới có phần hàm thuần. Task P5-08 không sửa logic, nên chỉ kiểm thử phần đã có và ghi lại phần còn thiếu (xem “Vấn đề còn lại”).
+**Cập nhật 2026-11-21: P5 đạt.** P5-02, P5-05 đã làm; P5-06 đã nối vào runner (test (3)(4) bỏ `todo`, đều đạt); lỗi chi phí cộng dồn (vấn đề 5) đã sửa. Phần dưới giữ nguyên kết quả ngày 2026-11-12 để đối chiếu.
+
+~~**Kết luận: P5 chưa đủ điều kiện nghiệm thu.**~~ P5-08 phụ thuộc P5-01..07, nhưng khi kiểm tra code thì P5-02, P5-05, P5-07 chưa làm và P5-06 mới có phần hàm thuần. Task P5-08 không sửa logic, nên chỉ kiểm thử phần đã có và ghi lại phần còn thiếu (xem “Vấn đề còn lại”).
 
 **Tự động** (`server/src/p5.acceptance.test.ts`, chạy trong `npm test -w server`). Dùng routes + runner thật, DB trong bộ nhớ, repo git tạm có dấu cách. “Claude giả” là `node.exe` đặt qua `CLAUDE_BIN`: nhận đúng mảng tham số runner sinh ra rồi thoát mã 9, nên mỗi run là một run lỗi thật đi qua `finish()`.
 
@@ -119,11 +124,11 @@ Khi P5-06 được nối vào runner, bỏ `todo` ở test (3)(4) để chúng t
 **Chưa kiểm tay trên giao diện:** badge model, lý do và bảng `modelUsage` trên web chưa có (P5-02, P5-05), nên chưa kiểm được. Cũng chưa chạy 3 task mẫu bằng Claude thật qua app. Phần chọn model đã được test tự động ở trên, và CLI nhận `--model haiku` đúng như fixture cho thấy.
 
 **Vấn đề còn lại**
-1. **P5-06 chưa nối vào runner.** `escalation.ts` (`decideEscalation`, `escalationPrompt`, `manualEscalationHint`) có test, nhưng `runner.startRun` không gọi. Ngoài ra chưa có cột `runs.fail_kind`, chưa có setting `autoEscalate` và công tắc trong Settings.tsx. Hậu quả: Retry/Request changes không bao giờ nâng model.
+1. ~~**P5-06 chưa nối vào runner.**~~ → đã nối: runner gọi `applyEscalation`, có `runs.fail_kind`, setting `autoEscalate`. `escalation.ts` (`decideEscalation`, `escalationPrompt`, `manualEscalationHint`) có test, nhưng `runner.startRun` không gọi. Ngoài ra chưa có cột `runs.fail_kind`, chưa có setting `autoEscalate` và công tắc trong Settings.tsx. Hậu quả: Retry/Request changes không bao giờ nâng model.
 2. ~~**P5-07 chưa làm**~~ → đã làm (2026-11-12): `modelHistory.ts` (`computeModelStats`, `adjustSuggestion`, test ở `modelHistory.test.ts`), runner và `/api/model-suggest` áp Lớp 2 khi `auto` (cache 5 phút ở `modelHistoryService.ts`, xoá khi có review mới), `/api/stats` có `byTagModel`, Stats.tsx có bảng "Hiệu quả theo loại task × model".
-3. **P5-02 chưa làm phần web:** TaskCard không có badge model; TaskDetail không có dòng Model và bảng `modelUsage`; `computeStats` không có `byModel`. Mới có `modelLabel`/`modelTier` trong `web/src/lib/format.ts`.
-4. **P5-05 chưa làm:** TaskFormModal vẫn là select của P5-03 và không gọi `/api/model-suggest`. Template chưa có `model`. TaskCard chưa có biểu tượng nguồn. `mock.ts` chưa mock gợi ý.
-5. **Lỗi mới (không nhỏ, chưa sửa): chi phí của run resume/continue bị cộng dồn.** Với `--resume`, CLI trả `total_cost_usd` và `modelUsage` **cộng dồn cả phiên**, không phải của riêng lần chạy. Đo được: phiên đầu $0,00330, sau đó resume Haiku báo `total_cost_usd` = $0,00639, trong khi chi phí thật của lần resume là $0,00049. Resume đổi sang Sonnet thì `modelUsage` vẫn chứa dòng Haiku của lần trước. Runner lưu thẳng các giá trị này vào `runs.cost_usd` / `runs.model_usage`, nên Stats (và `byModel` của P5-02, budget của P6) sẽ **tính trùng** chi phí của mọi task có Request changes / Tiếp tục. Cách sửa gợi ý: với run resume/continue trên cùng session, trừ giá trị cộng dồn của run trước cùng `session_id`, theo từng model. Cần quyết định trước khi làm P5-02 Stats và P6.
+3. ~~**P5-02 chưa làm phần web:**~~ → đã làm (2026-11-21): badge model ở TaskCard (màu theo họ model, 🤖/✋/⬆, tooltip lý do), dòng Model + bảng `modelUsage` ở tab Lịch sử (`ModelInfo.tsx`), `byModel` trong `computeStats` và bảng "Chi phí theo model" ở Stats. Trước đó: TaskCard không có badge model; TaskDetail không có dòng Model và bảng `modelUsage`; `computeStats` không có `byModel`. Mới có `modelLabel`/`modelTier` trong `web/src/lib/format.ts`.
+4. ~~**P5-05 chưa làm:**~~ → đã làm (2026-11-21): form task gọi `/api/model-suggest` (debounce 300ms) và hiện "🤖 Tự động · Sonnet ⓘ" kèm lý do; chọn riêng "Tự động" vẫn được gợi ý dù project đặt model khác; template có `model`; mock có gợi ý. Trước đó: TaskFormModal vẫn là select của P5-03 và không gọi `/api/model-suggest`. Template chưa có `model`. TaskCard chưa có biểu tượng nguồn. `mock.ts` chưa mock gợi ý.
+5. ~~**Lỗi mới (không nhỏ, chưa sửa): chi phí của run resume/continue bị cộng dồn.**~~ → đã sửa (2026-11-21, `runCost.ts`): run lưu số cộng dồn CLI báo vào `session_cost_usd`/`session_model_usage`, còn `cost_usd`/`model_usage` là số của riêng run = cộng dồn − cộng dồn của run trước gần nhất cùng phiên (theo từng model, không âm). Chỉ áp dụng cho agent báo USD (Claude). Lần đầu thêm cột, DB cũ được chuyển đổi theo cùng cách. Trước đó: Với `--resume`, CLI trả `total_cost_usd` và `modelUsage` **cộng dồn cả phiên**, không phải của riêng lần chạy. Đo được: phiên đầu $0,00330, sau đó resume Haiku báo `total_cost_usd` = $0,00639, trong khi chi phí thật của lần resume là $0,00049. Resume đổi sang Sonnet thì `modelUsage` vẫn chứa dòng Haiku của lần trước. Runner lưu thẳng các giá trị này vào `runs.cost_usd` / `runs.model_usage`, nên Stats (và `byModel` của P5-02, budget của P6) sẽ **tính trùng** chi phí của mọi task có Request changes / Tiếp tục. Cách sửa gợi ý: với run resume/continue trên cùng session, trừ giá trị cộng dồn của run trước cùng `session_id`, theo từng model. Cần quyết định trước khi làm P5-02 Stats và P6.
 6. D1–D8 không cần đổi.
 
 ---

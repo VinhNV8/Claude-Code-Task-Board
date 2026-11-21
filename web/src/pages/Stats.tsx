@@ -4,7 +4,9 @@ import { ChartColumn, Clock, DollarSign, ListTodo, RefreshCw, Repeat } from 'luc
 import { fetchStats, useStore } from '../store/store'
 import { Button, EmptyState, inputCls } from '../components/ui'
 import { STATUS_META, STATUS_ORDER } from '../lib/format'
-import type { Stats as StatsData, StatsDay, StatsRange, StatsTagModel } from '../types'
+import type { Stats as StatsData, StatsDay, StatsModel, StatsRange, StatsTagModel } from '../types'
+import { TIER_CLS } from '../components/ModelInfo'
+import { modelLabel, modelTier } from '../lib/format'
 import { LANG, LOCALE, tr } from '../lib/i18n'
 
 const RANGES: StatsRange[] = [7, 30, 90]
@@ -139,8 +141,53 @@ function StatsBody({ data }: { data: StatsData }) {
         <ProjectTable data={data} />
       </div>
 
+      <ModelCostTable rows={data.byModel ?? []} total={t.costUsd} />
       <TagModelTable rows={data.byTagModel ?? []} />
     </>
+  )
+}
+
+/** P5-02 (FR-83): chi phí và token theo model, cộng từ `modelUsage` của các lần chạy. */
+function ModelCostTable({ rows, total }: { rows: StatsModel[]; total: number }) {
+  return (
+    <section className={`${card} overflow-x-auto`}>
+      <h2 className="mb-1 font-semibold">{tr('Chi phí theo model')}</h2>
+      <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">
+        {tr('Lần chạy trong khoảng thời gian. Input gồm cả token đọc/ghi cache. Chi phí ước tính theo giá niêm yết.')}
+      </p>
+      {rows.length === 0 ? (
+        <p className="py-6 text-center text-sm text-slate-400">{tr('Chưa có hoạt động trong khoảng thời gian này')}</p>
+      ) : (
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-slate-200 text-left text-xs text-slate-500 dark:border-slate-800 dark:text-slate-400">
+              <th className="pb-2 font-medium">Model</th>
+              <th className="pb-2 text-right font-medium">{tr('Lần chạy')}</th>
+              <th className="pb-2 text-right font-medium">Input</th>
+              <th className="pb-2 text-right font-medium">Output</th>
+              <th className="pb-2 text-right font-medium">{tr('Chi phí')}</th>
+              <th className="pb-2 text-right font-medium">%</th>
+            </tr>
+          </thead>
+          <tbody className="tabular-nums">
+            {rows.map((r) => (
+              <tr key={r.model} className="border-b border-slate-100 last:border-0 dark:border-slate-800">
+                <td className="py-2">
+                  <span className={`rounded px-1.5 py-0.5 text-xs font-medium ${TIER_CLS[modelTier(r.model)]}`} title={r.model}>
+                    {r.model === 'unknown' ? tr('Không rõ') : modelLabel(r.model)}
+                  </span>
+                </td>
+                <td className="py-2 text-right">{r.runs}</td>
+                <td className="py-2 text-right">{r.inputTokens.toLocaleString(LOCALE)}</td>
+                <td className="py-2 text-right">{r.outputTokens.toLocaleString(LOCALE)}</td>
+                <td className="py-2 text-right font-medium">{money(r.costUsd)}</td>
+                <td className="py-2 text-right text-slate-500">{total > 0 ? `${Math.round((r.costUsd / total) * 100)}%` : '—'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </section>
   )
 }
 

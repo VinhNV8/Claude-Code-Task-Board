@@ -810,7 +810,7 @@ export async function routes(app: FastifyInstance) {
   })
 
   // P5-04: gợi ý model theo quy tắc (Lớp 1). Không gọi Claude, chỉ tính toán nên trả về ngay.
-  app.post<{ Body: { title?: unknown; prompt?: unknown; tags?: unknown; permissionMode?: unknown; projectId?: unknown } }>(
+  app.post<{ Body: { title?: unknown; prompt?: unknown; tags?: unknown; permissionMode?: unknown; projectId?: unknown; model?: unknown } }>(
     '/api/model-suggest',
     async (req) => {
       const b = req.body ?? {}
@@ -832,7 +832,9 @@ export async function routes(app: FastifyInstance) {
       const mode = (b.permissionMode ?? project?.permissionMode ?? 'acceptEdits') as PermissionMode
       if (!MODES.includes(mode)) throw new HttpError(400, `Mức quyền không hợp lệ: ${String(mode)}`)
       // P5-07: có project thì Lớp 2 hiệu chỉnh theo lịch sử của project đó.
-      return modelSuggestFor({ title, prompt, tags, permissionMode: mode }, project ?? {}, settings.get(), (s) =>
+      // Task chọn riêng "Tự động" thì vẫn gợi ý dù project/hệ thống đặt model khác.
+      const base = b.model === 'auto' ? { defaultModel: 'auto' } : (project ?? {})
+      return modelSuggestFor({ title, prompt, tags, permissionMode: mode }, base, settings.get(), (s) =>
         project ? adjustByHistory(s, { projectId: project.id, tags }) : s,
       )
     },

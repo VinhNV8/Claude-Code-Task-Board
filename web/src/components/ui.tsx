@@ -227,7 +227,7 @@ export function EmptyState({ icon, title, body, action }: { icon: ReactNode; tit
 export const inputCls =
   'w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-950'
 
-export function Field({ label, hint, error, children }: { label: string; hint?: string; error?: string; children: ReactNode }) {
+export function Field({ label, hint, error, children }: { label: string; hint?: ReactNode; error?: string; children: ReactNode }) {
   return (
     <label className="block space-y-1">
       <span className="text-sm font-medium text-slate-700 dark:text-slate-200">{label}</span>

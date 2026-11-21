@@ -24,6 +24,7 @@ import type {
   TestStatus,
 } from './types.ts'
 import { DEFAULT_TEMPLATES } from './templates.ts'
+import { migrateCumulative } from './runCost.ts'
 import { DEFAULT_TELEGRAM } from './telegram.ts'
 import { decryptSecret, encryptSecret, loadOrCreateKey } from './secretBox.ts'
 import { defaultAuthMode, effectiveApiKey, publicAuth } from './claudeAuth.ts'
@@ -178,6 +179,25 @@ for (const [col, type] of [
   ['phase', 'TEXT'],
 ] as const)
   if (!runCols.some((c) => c.name === col)) db.exec(`ALTER TABLE runs ADD COLUMN ${col} ${type}`)
+// PLAN P5 vấn đề 5: số cộng dồn của phiên CLI báo; cost_usd/model_usage là của riêng run (runCost.ts).
+// Thêm cột lần đầu thì chuyển dữ liệu cũ (đang lưu số cộng dồn) sang số của riêng từng run.
+if (!runCols.some((c) => c.name === 'session_cost_usd')) {
+  db.exec('ALTER TABLE runs ADD COLUMN session_cost_usd REAL')
+  db.exec('ALTER TABLE runs ADD COLUMN session_model_usage TEXT')
+  const rows = db.prepare('SELECT id, session_id, started_at, cost_usd, model_usage FROM runs WHERE session_id IS NOT NULL').all() as Row[]
+  const fixes = migrateCumulative(
+    rows.map((r) => ({
+      id: r.id as string,
+      sessionId: r.session_id as string,
+      startedAt: r.started_at as number,
+      costUsd: (r.cost_usd as number | null) ?? undefined,
+      modelUsage: parseModelUsage(r.model_usage),
+    })),
+  )
+  const upd = db.prepare('UPDATE runs SET cost_usd = ?, model_usage = ?, session_cost_usd = ?, session_model_usage = ? WHERE id = ?')
+  for (const f of fixes)
+    upd.run(f.cost ?? null, f.usage ? JSON.stringify(f.usage) : null, f.sessionCost ?? null, f.sessionUsage ? JSON.stringify(f.sessionUsage) : null, f.id)
+}
 // P5-03: cấu hình model 3 tầng (D2). NULL/'' = kế thừa tầng dưới.
 if (!taskCols.some((c) => c.name === 'model')) db.exec('ALTER TABLE tasks ADD COLUMN model TEXT')
 if (!projectCols.some((c) => c.name === 'default_model')) db.exec('ALTER TABLE projects ADD COLUMN default_model TEXT')
@@ -193,6 +213,8 @@ const templateCols = db.prepare('PRAGMA table_info(templates)').all() as { name:
 if (!templateCols.some((c) => c.name === 'agent')) db.exec('ALTER TABLE templates ADD COLUMN agent TEXT')
 // P9-08: cách làm gợi ý của template ('first' | 'only'; NULL = theo project).
 if (!templateCols.some((c) => c.name === 'plan_mode')) db.exec('ALTER TABLE templates ADD COLUMN plan_mode TEXT')
+// P5-05: model gợi ý của template (NULL = theo project/hệ thống).
+if (!templateCols.some((c) => c.name === 'model')) db.exec('ALTER TABLE templates ADD COLUMN model TEXT')
 // P6 (B1): budget tháng theo project (NULL = không giới hạn) và hành động khi vượt.
 if (!projectCols.some((c) => c.name === 'monthly_budget_usd')) db.exec('ALTER TABLE projects ADD COLUMN monthly_budget_usd REAL')
 if (!projectCols.some((c) => c.name === 'budget_action'))
@@ -399,6 +421,8 @@ const toRun = (r: Row): Run => ({
   contextTokens: opt(r.context_tokens),
   failKind: opt(r.fail_kind),
   phase: planPhaseOf(r.phase),
+  sessionCostUsd: opt(r.session_cost_usd),
+  sessionModelUsage: parseModelUsage(r.session_model_usage),
 })
 
 function parseModelUsage(v: unknown): Run['modelUsage'] {
@@ -584,11 +608,13 @@ export const runs = {
   },
   finish: (
     id: string,
-    f: Pick<Run, 'endedAt' | 'exitCode'> & Partial<Pick<Run, 'numTurns' | 'costUsd' | 'summary' | 'modelUsage' | 'contextTokens'>>,
+    f: Pick<Run, 'endedAt' | 'exitCode'> &
+      Partial<Pick<Run, 'numTurns' | 'costUsd' | 'summary' | 'modelUsage' | 'contextTokens' | 'sessionCostUsd' | 'sessionModelUsage'>>,
   ) => {
     db.prepare(
       `UPDATE runs SET ended_at = ?, exit_code = ?, num_turns = COALESCE(?, num_turns), cost_usd = COALESCE(?, cost_usd),
-       summary = COALESCE(?, summary), model_usage = COALESCE(?, model_usage), context_tokens = COALESCE(?, context_tokens)
+       summary = COALESCE(?, summary), model_usage = COALESCE(?, model_usage), context_tokens = COALESCE(?, context_tokens),
+       session_cost_usd = COALESCE(?, session_cost_usd), session_model_usage = COALESCE(?, session_model_usage)
        WHERE id = ?`,
     ).run(
       f.endedAt ?? null,
@@ -598,6 +624,8 @@ export const runs = {
       f.summary ?? null,
       usageJson(f.modelUsage),
       f.contextTokens ?? null,
+      f.sessionCostUsd ?? null,
+      usageJson(f.sessionModelUsage),
       id,
     )
     return runs.get(id)!
@@ -691,6 +719,7 @@ const toTemplate = (r: Row): PromptTemplate => ({
   projectId: opt(r.project_id),
   ...(parseAgent(r.agent) ? { agent: parseAgent(r.agent)! } : {}),
   ...(planModeOf(r.plan_mode) ? { planMode: planModeOf(r.plan_mode) } : {}),
+  ...(r.model ? { model: r.model as string } : {}),
 })
 
 export const templates = {
@@ -704,10 +733,10 @@ export const templates = {
   /** Thêm mới hoặc cập nhật (giữ nguyên thứ tự created_at khi cập nhật). */
   upsert: (t: PromptTemplate, createdAt = Date.now()) => {
     db.prepare(
-      `INSERT INTO templates (id, name, title, prompt, tags, project_id, agent, plan_mode, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO templates (id, name, title, prompt, tags, project_id, agent, plan_mode, model, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET name=excluded.name, title=excluded.title, prompt=excluded.prompt,
-         tags=excluded.tags, project_id=excluded.project_id, agent=excluded.agent, plan_mode=excluded.plan_mode`,
-    ).run(t.id, t.name, t.title, t.prompt, JSON.stringify(t.tags), t.projectId ?? null, t.agent ?? null, t.planMode ?? null, createdAt)
+         tags=excluded.tags, project_id=excluded.project_id, agent=excluded.agent, plan_mode=excluded.plan_mode, model=excluded.model`,
+    ).run(t.id, t.name, t.title, t.prompt, JSON.stringify(t.tags), t.projectId ?? null, t.agent ?? null, t.planMode ?? null, t.model ?? null, createdAt)
     return templates.get(t.id)!
   },
   remove: (id: string) => db.prepare('DELETE FROM templates WHERE id = ?').run(id),

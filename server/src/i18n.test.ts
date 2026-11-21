@@ -53,6 +53,7 @@ const TRANSLATED = [
   'lib/brand.ts',
   'components/PlanReview.tsx',
   'components/Handoff.tsx',
+  'components/ModelInfo.tsx',
 ]
 
 test('normalizeLang / resolveLang: lựa chọn đã lưu → URL → trình duyệt', () => {

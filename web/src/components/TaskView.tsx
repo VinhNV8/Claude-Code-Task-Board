@@ -62,6 +62,7 @@ import { PlanReview } from './PlanReview'
 import { HandoffBanner, HandoffButton } from './Handoff'
 import type { HandoffStart } from '../store/store'
 import { AgentBadge } from './AgentSelect'
+import { ModelLine, ModelUsageTable } from './ModelInfo'
 import { AGENT_NAMES, effectiveAgent, resolveAgent, runAgent } from '../lib/agent'
 import { canDeleteTask } from '../lib/taskDelete'
 import type { ReviewComment, Run, Task } from '../types'
@@ -732,6 +733,8 @@ export function TaskView({
                         : ''}
                     </span>
                   </div>
+                  <ModelLine run={r} />
+                  <ModelUsageTable usage={r.modelUsage} />
                   {r.feedback && (
                     <p className="mt-2 rounded-md bg-violet-50 p-2 text-sm text-violet-900 dark:bg-violet-950/40 dark:text-violet-200">
                       <MessageSquareReply size={13} className="mr-1 inline" />

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Link2, Play, Plus, Save, X } from 'lucide-react'
-import { createTask, fetchDepSuggestions, updateTask, useStore, type DepSuggestion } from '../store/store'
+import { createTask, fetchDepSuggestions, fetchModelSuggest, updateTask, useStore, type DepSuggestion, type ModelSuggestResult } from '../store/store'
 import { collectTags, normalizeTags } from '../lib/taskFilter'
 import { MODEL_OPTIONS, inheritedModelHint, modelLabel } from '../lib/model'
 import type { AgentId, PermissionMode, PlanMode, Priority, PromptTemplate, Task } from '../types'
@@ -45,6 +45,8 @@ export function TaskFormModal({
   const [deps, setDeps] = useState<number[]>([])
   const [depHints, setDepHints] = useState<DepSuggestion[]>([])
   const [touched, setTouched] = useState(false)
+  /** P5-05: model hệ thống sẽ chọn khi model hiệu lực là Tự động */
+  const [suggest, setSuggest] = useState<ModelSuggestResult | null>(null)
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
@@ -101,6 +103,27 @@ export function TaskFormModal({
 
   // Gợi ý: tag của task đã có + tag trong template, dùng nhiều lên trước
   const inheritedAgent = resolveAgent(undefined, projects.find((p) => p.id === projectId), settings)
+  const effectiveAgent = agent || inheritedAgent
+
+  // P5-05: gợi ý model ngay khi gõ (debounce 300ms, bỏ kết quả cũ khi gõ tiếp). Chọn tay model cụ thể
+  // hoặc agent khác Claude (dùng model mặc định của agent) thì không cần gợi ý. Lỗi mạng: không chặn tạo task.
+  const tagKey = tags.join('|')
+  useEffect(() => {
+    if (!open || (model && model !== 'auto') || effectiveAgent !== 'claude') {
+      setSuggest(null)
+      return
+    }
+    const ctl = { cancelled: false }
+    const timer = setTimeout(() => {
+      fetchModelSuggest({ title, prompt, tags: tagKey ? tagKey.split('|') : [], permissionMode: mode, projectId: projectId || undefined, model })
+        .then((r) => !ctl.cancelled && setSuggest(r))
+        .catch(() => !ctl.cancelled && setSuggest(null))
+    }, 300)
+    return () => {
+      ctl.cancelled = true
+      clearTimeout(timer)
+    }
+  }, [open, title, prompt, tagKey, mode, projectId, model, effectiveAgent])
   const tagSuggestions = useMemo(() => collectTags([...tasks.map((t) => t.tags), ...templates.map((t) => t.tags)]), [tasks, templates])
 
   const errors = {
@@ -123,6 +146,8 @@ export function TaskFormModal({
     if (t.agent && !agent) setAgent(t.agent)
     // P9-08: template phân tích / lập kế hoạch gợi ý cách làm (ví dụ "Chỉ kế hoạch")
     if (t.planMode) setPlanMode(t.planMode)
+    // P5-05: template gợi ý model (ví dụ "Sửa typo" → Haiku)
+    if (t.model) setModel(t.model)
   }
 
   async function submit(run: boolean) {
@@ -293,7 +318,18 @@ export function TaskFormModal({
           <TagInput label="Tag" value={tags} onChange={setTags} suggestions={tagSuggestions} />
           <Field
             label="Model"
-            hint={model ? tr('Chọn riêng: {model}', { model: modelLabel(model) }) : inheritedModelHint(projects.find((p) => p.id === projectId), settings)}
+            hint={
+              suggest?.suggestion ? (
+                <span title={suggest.suggestion.reasons.join('\n')}>
+                  {tr('🤖 Tự động · {model}', { model: modelLabel(suggest.suggestion.model) })}
+                  {suggest.suggestion.reasons.length > 0 && <span className="ml-1 cursor-help text-indigo-500">ⓘ</span>}
+                </span>
+              ) : model ? (
+                tr('Chọn riêng: {model}', { model: modelLabel(model) })
+              ) : (
+                inheritedModelHint(projects.find((p) => p.id === projectId), settings)
+              )
+            }
           >
             <select className={inputCls} value={model} onChange={(e) => setModel(e.target.value)}>
               <option value="">{tr('Theo mặc định')}</option>

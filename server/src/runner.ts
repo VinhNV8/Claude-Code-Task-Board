@@ -24,6 +24,7 @@ import { adjustByHistory } from './modelHistoryService.ts'
 import { budgetWakeAt, isProjectBlocked, refreshBudgets } from './budgetService.ts'
 import { decideBlocked, pendingDeps } from './taskDeps.ts'
 import { prepareRetry } from './retry.ts'
+import { perRunUsage, sessionBaseline } from './runCost.ts'
 import { withLock } from './review.ts'
 import { agentProblem, chooseFallback, getAdapter, type AgentAdapter } from './agents/index.ts'
 import { agentLimitedUntil } from './agents/limits.ts'
@@ -495,14 +496,23 @@ function finish(
 ) {
   const { exitCode, result, stderr, error, rateLimitEvent, resumed } = o
   revokeKeyToken(taskId) // run đã kết thúc: token lấy API key hết hiệu lực
+  // Resume: CLI báo chi phí cộng dồn cả phiên → trừ mốc của run trước cùng phiên để có chi phí của riêng run này.
+  const reported = { costUsd: result?.costUsd, modelUsage: result?.modelUsage }
+  const self = runs.get(runId)
+  const own =
+    resumed && adapter.capabilities.costUsd && self
+      ? perRunUsage(reported, sessionBaseline(runId, self.sessionId, runs.byTask(taskId)))
+      : reported
   const run = runs.finish(runId, {
     endedAt: Date.now(),
     exitCode,
     numTurns: result?.numTurns,
-    costUsd: result?.costUsd,
+    costUsd: own.costUsd,
     summary: result?.text ?? error,
-    modelUsage: result?.modelUsage,
+    modelUsage: own.modelUsage,
     contextTokens: result?.contextTokens,
+    sessionCostUsd: reported.costUsd,
+    sessionModelUsage: reported.modelUsage,
   })
   broadcast({ type: 'run', run })
   // P6: chi phí run vừa cộng vào budget tháng → tính lại, cảnh báo (B2), chặn hàng đợi nếu cần (B3, pump() bên dưới).

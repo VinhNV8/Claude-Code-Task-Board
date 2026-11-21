@@ -19,55 +19,57 @@ npm run seed:backlog                # tạo task ở cột Backlog
 
 ## Danh sách
 
+Trạng thái ✅ đối chiếu với code ngày 2026-11-21 (các task P2–P7 đã làm nhưng trước đó chưa đánh dấu).
+
 | Mã | Task | Ưu tiên | Phụ thuộc | PLAN |
 |---|---|---|---|---|
 | **P2: Review flow** | | | | |
-| P2-01 | Module `git.ts`: worktree và nhánh task | high | — | 2.1 |
-| P2-02 | Runner chạy trong worktree, commit, chuyển sang Review | high | P2-01 | 2.1, 2.2 |
-| P2-03 | API Diff | high | P2-02 | 2.3 |
-| P2-04 | Bảng reviews + Approve & Merge | high | P2-03 | 2.4, 2.8 |
-| P2-05 | Request changes (resume) + Reject | high | P2-04 | 2.5, 2.6 |
-| P2-06 | Retry trên worktree sạch | normal | P2-05 | 2.7 |
-| P2-07 | Web: Diff, thanh Review, Lịch sử, badge | high | P2-03..05 | 2.9–2.12 |
-| P2-08 | Kiểm thử AC-02/03/04, cập nhật PLAN | normal | P2-06, P2-07 | Kiểm thử P2 |
+| P2-01 | ✅ Module `git.ts`: worktree và nhánh task | high | — | 2.1 |
+| P2-02 | ✅ Runner chạy trong worktree, commit, chuyển sang Review | high | P2-01 | 2.1, 2.2 |
+| P2-03 | ✅ API Diff | high | P2-02 | 2.3 |
+| P2-04 | ✅ Bảng reviews + Approve & Merge | high | P2-03 | 2.4, 2.8 |
+| P2-05 | ✅ Request changes (resume) + Reject | high | P2-04 | 2.5, 2.6 |
+| P2-06 | ✅ Retry trên worktree sạch | normal | P2-05 | 2.7 |
+| P2-07 | ✅ Web: Diff, thanh Review, Lịch sử, badge | high | P2-03..05 | 2.9–2.12 |
+| P2-08 | ✅ Kiểm thử AC-02/03/04, cập nhật PLAN | normal | P2-06, P2-07 | Kiểm thử P2 |
 | **P3: Needs Input và thông báo** | | | | |
-| P3-01 | MCP permission server (stdio) | normal | P2-08 | 3.1 |
-| P3-02 | Bảng `permission_requests` + API duyệt | normal | P3-01 | 3.3 |
-| P3-03 | Runner: `--mcp-config`, `--permission-prompt-tool` | normal | P3-02 | 3.2 |
-| P3-04 | Whitelist tự cho phép + "Luôn cho phép" | normal | P3-02 | 3.4 |
-| P3-05 | Timeout tự Deny | normal | P3-02 | 3.5 |
-| P3-06 | Hook Notification | low | P3-03 | 3.6 |
-| P3-07 | Web: Needs Input, Settings, Web Notification | normal | P3-02, 04, 05 | 3.7–3.9 |
-| P3-08 | Kiểm thử P3, cập nhật PLAN | normal | P3-03, 06, 07 | Kiểm thử P3 |
+| P3-01 | ✅ MCP permission server (stdio) | normal | P2-08 | 3.1 |
+| P3-02 | ✅ Bảng `permission_requests` + API duyệt | normal | P3-01 | 3.3 |
+| P3-03 | ✅ Runner: `--mcp-config`, `--permission-prompt-tool` | normal | P3-02 | 3.2 |
+| P3-04 | ✅ Whitelist tự cho phép + "Luôn cho phép" | normal | P3-02 | 3.4 |
+| P3-05 | ✅ Timeout tự Deny | normal | P3-02 | 3.5 |
+| P3-06 | ✅ Hook Notification | low | P3-03 | 3.6 |
+| P3-07 | ✅ Web: Needs Input, Settings, Web Notification | normal | P3-02, 04, 05 | 3.7–3.9 |
+| P3-08 | ✅ Kiểm thử P3, cập nhật PLAN | normal | P3-03, 06, 07 | Kiểm thử P3 |
 | **Chung** | | | | |
-| C-01 | Rate limit: tự đưa task lại hàng đợi | normal | — | Rủi ro chung |
-| C-02 | Phụ thuộc giữa task (FR-08 bản 1). ✅ Đã làm trực tiếp, không nạp lên board | high | — | C-02 |
+| C-01 | ✅ Rate limit: tự đưa task lại hàng đợi | normal | — | Rủi ro chung |
+| C-02 | ✅ Phụ thuộc giữa task (FR-08 bản 1). Đã làm trực tiếp, không nạp lên board | high | — | C-02 |
 | **P4: Tùy chọn** | | | | |
-| P4-01 | Template prompt | low | P3-08 | 4.1 |
-| P4-02 | Tag, tìm kiếm, lọc nâng cao | low | P3-08 | 4.2 |
-| P4-03 | Chạy test trên trang Review | low | P3-08 | 4.3 |
-| P4-04 | Trang thống kê | low | P3-08 | 4.4 |
-| P4-05 | Thông báo Telegram | low | P3-08 | 4.5 |
-| P4-06 | Lên lịch task (cron) | low | P3-08 | 4.6 |
-| P4-07 | Truy cập từ xa (Tailscale + token) | low | P3-08 | 4.7 |
+| P4-01 | ✅ Template prompt | low | P3-08 | 4.1 |
+| P4-02 | ✅ Tag, tìm kiếm, lọc nâng cao | low | P3-08 | 4.2 |
+| P4-03 | ✅ Chạy test trên trang Review | low | P3-08 | 4.3 |
+| P4-04 | ✅ Trang thống kê | low | P3-08 | 4.4 |
+| P4-05 | ✅ Thông báo Telegram | low | P3-08 | 4.5 |
+| P4-06 | ✅ Lên lịch task (cron) | low | P3-08 | 4.6 |
+| P4-07 | ✅ Truy cập từ xa (Tailscale + token) | low | P3-08 | 4.7 |
 | **P5: Chọn model tự động** | | | | |
-| P5-01 | Lưu model thực tế + `model_usage` của run | high | — | P5 D8 |
-| P5-02 | Web: hiển thị model (TaskCard, TaskDetail, Stats) | normal | P5-01 | P5 |
-| P5-03 | Cấu hình model 3 tầng + `--model` | high | P5-01 | P5 D1–D3 |
-| P5-04 | `modelPicker.ts` Lớp 1 + `auto` + `/api/model-suggest` | high | P5-03 | P5 D3–D4 |
-| P5-05 | Web: chế độ Tự động, gợi ý khi gõ, model trong template | normal | P5-02, P5-04 | P5 |
-| P5-06 | Lớp 3: tự nâng model khi thất bại | normal | P5-04 | P5 D6 |
-| P5-07 | Lớp 2: học từ lịch sử + bảng tag × model | low | P5-06 | P5 D5 |
-| P5-08 | Kiểm thử P5, cập nhật PLAN | normal | P5-01..07 | P5 |
+| P5-01 | ✅ Lưu model thực tế + `model_usage` của run | high | — | P5 D8 |
+| P5-02 | ✅ Web: hiển thị model (TaskCard, TaskDetail, Stats) | normal | P5-01 | P5 |
+| P5-03 | ✅ Cấu hình model 3 tầng + `--model` | high | P5-01 | P5 D1–D3 |
+| P5-04 | ✅ `modelPicker.ts` Lớp 1 + `auto` + `/api/model-suggest` | high | P5-03 | P5 D3–D4 |
+| P5-05 | ✅ Web: chế độ Tự động, gợi ý khi gõ, model trong template | normal | P5-02, P5-04 | P5 |
+| P5-06 | ✅ Lớp 3: tự nâng model khi thất bại | normal | P5-04 | P5 D6 |
+| P5-07 | ✅ Lớp 2: học từ lịch sử + bảng tag × model | low | P5-06 | P5 D5 |
+| P5-08 | ✅ Kiểm thử P5, cập nhật PLAN | normal | P5-01..07 | P5 |
 | **P6: Budget theo project** | | | | |
-| P6-01 | Backend budget, cảnh báo, tạm dừng hàng đợi | normal | — | P6 B1–B5 |
-| P6-02 | Web: budget trên Projects/Stats | normal | P6-01 | P6 |
+| P6-01 | ✅ Backend budget, cảnh báo, tạm dừng hàng đợi | normal | — | P6 B1–B5 |
+| P6-02 | ✅ Web: budget trên Projects/Stats | normal | P6-01 | P6 |
 | **P7: Cải tiến duyệt quyền** | | | | |
-| P7-01 | Preset allowlist | normal | — | P7 |
-| P7-02 | Gợi ý rule từ lịch sử duyệt | normal | — | P7 |
-| P7-03 | Duyệt quyền qua Telegram | low | — | P7 |
-| P7-04 | Phân loại rủi ro lệnh | normal | — | P7 |
-| P7-05 | Từ chối kèm lý do + duyệt hàng loạt | low | P7-04 | P7 |
+| P7-01 | ✅ Preset allowlist | normal | — | P7 |
+| P7-02 | ✅ Gợi ý rule từ lịch sử duyệt | normal | — | P7 |
+| P7-03 | ✅ Duyệt quyền qua Telegram | low | — | P7 |
+| P7-04 | ✅ Phân loại rủi ro lệnh | normal | — | P7 |
+| P7-05 | ✅ Từ chối kèm lý do + duyệt hàng loạt | low | P7-04 | P7 |
 | **P9: Duyệt kế hoạch, Mở trong Claude Code** ([SPEC-PLAN-HANDOFF.md](SPEC-PLAN-HANDOFF.md)) | | | | |
 | P9-01 | ✅ Spike S1 (plan mode headless), S2 (resume theo thư mục) | high | — | §6 |
 | P9-02 | ✅ `planMode`, chuyển dữ liệu `plan` cũ (A5), form / project / import / lịch | high | P9-01 | A3–A5 |
@@ -78,6 +80,9 @@ npm run seed:backlog                # tạo task ở cột Backlog
 | P9-07 | ✅ Nhắc task khoá quá 12 giờ (FR-114c, nhắc theo thời gian) | low | P9-04 | B4 |
 | P9-08 | ✅ `planMode` trong template; template phân tích mặc định là "Chỉ kế hoạch" | low | P9-02 | A4 |
 | P9-09 | Spike S3: phiên tạo bằng API key resume bằng đăng nhập; nếu không được thì FR-116 chặn thay vì cảnh báo | normal | P9-05 | §6 |
+| **P10: Đề xuất 2026-11** ([FEATURE-PROPOSAL-2026-11.md](FEATURE-PROPOSAL-2026-11.md)) | | | | |
+| P10-01 | ✅ F2: Nhân bản task, chạy lại với prompt đã sửa | high | — | F2 |
+| P10-02 | ✅ F1: Đính kèm tài liệu và ảnh vào task | high | — | F1 |
 
 ## Việc của bạn (không giao cho Claude)
 - [x] **Điểm duyệt #1** (đạt 2026-11-18): bấm thử giao diện P1 trên trình duyệt (PLAN, mục "Kết quả kiểm thử P1").
